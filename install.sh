@@ -33,25 +33,38 @@ else
     echo "[WARNING] python3-pymssql could not be installed via apt. The script will later try pip, which might fail."
 fi
 
-# For pywebview (if needed)
-# echo "[INFO] Ensuring system dependencies for pywebview are installed..."
+# For pywebview (if needed, especially if the script uses it and PyQt5 is not the primary GUI)
+# Check if your raspberryPython3.py actually uses pywebview. If so, uncomment the next lines.
+# echo "[INFO] Ensuring system dependencies for pywebview are installed (if pywebview is used)..."
 # sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0 libgtk-3-dev
 
 echo "[INFO] System dependencies installation attempt complete."
 
-# --- 3. Create Python Virtual Environment (if it doesn't exist) ---
+# --- 3. Create Python Virtual Environment ---
 VENV_DIR=".venv"
 PYTHON_EXEC="python3" # Assuming python3 is the desired interpreter
 
-if [ ! -d "$VENV_DIR" ]; then
+# Force removal of existing .venv directory to ensure a clean start with correct flags
+if [ -d "$VENV_DIR" ]; then
     echo ""
-    echo "[INFO] Creating Python virtual environment in '$VENV_DIR'..."
-    $PYTHON_EXEC -m venv "$VENV_DIR"
-    echo "[INFO] Virtual environment created."
-else
-    echo ""
-    echo "[INFO] Virtual environment '$VENV_DIR' already exists."
+    echo "[INFO] Removing existing virtual environment directory: '$VENV_DIR'..."
+    # Ensure the user running this script has permission to remove .venv, or run script with sudo
+    # Be cautious with rm -rf; ensure VENV_DIR is correctly set.
+    if [ "$VENV_DIR" == ".venv" ]; then # Basic safety check
+        sudo rm -rf "$VENV_DIR" # Use sudo if the venv was created by root or needs root to remove
+        echo "[INFO] Existing virtual environment removed."
+    else
+        echo "[ERROR] VENV_DIR is not '.venv'. Aborting removal for safety."
+        exit 1
+    fi
 fi
+
+echo ""
+echo "[INFO] Creating Python virtual environment in '$VENV_DIR' with access to system site-packages..."
+# Added --system-site-packages to allow access to apt-installed python3-pymssql and python3-pyqt5
+$PYTHON_EXEC -m venv --system-site-packages "$VENV_DIR"
+echo "[INFO] Virtual environment created."
+
 
 # --- 4. Activate Virtual Environment and Install Python Packages ---
 echo ""
@@ -68,22 +81,41 @@ echo "[INFO] Installing/Upgrading Cython in the virtual environment (build depen
 
 echo "[INFO] Installing required Python packages into the virtual environment..."
 # PyQt5 and pymssql should ideally be picked up from the system install if `python3-pyqt5` and `python3-pymssql`
-# were successfully installed by apt.
-# We will not explicitly try to pip install pymssql if the apt install was successful.
-# If apt install of python3-pymssql failed, pip might still try and likely fail for the same reasons.
+# were successfully installed by apt AND the venv has access to system-site-packages.
 
 PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful"
 
-# Check if python3-pymssql was installed by apt. If not, add pymssql to pip list as a fallback.
-if ! dpkg -s python3-pymssql >/dev/null 2>&1; then
-    echo "[INFO] python3-pymssql was not found via apt. Adding pymssql to pip install list (might fail to build)."
-    PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL pymssql"
+# Check if python3-pymssql is accessible. If not, and apt didn't install it, add to pip list.
+# This check assumes the venv (with --system-site-packages) makes apt-installed packages importable.
+if ! "$VENV_PYTHON" -c "import pymssql" >/dev/null 2>&1; then
+    if ! dpkg -s python3-pymssql >/dev/null 2>&1; then # Check if apt actually installed it
+        echo "[INFO] python3-pymssql was not found via apt and is not accessible in venv. Adding pymssql to pip install list (might fail to build)."
+        PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL pymssql" # This will likely fail as before if apt version is not available/working
+    else
+        echo "[WARNING] python3-pymssql is installed via apt, but still not accessible in the virtual environment created with --system-site-packages. This is unexpected."
+        echo "[WARNING] You might need to ensure your Python3 and pip versions are consistent or troubleshoot venv creation."
+        # Optionally, still try to pip install it as a last resort, though it's likely to fail.
+        # PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL pymssql"
+    fi
 else
-    echo "[INFO] python3-pymssql is installed via apt, skipping pip install for pymssql."
+    echo "[INFO] pymssql is accessible in the virtual environment (likely from system site-packages via apt)."
+fi
+
+# Check for PyQt5 similarly if issues persist, though python3-pyqt5 from apt is usually reliable with --system-site-packages
+if ! "$VENV_PYTHON" -c "from PyQt5 import QtCore" >/dev/null 2>&1; then
+    if ! dpkg -s python3-pyqt5 >/dev/null 2>&1; then
+        echo "[INFO] python3-pyqt5 was not found via apt and is not accessible in venv. Adding PyQt5 to pip install list (might fail to build or take very long)."
+        PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL PyQt5"
+    else
+        echo "[WARNING] python3-pyqt5 is installed via apt, but still not accessible in the virtual environment created with --system-site-packages. This is unexpected."
+        # PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL PyQt5" # Fallback, likely to be slow/fail
+    fi
+else
+    echo "[INFO] PyQt5 is accessible in the virtual environment (likely from system site-packages via apt)."
 fi
 
 
-echo "[INFO] Installing other Python packages: $PACKAGES_TO_INSTALL"
+echo "[INFO] Installing Python packages: $PACKAGES_TO_INSTALL"
 "$VENV_PIP" install $PACKAGES_TO_INSTALL
 
 echo ""
