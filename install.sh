@@ -19,16 +19,21 @@ sudo apt update
 echo ""
 echo "[INFO] Installing system-level dependencies..."
 
-# For PyQt5 (GUI) - Assuming it's already installed via apt as per previous steps.
-# If not, or to ensure it is:
+# For PyQt5 (GUI)
 echo "[INFO] Ensuring Qt5 development tools and PyQt5 system components are installed..."
 sudo apt install -y qt5-qmake qtbase5-dev python3-pyqt5.sip libqt5svg5-dev python3-pyqt5
 
 # For pymssql (Microsoft SQL Server connection)
-echo "[INFO] Ensuring FreeTDS development files for pymssql are installed..."
+echo "[INFO] Ensuring FreeTDS development files (build dependency for pymssql if built from source) are installed..."
 sudo apt install -y freetds-dev
+echo "[INFO] Attempting to install python3-pymssql via apt..."
+if sudo apt install -y python3-pymssql; then
+    echo "[INFO] python3-pymssql installed successfully via apt."
+else
+    echo "[WARNING] python3-pymssql could not be installed via apt. The script will later try pip, which might fail."
+fi
 
-# For pywebview (if needed, though not explicitly in the pip list from the error log)
+# For pywebview (if needed)
 # echo "[INFO] Ensuring system dependencies for pywebview are installed..."
 # sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0 libgtk-3-dev
 
@@ -58,23 +63,28 @@ VENV_PYTHON="$VENV_DIR/bin/python"
 echo "[INFO] Upgrading pip in the virtual environment..."
 "$VENV_PIP" install --upgrade pip
 
-echo "[INFO] Installing/Upgrading Cython in the virtual environment (needed for pymssql)..."
+echo "[INFO] Installing/Upgrading Cython in the virtual environment (build dependency for some packages)..."
 "$VENV_PIP" install --upgrade cython
 
 echo "[INFO] Installing required Python packages into the virtual environment..."
+# PyQt5 and pymssql should ideally be picked up from the system install if `python3-pyqt5` and `python3-pymssql`
+# were successfully installed by apt.
+# We will not explicitly try to pip install pymssql if the apt install was successful.
+# If apt install of python3-pymssql failed, pip might still try and likely fail for the same reasons.
 
-# Install pymssql separately, trying an older version first
-echo "[INFO] Attempting to install a compatible version of pymssql (e.g., <2.3.0)..."
-if "$VENV_PIP" install "pymssql<2.3.0" ; then
-    echo "[INFO] pymssql installed successfully."
+PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful"
+
+# Check if python3-pymssql was installed by apt. If not, add pymssql to pip list as a fallback.
+if ! dpkg -s python3-pymssql >/dev/null 2>&1; then
+    echo "[INFO] python3-pymssql was not found via apt. Adding pymssql to pip install list (might fail to build)."
+    PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL pymssql"
 else
-    echo "[WARNING] Failed to install pymssql with version <2.3.0. You might need to troubleshoot pymssql installation further."
-    echo "[WARNING] Check for errors related to FreeTDS or compiler issues."
+    echo "[INFO] python3-pymssql is installed via apt, skipping pip install for pymssql."
 fi
 
-echo "[INFO] Installing other Python packages..."
-# Note: PyQt5 should be picked up from the system install if `python3-pyqt5` was successfully installed by apt.
-"$VENV_PIP" install pyserial crccheck psutil distro pywebview Flask flask-restful
+
+echo "[INFO] Installing other Python packages: $PACKAGES_TO_INSTALL"
+"$VENV_PIP" install $PACKAGES_TO_INSTALL
 
 echo ""
 echo "[INFO] Python package installation attempt complete."
