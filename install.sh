@@ -19,17 +19,18 @@ sudo apt update
 echo ""
 echo "[INFO] Installing system-level dependencies..."
 
-# For PyQt5 (GUI)
-echo "[INFO] Installing Qt5 development tools and PyQt5 system components..."
+# For PyQt5 (GUI) - Assuming it's already installed via apt as per previous steps.
+# If not, or to ensure it is:
+echo "[INFO] Ensuring Qt5 development tools and PyQt5 system components are installed..."
 sudo apt install -y qt5-qmake qtbase5-dev python3-pyqt5.sip libqt5svg5-dev python3-pyqt5
 
 # For pymssql (Microsoft SQL Server connection)
-echo "[INFO] Installing FreeTDS development files for pymssql..."
+echo "[INFO] Ensuring FreeTDS development files for pymssql are installed..."
 sudo apt install -y freetds-dev
 
-# For RPi.GPIO (if your script uses it directly, though not in the pip list you provided)
-# echo "[INFO] Installing RPi.GPIO (if needed by the script)..."
-# sudo apt install -y python3-rpi.gpio
+# For pywebview (if needed, though not explicitly in the pip list from the error log)
+# echo "[INFO] Ensuring system dependencies for pywebview are installed..."
+# sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0 libgtk-3-dev
 
 echo "[INFO] System dependencies installation attempt complete."
 
@@ -51,9 +52,6 @@ fi
 echo ""
 echo "[INFO] Activating virtual environment and installing Python packages..."
 
-# Source the activate script to run subsequent commands within the venv
-# This is tricky in a script because `source` affects the current shell.
-# We'll run pip commands by explicitly calling the venv's pip.
 VENV_PIP="$VENV_DIR/bin/pip"
 VENV_PYTHON="$VENV_DIR/bin/python"
 
@@ -64,11 +62,19 @@ echo "[INFO] Installing/Upgrading Cython in the virtual environment (needed for 
 "$VENV_PIP" install --upgrade cython
 
 echo "[INFO] Installing required Python packages into the virtual environment..."
+
+# Install pymssql separately, trying an older version first
+echo "[INFO] Attempting to install a compatible version of pymssql (e.g., <2.3.0)..."
+if "$VENV_PIP" install "pymssql<2.3.0" ; then
+    echo "[INFO] pymssql installed successfully."
+else
+    echo "[WARNING] Failed to install pymssql with version <2.3.0. You might need to troubleshoot pymssql installation further."
+    echo "[WARNING] Check for errors related to FreeTDS or compiler issues."
+fi
+
+echo "[INFO] Installing other Python packages..."
 # Note: PyQt5 should be picked up from the system install if `python3-pyqt5` was successfully installed by apt.
-# If pip tries to build PyQt5 here and fails, it indicates the apt version isn't being used by the venv's Python,
-# which can sometimes happen if the venv was created with certain flags or if system site-packages are not accessible.
-# However, typically, system-installed packages for the Python version used to create the venv are available.
-"$VENV_PIP" install pyserial crccheck psutil distro pymssql pywebview Flask flask-restful
+"$VENV_PIP" install pyserial crccheck psutil distro pywebview Flask flask-restful
 
 echo ""
 echo "[INFO] Python package installation attempt complete."
