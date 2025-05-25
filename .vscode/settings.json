@@ -1,0 +1,14 @@
+{
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "server": "10.0.0.59",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "soi pg server",
+      "database": "postgres",
+      "username": "postgres",
+      "password": "s123"
+    }
+  ]
+}

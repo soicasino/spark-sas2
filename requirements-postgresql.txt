@@ -1,0 +1,9 @@
+# PostgreSQL dependencies for casino management system
+psycopg2-binary>=2.9.0
+# Alternative: psycopg2>=2.9.0 (requires build tools)
+
+# JSON handling (usually included in Python)
+# uuid (built-in module)
+
+# Optional: Connection pooling
+psycopg2[pool]>=2.9.0 

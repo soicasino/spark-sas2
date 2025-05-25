@@ -88,6 +88,14 @@ import serial
 import re
 import pymssql
 #import _mssql
+try:
+    import psycopg2
+    import psycopg2.extras
+    import uuid
+    POSTGRESQL_AVAILABLE = True
+except ImportError:
+    print("PostgreSQL dependencies not available")
+    POSTGRESQL_AVAILABLE = False
 import os
 import array
 import sys
@@ -225,9 +233,9 @@ if platform.system().startswith("Window")==False and LinuxVersion!=2:
     import RPi.GPIO as GPIO
 
 
-FilePathSO="/home/pi/crt_288B_UR.so"
+FilePathSO="/home/soi/crt_288B_UR.so"
 if LinuxVersion==3:
-    FilePathSO="/home/odroid/crt_288B_UR.so"
+    FilePathSO="/home/soi/crt_288B_UR.so"
 
 
 
@@ -1778,12 +1786,14 @@ def DoBillAcceptorPooling():
                                 except Exception as eCardLogId:
                                     ExceptionHandler("cardmachinelogid",eCardLogId,0)
 
-                                conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-                                conn.autocommit(True)
-                                cursor = conn.cursor(as_dict=True)
-                                cursor.callproc('tsp_CheckBillacceptorIn', (G_Machine_Mac, G_Machine_BillAcceptorTypeId, cardmachinelogid, G_User_CardNo, BankNoteCode, Billacceptor_LastCountryCode,Billacceptor_LastDenom, Billacceptor_LastDenomHex ))
+                                # Use new database helper for bill acceptor validation (synchronous)
+                                # Include SAS context for bill acceptor operations
+                                sas_context = get_current_sas_context()
+                                results = db_helper.execute_database_operation('tsp_CheckBillacceptorIn', 
+                                    (G_Machine_Mac, G_Machine_BillAcceptorTypeId, cardmachinelogid, G_User_CardNo, BankNoteCode, Billacceptor_LastCountryCode,Billacceptor_LastDenom, Billacceptor_LastDenomHex),
+                                    sas_context)
 
-                                for row in cursor:
+                                for row in results:
                                     Result=int(row["Result"])
                                     ErrorMessage=row['ErrorMessage']
                                     print("ErrorMessage", ErrorMessage)
@@ -1827,7 +1837,7 @@ def DoBillAcceptorPooling():
                                                 IsBillacceptorBusy_Stacking=1
 
 
-                                conn.close()
+                                # Connection handled by database helper
                             except Exception as ecardtype:
                                 BillAcceptor_Reject("server connection")
                                 SQL_Safe_InsImportantMessage("Bill is rejected because of no connection",80)
@@ -1881,6 +1891,15 @@ G_DB_User="cashlessdevice"
 G_DB_Password="Mevlut12!"
 G_DB_Database="TCASINO"
 
+# PostgreSQL Configuration
+G_PG_Host="localhost"
+G_PG_User="postgres"
+G_PG_Password="password"
+G_PG_Database="casino_db"
+G_PG_Port=5432
+G_PG_Schema="tcasino"
+G_USE_POSTGRESQL=True
+
 
 
 #192.168.1.20 
@@ -1907,6 +1926,53 @@ except Exception as e:
     print("Casino Server Init")
 
 G_DB_Database=G_DB_Database.replace('\n','')
+
+# PostgreSQL configuration from files
+try:
+    file = open('pg_host.ini', 'r')
+    G_PG_Host=file.read().replace('\n','')
+    print("PostgreSQL Host:", G_PG_Host)
+except Exception as e:
+    print("Using default PostgreSQL host")
+
+try:
+    file = open('pg_database.ini', 'r')
+    G_PG_Database=file.read().replace('\n','')
+    print("PostgreSQL Database:", G_PG_Database)
+except Exception as e:
+    print("Using default PostgreSQL database")
+
+try:
+    file = open('pg_user.ini', 'r')
+    G_PG_User=file.read().replace('\n','')
+except Exception as e:
+    print("Using default PostgreSQL user")
+
+try:
+    file = open('pg_password.ini', 'r')
+    G_PG_Password=file.read().replace('\n','')
+except Exception as e:
+    print("Using default PostgreSQL password")
+
+try:
+    file = open('pg_port.ini', 'r')
+    G_PG_Port=int(file.read().replace('\n',''))
+except Exception as e:
+    print("Using default PostgreSQL port")
+
+try:
+    file = open('pg_schema.ini', 'r')
+    G_PG_Schema=file.read().replace('\n','')
+    print("PostgreSQL Schema:", G_PG_Schema)
+except Exception as e:
+    print("Using default PostgreSQL schema")
+
+try:
+    file = open('use_postgresql.ini', 'r')
+    G_USE_POSTGRESQL=file.read().replace('\n','').lower() in ['1', 'true', 'yes']
+    print("Use PostgreSQL:", G_USE_POSTGRESQL)
+except Exception as e:
+    print("Using default PostgreSQL setting")
 
 
 
@@ -2060,6 +2126,462 @@ if WINDOWS==True or G_IsDeviceTestPurpose==1 or G_DB_Host=="admiral.gopizza.fi" 
 
 if G_DB_Host=="95.158.189.2":
     IsDebugMachineNotExist=0
+
+
+#<DATABASE HELPER>--------------------------------------------------------------
+class DatabaseHelper:
+    def __init__(self):
+        self.pg_conn = None
+        self.mssql_conn = None
+        self.last_pg_connect_attempt = None
+        
+        # Define operations that require immediate response (synchronous)
+        self.SYNC_OPERATIONS = {
+            'tsp_GetBalanceInfoOnGM',
+            'tsp_CardRead',
+            'tsp_CardReadPartial', 
+            'tsp_CheckBillacceptorIn',
+            'tsp_CheckNetwork',
+            'tsp_GetCustomerAdditional',
+            'tsp_GetDeviceGameInfo',
+            'tsp_GetCustomerCurrentMessages',
+            'tsp_GetCustomerMessage',
+            'tsp_BonusRequestList'
+        }
+    
+    def validate_payload(self, payload):
+        """Validate that payload contains all three mandatory elements:
+        1. Procedure Parameters
+        2. Device ID/MAC Address  
+        3. SAS Message Information
+        """
+        required_fields = ['parameters', 'device_id']
+        missing_fields = []
+        
+        for field in required_fields:
+            if field not in payload:
+                missing_fields.append(field)
+        
+        # SAS message should be attempted - if not present, try to get it
+        if 'sas_message' not in payload:
+            sas_context = get_current_sas_context()
+            if sas_context:
+                payload['sas_message'] = sas_context
+                print("Auto-added SAS context to payload")
+        
+        if missing_fields:
+            print(f"WARNING: Payload missing required fields: {missing_fields}")
+            return False
+        
+        print(f"✓ Payload validated - contains all 3 mandatory elements")
+        return True
+    
+    def get_postgresql_connection(self):
+        """Get PostgreSQL connection with retry logic"""
+        if not POSTGRESQL_AVAILABLE or not G_USE_POSTGRESQL:
+            return None
+            
+        # Don't retry too frequently
+        if (self.last_pg_connect_attempt and 
+            datetime.datetime.now() - self.last_pg_connect_attempt < datetime.timedelta(seconds=30)):
+            return None
+            
+        try:
+            if self.pg_conn is None or self.pg_conn.closed:
+                self.pg_conn = psycopg2.connect(
+                    host=G_PG_Host,
+                    database=G_PG_Database,
+                    user=G_PG_User,
+                    password=G_PG_Password,
+                    port=G_PG_Port,
+                    connect_timeout=10
+                )
+                self.pg_conn.autocommit = True
+                print("PostgreSQL connected successfully")
+            return self.pg_conn
+        except Exception as e:
+            self.last_pg_connect_attempt = datetime.datetime.now()
+            print(f"PostgreSQL connection failed: {e}")
+            return None
+    
+    def get_mssql_connection(self):
+        """Get MSSQL connection (fallback)"""
+        try:
+            conn = pymssql.connect(
+                host=G_DB_Host, 
+                user=G_DB_User, 
+                password=G_DB_Password, 
+                database=G_DB_Database,
+                tds_version='7.2'
+            )
+            conn.autocommit(True)
+            return conn
+        except Exception as e:
+            print(f"MSSQL connection failed: {e}")
+            return None
+    
+    def queue_async_message(self, procedure_name, parameters, sas_message=None):
+        """Queue asynchronous message to PostgreSQL"""
+        pg_conn = self.get_postgresql_connection()
+        if not pg_conn:
+            # Fallback to SQLite for offline storage
+            self.queue_to_sqlite(procedure_name, parameters)
+            return False
+        
+        try:
+            cursor = pg_conn.cursor()
+            
+            # MANDATORY PAYLOAD ELEMENTS:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload = {
+                'procedure_name': procedure_name,
+                'parameters': parameters,                                    # ✓ REQUIRED: Procedure Parameters
+                'device_id': getattr(self, 'device_id', G_Machine_Mac),     # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload['sas_message'] = sas_message
+            
+            # Validate payload has all required elements
+            self.validate_payload(payload)
+            
+            cursor.execute("""
+                INSERT INTO device_message_queue (id, device_id, procedure_name, payload, status, created_at)
+                VALUES (%s, %s, %s, %s, 'pending', NOW())
+            """, (
+                str(uuid.uuid4()),
+                G_Machine_Mac,
+                procedure_name,
+                json.dumps(payload)
+            ))
+            
+            print(f"Queued async message: {procedure_name}")
+            return True
+            
+        except Exception as e:
+            print(f"Failed to queue async message: {e}")
+            # Fallback to SQLite
+            self.queue_to_sqlite(procedure_name, parameters, sas_message)
+            return False
+    
+    def queue_to_sqlite(self, procedure_name, parameters, sas_message=None):
+        """Fallback: store message in SQLite for later sync"""
+        try:
+            cursor = conn.cursor()  # Using global SQLite connection
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pending_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    procedure_name TEXT,
+                    parameters TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # MANDATORY PAYLOAD ELEMENTS for SQLite fallback:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload_data = {
+                'parameters': parameters,                            # ✓ REQUIRED: Procedure Parameters
+                'device_id': G_Machine_Mac,                         # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload_data['sas_message'] = sas_message
+            
+            cursor.execute("""
+                INSERT INTO pending_messages (procedure_name, parameters)
+                VALUES (?, ?)
+            """, (procedure_name, json.dumps(payload_data)))
+            
+            conn.commit()
+            print(f"Stored in SQLite fallback: {procedure_name}")
+            
+        except Exception as e:
+            print(f"SQLite fallback failed: {e}")
+    
+    def execute_sync_operation(self, procedure_name, parameters, sas_message=None):
+        """Execute synchronous operation (immediate response needed)"""
+        result = None
+        execution_success = False
+        error_message = None
+        
+        # Try PostgreSQL first if available
+        pg_conn = self.get_postgresql_connection()
+        if pg_conn and procedure_name in self.SYNC_OPERATIONS:
+            try:
+                cursor = pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                
+                # Set search path to include tcasino schema for existing procedures
+                cursor.execute(f"SET search_path TO {G_PG_Schema}, public;")
+                
+                # Call the procedure in tcasino schema
+                # PostgreSQL syntax: SELECT * FROM schema.function_name(params)
+                placeholders = ','.join(['%s'] * len(parameters))
+                cursor.execute(f"SELECT * FROM {G_PG_Schema}.{procedure_name}({placeholders})", parameters)
+                result = cursor.fetchall()
+                execution_success = True
+                
+                # Log the sync procedure call to message queue
+                self.log_sync_procedure_call(procedure_name, parameters, result, "postgresql", None, sas_message)
+                
+                return result
+            except Exception as e:
+                error_message = str(e)
+                print(f"PostgreSQL sync operation failed: {e}")
+                # Fall through to MSSQL
+        
+        # Fallback to MSSQL
+        mssql_conn = self.get_mssql_connection()
+        if mssql_conn:
+            try:
+                cursor = mssql_conn.cursor(as_dict=True)
+                cursor.callproc(procedure_name, parameters)
+                result = cursor.fetchall()
+                execution_success = True
+                mssql_conn.close()
+                
+                # Log the sync procedure call to message queue (MSSQL fallback)
+                self.log_sync_procedure_call(procedure_name, parameters, result, "mssql", None, sas_message)
+                
+                return result
+            except Exception as e:
+                error_message = str(e)
+                print(f"MSSQL sync operation failed: {e}")
+                mssql_conn.close()
+                
+                # Log the failed sync procedure call
+                self.log_sync_procedure_call(procedure_name, parameters, None, "mssql", error_message, sas_message)
+                raise e
+        
+        # Log the failed sync procedure call (no connection)
+        self.log_sync_procedure_call(procedure_name, parameters, None, "none", "No database connection available", sas_message)
+        raise Exception("No database connection available")
+    
+    def execute_database_operation(self, procedure_name, parameters, sas_message=None):
+        """Main method to execute database operations"""
+        if procedure_name in self.SYNC_OPERATIONS:
+            return self.execute_sync_operation(procedure_name, parameters, sas_message)
+        else:
+            # Async operation - queue it
+            self.queue_async_message(procedure_name, parameters, sas_message)
+            return []  # No immediate result for async operations
+    
+    def log_sync_procedure_call(self, procedure_name, parameters, result, database_used, error_message=None, sas_message=None):
+        """Log synchronous procedure calls to message queue for auditing"""
+        try:
+            pg_conn = self.get_postgresql_connection()
+            if not pg_conn:
+                # If can't log to PostgreSQL, store in SQLite for later sync
+                self.log_sync_call_to_sqlite(procedure_name, parameters, result, database_used, error_message)
+                return
+            
+            cursor = pg_conn.cursor()
+            
+            # Determine status based on success/failure
+            if error_message:
+                status = 'proc_failed'
+            else:
+                status = 'proc_called'
+            
+            # MANDATORY PAYLOAD ELEMENTS:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload = {
+                'procedure_name': procedure_name,
+                'parameters': parameters,                            # ✓ REQUIRED: Procedure Parameters
+                'device_id': G_Machine_Mac,                         # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat(),
+                'database_used': database_used,
+                'execution_type': 'synchronous',
+                'result_count': len(result) if result else 0,
+                'error_message': error_message
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload['sas_message'] = sas_message
+            
+            # If result is small enough, include it in payload for debugging
+            if result and len(str(result)) < 1000:  # Limit result size to avoid huge payloads
+                payload['result_sample'] = result[:5]  # First 5 rows max
+            
+            cursor.execute("""
+                INSERT INTO device_message_queue (id, device_id, procedure_name, payload, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+            """, (
+                str(uuid.uuid4()),
+                G_Machine_Mac,
+                procedure_name,
+                json.dumps(payload),
+                status
+            ))
+            
+            print(f"Logged sync procedure call: {procedure_name} -> {status}")
+            
+        except Exception as e:
+            print(f"Failed to log sync procedure call: {e}")
+            # Fallback to SQLite
+            self.log_sync_call_to_sqlite(procedure_name, parameters, result, database_used, error_message, sas_message)
+    
+    def log_sync_call_to_sqlite(self, procedure_name, parameters, result, database_used, error_message=None, sas_message=None):
+        """Fallback: log sync calls to SQLite when PostgreSQL unavailable"""
+        try:
+            cursor = conn.cursor()  # Using global SQLite connection
+            
+            status = 'proc_failed' if error_message else 'proc_called'
+            
+            # MANDATORY PAYLOAD ELEMENTS for SQLite sync logging:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload = {
+                'procedure_name': procedure_name,
+                'parameters': parameters,                            # ✓ REQUIRED: Procedure Parameters
+                'device_id': G_Machine_Mac,                         # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat(),
+                'database_used': database_used,
+                'execution_type': 'synchronous',
+                'result_count': len(result) if result else 0,
+                'error_message': error_message,
+                'status': status
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload['sas_message'] = sas_message
+            
+            cursor.execute("""
+                INSERT INTO pending_messages (procedure_name, parameters)
+                VALUES (?, ?)
+            """, (f"{procedure_name}_sync_log", json.dumps(payload)))
+            
+            conn.commit()
+            print(f"Stored sync call log in SQLite: {procedure_name}")
+            
+        except Exception as e:
+            print(f"SQLite sync call logging failed: {e}")
+
+    def sync_pending_sqlite_messages(self):
+        """Sync pending messages from SQLite to PostgreSQL when connection is restored"""
+        pg_conn = self.get_postgresql_connection()
+        if not pg_conn:
+            return False
+        
+        try:
+            sqlite_cursor = conn.cursor()  # Using global SQLite connection
+            sqlite_cursor.execute("""
+                SELECT id, procedure_name, parameters, created_at 
+                FROM pending_messages 
+                ORDER BY created_at
+            """)
+            
+            pending_messages = sqlite_cursor.fetchall()
+            if not pending_messages:
+                return True
+            
+            print(f"Syncing {len(pending_messages)} pending messages to PostgreSQL")
+            
+            pg_cursor = pg_conn.cursor()
+            synced_ids = []
+            
+            for row in pending_messages:
+                msg_id, procedure_name, parameters_json, created_at = row
+                try:
+                    parameters = json.loads(parameters_json)
+                    
+                    payload = {
+                        'procedure_name': procedure_name,
+                        'parameters': parameters,
+                        'device_id': G_Machine_Mac,
+                        'timestamp': created_at,
+                        'synced_from_sqlite': True
+                    }
+                    
+                    pg_cursor.execute("""
+                        INSERT INTO device_message_queue (id, device_id, procedure_name, payload, status, created_at)
+                        VALUES (%s, %s, %s, %s, 'pending', %s)
+                    """, (
+                        str(uuid.uuid4()),
+                        G_Machine_Mac,
+                        procedure_name,
+                        json.dumps(payload),
+                        created_at
+                    ))
+                    
+                    synced_ids.append(msg_id)
+                    
+                except Exception as e:
+                    print(f"Failed to sync message {msg_id}: {e}")
+            
+            # Remove synced messages from SQLite
+            if synced_ids:
+                placeholders = ','.join('?' * len(synced_ids))
+                sqlite_cursor.execute(f"""
+                    DELETE FROM pending_messages WHERE id IN ({placeholders})
+                """, synced_ids)
+                conn.commit()
+                print(f"Synced and removed {len(synced_ids)} messages from SQLite")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Failed to sync pending SQLite messages: {e}")
+            return False
+
+# Initialize database helper
+db_helper = DatabaseHelper()
+
+# Helper function to extract SAS message information
+def get_current_sas_context():
+    """Extract current SAS message context for logging"""
+    sas_context = {}
+    
+    # Add common SAS-related variables that exist in your application
+    try:
+        if 'Last_Billacceptor_Message' in globals():
+            sas_context['last_billacceptor_message'] = Last_Billacceptor_Message
+    except:
+        pass
+    
+    try:
+        if 'Last_Billacceptor_Message_Handle' in globals():
+            sas_context['last_billacceptor_message_handle'] = Last_Billacceptor_Message_Handle
+    except:
+        pass
+    
+    try:
+        # Add any current SAS command being processed
+        if 'G_LastSASCommand' in globals():
+            sas_context['last_sas_command'] = G_LastSASCommand
+    except:
+        pass
+    
+    try:
+        # Add SAS version info
+        if 'G_Static_VersionId' in globals():
+            sas_context['sas_version_id'] = G_Static_VersionId
+    except:
+        pass
+    
+    return sas_context if sas_context else None
+
+#</DATABASE HELPER>-------------------------------------------------------------
 
 
 
@@ -6673,11 +7195,11 @@ def SQL_UploadMoney(Amount,Type):
 def SQL_InsImportantMessage(Message,MessageType):
     try:
         customerid=Config.getint('customer','customerid')
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database, login_timeout=10,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsImportantMessage', (G_Machine_Mac, Message, MessageType,0,customerid))
-        conn.close()
+        # Use async messaging for important messages - no immediate response needed
+        # Include SAS context for better debugging
+        sas_context = get_current_sas_context()
+        db_helper.execute_database_operation('tsp_InsImportantMessage', 
+            (G_Machine_Mac, Message, MessageType, 0, customerid), sas_context)
     except Exception as e:
         print("Message: " , Message)
         ExceptionHandler("SQL_InsImportantMessage",e,1)
@@ -6730,11 +7252,11 @@ def SQL_Safe_InsImportantMessageByWarningType(Message,MessageType, WarningType):
 def SQL_InsImportantMessageByWarningType(Message,MessageType, WarningType):
     try:
         customerid=Config.getint('customer','customerid')
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database, login_timeout=10,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsImportantMessage', (G_Machine_Mac, Message, MessageType, WarningType,customerid))
-        conn.close()
+        # Use async messaging for important messages with warning type
+        # Include SAS context for better debugging
+        sas_context = get_current_sas_context()
+        db_helper.execute_database_operation('tsp_InsImportantMessage', 
+            (G_Machine_Mac, Message, MessageType, WarningType, customerid), sas_context)
     except Exception as e:
         print("Message: " , Message)
         ExceptionHandler("SQL_InsImportantMessage",e,1)
