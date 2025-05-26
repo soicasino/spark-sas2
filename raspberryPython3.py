@@ -2366,7 +2366,7 @@ class DatabaseHelper:
             self.validate_payload(payload)
             
             cursor.execute("""
-                INSERT INTO device_messages_queue (id, device_id, procedure_name, payload, status, created_at)
+                INSERT INTO device_messages_queue (id, slot_machine_id, procedure_name, payload, status, created_at)
                 VALUES (%s, %s, %s, %s, 'pending', NOW())
             """, (
                 str(uuid.uuid4()),
@@ -2556,7 +2556,7 @@ class DatabaseHelper:
                 payload['result_sample'] = result[:5]  # First 5 rows max
             
             cursor.execute("""
-                INSERT INTO device_message_queue (id, device_id, procedure_name, payload, status, created_at)
+                INSERT INTO device_messages_queue (id, slot_machine_id, procedure_name, payload, status, created_at)
                 VALUES (%s, %s, %s, %s, %s, NOW())
             """, (
                 str(uuid.uuid4()),
@@ -2650,7 +2650,7 @@ class DatabaseHelper:
                     }
                     
                     pg_cursor.execute("""
-                        INSERT INTO device_message_queue (id, device_id, procedure_name, payload, status, created_at)
+                        INSERT INTO device_messages_queue (id, slot_machine_id, procedure_name, payload, status, created_at)
                         VALUES (%s, %s, %s, %s, 'pending', %s)
                     """, (
                         str(uuid.uuid4()),
