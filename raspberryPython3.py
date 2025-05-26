@@ -160,6 +160,13 @@ import ctypes
 
 import json
 
+# Custom JSON encoder to handle Decimal objects
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
+
 
 
 import urllib as urllib2
@@ -2160,6 +2167,7 @@ class DatabaseHelper:
             'tsp_cardread',                # MSSQL: tsp_CardRead (FUNCTION)
             'tsp_cardreadpartial',         # MSSQL: tsp_CardReadPartial (FUNCTION)
             'tsp_checkbillacceptorin',     # MSSQL: tsp_CheckBillacceptorIn (PROCEDURE)
+            'tsp_devicestatu',             # MSSQL: tsp_DeviceStatu (PROCEDURE) - Device configuration data
             'tsp_checknetwork',            # MSSQL: tsp_CheckNetwork (needs verification)
             'tsp_getcustomeradditional',   # MSSQL: tsp_GetCustomerAdditional (needs verification)
             'tsp_getdevicegameinfo',       # MSSQL: tsp_GetDeviceGameInfo (needs verification)
@@ -2282,12 +2290,13 @@ class DatabaseHelper:
             'tsp_upddeviceadditionalinfo', 'tsp_insexception', 'tsp_insdevicedebug',
             'tsp_instracelog', 'tsp_insreceivedmessage', 'tsp_inssentcommands',
             'tsp_getnextvisit', 'tsp_insproductorderbyslot', 'tsp_getproductcategories',
-            'tsp_getslotcustomerdiscountcalc', 'tsp_getproductsandsubcategoriesslot'
+            'tsp_getslotcustomerdiscountcalc', 'tsp_getproductsandsubcategoriesslot',
+            'tsp_devicestatu'  # Changed from PROCEDURE to FUNCTION since it returns data
         }
         
         POSTGRESQL_PROCEDURES = {
             'tsp_checkbillacceptorin', 'tsp_getbalanceinfoongm', 
-            'tsp_devicestatu', 'tsp_getdeviceadditionalinfo'
+            'tsp_getdeviceadditionalinfo'
         }
         
         if pg_procedure_name in POSTGRESQL_FUNCTIONS:
@@ -2372,7 +2381,7 @@ class DatabaseHelper:
                 str(uuid.uuid4()),
                 G_Machine_Mac,
                 pg_procedure_name,
-                json.dumps(payload)
+                json.dumps(payload, cls=DecimalEncoder)
             ))
             
             print(f"Queued async message: {original_name} -> {pg_procedure_name}")
@@ -2416,7 +2425,7 @@ class DatabaseHelper:
             cursor.execute("""
                 INSERT INTO pending_messages (procedure_name, parameters)
                 VALUES (?, ?)
-            """, (procedure_name, json.dumps(payload_data)))
+            """, (procedure_name, json.dumps(payload_data, cls=DecimalEncoder)))
             
             conn.commit()
             print(f"Stored in SQLite fallback: {procedure_name}")
@@ -2562,7 +2571,7 @@ class DatabaseHelper:
                 str(uuid.uuid4()),
                 G_Machine_Mac,
                 procedure_name,
-                json.dumps(payload),
+                json.dumps(payload, cls=DecimalEncoder),
                 status
             ))
             
@@ -2605,7 +2614,7 @@ class DatabaseHelper:
             cursor.execute("""
                 INSERT INTO pending_messages (procedure_name, parameters)
                 VALUES (?, ?)
-            """, (f"{procedure_name}_sync_log", json.dumps(payload)))
+            """, (f"{procedure_name}_sync_log", json.dumps(payload, cls=DecimalEncoder)))
             
             conn.commit()
             print(f"Stored sync call log in SQLite: {procedure_name}")
@@ -2656,7 +2665,7 @@ class DatabaseHelper:
                         str(uuid.uuid4()),
                         G_Machine_Mac,
                         procedure_name,
-                        json.dumps(payload),
+                        json.dumps(payload, cls=DecimalEncoder),
                         created_at
                     ))
                     
@@ -3662,7 +3671,7 @@ def CheckNextVisit():
         IsRightExist=1
     
     if IsRightExist==1:
-        ExecuteJSFunction("ParseRowBonusBoxesJSON",json.dumps(result))
+        ExecuteJSFunction("ParseRowBonusBoxesJSON",json.dumps(result, cls=DecimalEncoder))
         say=0
         for i in range(1, 13):
             say=say+1
@@ -15440,7 +15449,7 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
               "errormessage":""
             }
 
-            jsonStr = json.dumps(python_obj)
+            jsonStr = json.dumps(python_obj, cls=DecimalEncoder)
         
             OpenCloseGPIO(relayid)
 
@@ -15467,7 +15476,7 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
               "amount": amount
             }
 
-            jsonStr = json.dumps(python_obj)
+            jsonStr = json.dumps(python_obj, cls=DecimalEncoder)
             return jsonStr
 
     class SessionAddMoney(Resource):
@@ -15495,7 +15504,7 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
               "amount": amount
             }
 
-            jsonStr = json.dumps(python_obj)
+            jsonStr = json.dumps(python_obj, cls=DecimalEncoder)
             return jsonStr
 
     class SessionClose(Resource):
@@ -15511,7 +15520,7 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
               "amount": ""
             }
 
-            jsonStr = json.dumps(python_obj)
+            jsonStr = json.dumps(python_obj, cls=DecimalEncoder)
             return jsonStr
 
     class ScreenClick(Resource):
@@ -15546,7 +15555,7 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
               "y": y
             }
 
-            jsonStr = json.dumps(resultObj)
+            jsonStr = json.dumps(resultObj, cls=DecimalEncoder)
             return jsonStr
 
     webapi.add_resource(TriggerRelay, '/relays/<relayid>') 
