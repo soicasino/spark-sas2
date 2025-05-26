@@ -7020,16 +7020,6 @@ def SQL_DeviceStatu(MessageType):
         print("GUI_CurrentPage, " , GUI_CurrentPage)
         print("****************************")
         ExceptionHandler("SQL_DeviceStatu",e,1)
-    except _mssql.MssqlDatabaseException as e:
-        G_NetworkLastDate = datetime.datetime.now() - datetime.timedelta(hours=1)
-        print("e.number", e.number, "e.severity", e.severity)
-        if e.number == 2714 and e.severity == 16:
-            print("ne bu")
-            # table already existed, so quieten the error
-        else:
-            print("SQL: DeviceStatu exception")
-            ExceptionHandler("SQL_DeviceStatu",e,1)
-            #raise # re-raise real error
 
 
 
