@@ -55,6 +55,11 @@ def load_config():
     
     return config
 
+def get_available_slot_machines(cursor):
+    """Get available slot machine IDs from the database"""
+    cursor.execute("SELECT id, mac_address FROM slot_machines LIMIT 20")
+    return cursor.fetchall()
+
 def generate_device_mac():
     """Generate realistic MAC addresses for gaming machines"""
     prefixes = ["00:11:22", "AA:BB:CC", "B8:27:EB", "DC:A6:32", "E4:5F:01"]
@@ -100,7 +105,7 @@ def generate_sas_context():
     return context
 
 # BILL ACCEPTOR OPERATIONS
-def generate_bill_acceptor_samples():
+def generate_bill_acceptor_samples(available_machines):
     """Bill acceptor related procedures"""
     samples = []
     procedures = {
@@ -141,12 +146,12 @@ def generate_bill_acceptor_samples():
                 "CreditAmount": parameters[6] if len(parameters) > 6 else 0
             }]
         
-        samples.append(create_record(device_mac, procedure_name, payload, status))
+        samples.append(create_record(machine_id, procedure_name, payload, status))
     
     return samples
 
 # CARD OPERATIONS  
-def generate_card_operation_samples():
+def generate_card_operation_samples(available_machines):
     """Card reader and card management procedures"""
     samples = []
     procedures = {
@@ -530,11 +535,11 @@ def create_base_payload(procedure_name, parameters, device_mac, is_sync):
     
     return payload
 
-def create_record(device_mac, procedure_name, payload, status):
+def create_record(machine_id, procedure_name, payload, status):
     """Create a complete message queue record"""
     return {
         'id': str(uuid.uuid4()),
-        'device_id': device_mac,
+        'device_id': machine_id,
         'procedure_name': procedure_name,
         'payload': payload,
         'status': status,
@@ -569,6 +574,15 @@ def main():
     
     cursor = conn.cursor()
     
+    # Get available slot machines
+    print(f"\n🔍 Getting available slot machines...")
+    available_machines = get_available_slot_machines(cursor)
+    if not available_machines:
+        print("❌ No slot machines found in database. Please add some slot machines first.")
+        return
+    
+    print(f"✅ Found {len(available_machines)} slot machines")
+    
     # Generate comprehensive sample data
     print(f"\n🔄 Generating comprehensive sample data...")
     
@@ -597,7 +611,7 @@ def main():
     print(f"\n💾 Inserting samples into device_message_queue...")
     
     insert_query = """
-        INSERT INTO device_message_queue (id, device_id, procedure_name, payload, status, created_at)
+        INSERT INTO device_messages_queue (id, slot_machine_id, procedure_name, payload, status, created_at)
         VALUES (%s, %s, %s, %s, %s, %s)
     """
     
@@ -637,7 +651,7 @@ def main():
     
     # Status distribution
     print(f"\n📈 Status Distribution:")
-    cursor.execute("SELECT status, COUNT(*) FROM device_message_queue GROUP BY status ORDER BY status")
+    cursor.execute("SELECT status, COUNT(*) FROM device_messages_queue GROUP BY status ORDER BY status")
     for status, count in cursor.fetchall():
         print(f"   {status}: {count}")
     
@@ -654,7 +668,7 @@ def main():
                 ELSE 'async' 
             END as op_type,
             COUNT(*) as count
-        FROM device_message_queue 
+        FROM device_messages_queue 
         GROUP BY op_type
     """, (sync_procedures,))
     
@@ -665,7 +679,7 @@ def main():
     print(f"\n🏆 Top Procedures:")
     cursor.execute("""
         SELECT procedure_name, COUNT(*) as count 
-        FROM device_message_queue 
+        FROM device_messages_queue 
         GROUP BY procedure_name 
         ORDER BY count DESC 
         LIMIT 10
@@ -676,9 +690,9 @@ def main():
     # Device distribution
     print(f"\n🖥️  Device Distribution:")
     cursor.execute("""
-        SELECT device_id, COUNT(*) as count 
-        FROM device_message_queue 
-        GROUP BY device_id 
+        SELECT slot_machine_id, COUNT(*) as count 
+        FROM device_messages_queue 
+        GROUP BY slot_machine_id 
         ORDER BY count DESC 
         LIMIT 5
     """)

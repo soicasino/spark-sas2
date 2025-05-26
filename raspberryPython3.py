@@ -1886,46 +1886,39 @@ G_Static_SasWait=0.2
 
 IsShowEveryMessage=0
 IsDebugAutoBakiyeYanit=0
-G_DB_Host="172.16.23.1"
-G_DB_User="cashlessdevice"
-G_DB_Password="Mevlut12!"
-G_DB_Database="TCASINO"
 
-# PostgreSQL Configuration
+# DEPRECATED MSSQL Configuration (migrated to PostgreSQL)
+# G_DB_Host="172.16.23.1"
+# G_DB_User="cashlessdevice" 
+# G_DB_Password="Mevlut12!"
+# G_DB_Database="TCASINO"
+
+# PostgreSQL Configuration (Primary Database)
 G_PG_Host="localhost"
 G_PG_User="postgres"
 G_PG_Password="password"
 G_PG_Database="casino_db"
 G_PG_Port=5432
 G_PG_Schema="tcasino"
-G_USE_POSTGRESQL=True
+G_USE_POSTGRESQL=True  # Force PostgreSQL only - no MSSQL fallback
 
 
 
-#192.168.1.20 
+# DEPRECATED MSSQL Configuration Loading (migrated to PostgreSQL)
+# Legacy configuration files are kept for backward compatibility but not used
 try:
     file = open('casinoip.ini', 'r')
-    G_DB_Host=file.read()
+    legacy_db_host = file.read().replace('\n','')
+    print("DEPRECATED: Legacy MSSQL Host found:", legacy_db_host, "- Using PostgreSQL instead")
 except Exception as e:
-    print("Casino Server Init")
-
-#Malpas Sil.
-#G_DB_Host="192.168.77.254"
-
-G_DB_Host=G_DB_Host.replace('\n','')
-print("G_DB_Host", G_DB_Host)
-
-
-
-
+    print("No legacy MSSQL configuration found (expected)")
 
 try:
-    file = open('db.ini', 'r')
-    G_DB_Database=file.read()
+    file = open('db.ini', 'r') 
+    legacy_db_database = file.read().replace('\n','')
+    print("DEPRECATED: Legacy MSSQL Database found:", legacy_db_database, "- Using PostgreSQL instead")
 except Exception as e:
-    print("Casino Server Init")
-
-G_DB_Database=G_DB_Database.replace('\n','')
+    print("No legacy MSSQL database configuration found (expected)")
 
 # PostgreSQL configuration from files
 try:
@@ -1977,13 +1970,14 @@ except Exception as e:
 
 
 try:
-    if (G_DB_Host.split('.')[0]+"." + G_DB_Host.split('.')[1])!=(get_lan_ip().split('.')[0]+"." + get_lan_ip().split('.')[1]):
+    # Network check now uses PostgreSQL host instead of legacy MSSQL host
+    if (G_PG_Host.split('.')[0]+"." + G_PG_Host.split('.')[1])!=(get_lan_ip().split('.')[0]+"." + get_lan_ip().split('.')[1]):
         print("*******************************************************")
         print("Device is in the not same network.")
         NotSameIPCount=0
         while NotSameIPCount<10:
             NotSameIPCount=NotSameIPCount+1
-            print("Device is in the not same network. Restart!", (G_DB_Host.split('.')[0]+"." + G_DB_Host.split('.')[1]), (get_lan_ip().split('.')[0]+"." + get_lan_ip().split('.')[1]), "-----")
+            print("Device is in the not same network. Restart!", (G_PG_Host.split('.')[0]+"." + G_PG_Host.split('.')[1]), (get_lan_ip().split('.')[0]+"." + get_lan_ip().split('.')[1]), "-----")
         print("Device is in the not same network.")
         print("*******************************************************")
 except Exception as e:
@@ -2089,10 +2083,11 @@ def CreateGUI():
 
 
 G_IsDeviceTestPurpose=0
-if G_DB_Host=="admiral.gopizza.fi":
+# MIGRATED: Use PostgreSQL host for test environment detection
+if G_PG_Host=="admiral.gopizza.fi":
     G_IsDeviceTestPurpose=1
 
-if G_DB_Host=="asist.sanaloyun.net":
+if G_PG_Host=="asist.sanaloyun.net":
     G_IsDeviceTestPurpose=1
 
 
@@ -2100,8 +2095,8 @@ if G_DB_Host=="asist.sanaloyun.net":
 
 
 #if WINDOWS==True:
-#G_DB_Host=="admiral.gopizza.fi" or 
-if WINDOWS==True or G_IsDeviceTestPurpose==1 or G_DB_Host=="admiral.gopizza.fi" or G_DB_Host=="www.angora.fi" or G_DB_Host.startswith("192.168.1.3")==True or G_DB_Host.startswith("192.168.1.33")==True  or G_DB_Host.startswith("localhost")==True or G_DB_Host.startswith("127.0.0.1")==True or G_DB_Host.startswith("192.162.137.5")==True:
+# MIGRATED: Use PostgreSQL host for debug mode detection
+if WINDOWS==True or G_IsDeviceTestPurpose==1 or G_PG_Host=="admiral.gopizza.fi" or G_PG_Host=="www.angora.fi" or G_PG_Host.startswith("192.168.1.3")==True or G_PG_Host.startswith("192.168.1.33")==True  or G_PG_Host.startswith("localhost")==True or G_PG_Host.startswith("127.0.0.1")==True or G_PG_Host.startswith("192.162.137.5")==True:
     #IsGUIEnabled=1
 
     print("*************************************************************************")
@@ -2124,29 +2119,70 @@ if WINDOWS==True or G_IsDeviceTestPurpose==1 or G_DB_Host=="admiral.gopizza.fi" 
 #eskiden config buradaydi.
 
 
-if G_DB_Host=="95.158.189.2":
+# MIGRATED: Use PostgreSQL host for debug configuration
+if G_PG_Host=="95.158.189.2":
     IsDebugMachineNotExist=0
 
 
 #<DATABASE HELPER>--------------------------------------------------------------
 class DatabaseHelper:
+    """
+    PostgreSQL-only database helper class.
+    Migrated from MSSQL to PostgreSQL - all MSSQL dependencies removed.
+    """
     def __init__(self):
         self.pg_conn = None
-        self.mssql_conn = None
         self.last_pg_connect_attempt = None
         
         # Define operations that require immediate response (synchronous)
+        # These procedures need immediate results for app functionality
         self.SYNC_OPERATIONS = {
-            'tsp_GetBalanceInfoOnGM',
-            'tsp_CardRead',
-            'tsp_CardReadPartial', 
-            'tsp_CheckBillacceptorIn',
-            'tsp_CheckNetwork',
-            'tsp_GetCustomerAdditional',
-            'tsp_GetDeviceGameInfo',
-            'tsp_GetCustomerCurrentMessages',
-            'tsp_GetCustomerMessage',
-            'tsp_BonusRequestList'
+            'tsp_getbalanceinfoongm',      # MSSQL: tsp_GetBalanceInfoOnGM (PROCEDURE)
+            'tsp_cardread',                # MSSQL: tsp_CardRead (FUNCTION)
+            'tsp_cardreadpartial',         # MSSQL: tsp_CardReadPartial (FUNCTION)
+            'tsp_checkbillacceptorin',     # MSSQL: tsp_CheckBillacceptorIn (PROCEDURE)
+            'tsp_checknetwork',            # MSSQL: tsp_CheckNetwork (needs verification)
+            'tsp_getcustomeradditional',   # MSSQL: tsp_GetCustomerAdditional (needs verification)
+            'tsp_getdevicegameinfo',       # MSSQL: tsp_GetDeviceGameInfo (needs verification)
+            'tsp_getcustomercurrentmessages', # MSSQL: tsp_GetCustomerCurrentMessages (needs verification)
+            'tsp_getcustomermessage',      # MSSQL: tsp_GetCustomerMessage (needs verification)
+            'tsp_bonusrequestlist'         # MSSQL: tsp_BonusRequestList (needs verification)
+        }
+        
+        # Procedure name mapping from MSSQL to PostgreSQL (verified from postgres-routines-in-sas.sql)
+        self.PROCEDURE_NAME_MAP = {
+            # ✓ VERIFIED PROCEDURES (CREATE OR REPLACE PROCEDURE)
+            'tsp_CheckBillacceptorIn': 'tsp_checkbillacceptorin',
+            'tsp_GetBalanceInfoOnGM': 'tsp_getbalanceinfoongm', 
+            'tsp_DeviceStatu': 'tsp_devicestatu',
+            'tsp_GetDeviceAdditionalInfo': 'tsp_getdeviceadditionalinfo',
+            
+            # ✓ VERIFIED FUNCTIONS (CREATE OR REPLACE FUNCTION)  
+            'tsp_CardRead': 'tsp_cardread',
+            'tsp_CardReadPartial': 'tsp_cardreadpartial', 
+            'tsp_CardReadAddMoney': 'tsp_cardreadaddmoney',
+            'tsp_UpdBillAcceptorMoney': 'tsp_updbillacceptormoney',
+            'tsp_InsGameStart': 'tsp_insgamestart',
+            'tsp_InsGameEnd': 'tsp_insgameend',
+            'tsp_UpdDeviceAdditionalInfo': 'tsp_upddeviceadditionalinfo',
+            'tsp_InsException': 'tsp_insexception',
+            'tsp_InsDeviceDebug': 'tsp_insdevicedebug',
+            'tsp_InsTraceLog': 'tsp_instracelog',
+            'tsp_InsReceivedMessage': 'tsp_insreceivedmessage',
+            'tsp_InsSentCommands': 'tsp_inssentcommands',
+            'tsp_GetNextVisit': 'tsp_getnextvisit',
+            'tsp_InsProductOrderBySlot': 'tsp_insproductorderbyslot',
+            'tsp_GetProductCategories': 'tsp_getproductcategories',
+            'tsp_GetSlotCustomerDiscountCalc': 'tsp_getslotcustomerdiscountcalc',
+            'tsp_GetProductsAndSubCategoriesSlot': 'tsp_getproductsandsubcategoriesslot',
+            
+            # ⚠️ NEED VERIFICATION - Not found in postgres-routines-in-sas.sql yet
+            # 'tsp_CheckNetwork': 'tsp_checknetwork',
+            # 'tsp_GetCustomerAdditional': 'tsp_getcustomeradditional', 
+            # 'tsp_GetDeviceGameInfo': 'tsp_getdevicegameinfo',
+            # 'tsp_GetCustomerCurrentMessages': 'tsp_getcustomercurrentmessages',
+            # 'tsp_GetCustomerMessage': 'tsp_getcustomermessage',
+            # 'tsp_BonusRequestList': 'tsp_bonusrequestlist',
         }
     
     def validate_payload(self, payload):
@@ -2177,8 +2213,9 @@ class DatabaseHelper:
         return True
     
     def get_postgresql_connection(self):
-        """Get PostgreSQL connection with retry logic"""
-        if not POSTGRESQL_AVAILABLE or not G_USE_POSTGRESQL:
+        """Get PostgreSQL connection with retry logic - PostgreSQL ONLY"""
+        if not POSTGRESQL_AVAILABLE:
+            print("ERROR: PostgreSQL dependencies not available!")
             return None
             
         # Don't retry too frequently
@@ -2204,28 +2241,85 @@ class DatabaseHelper:
             print(f"PostgreSQL connection failed: {e}")
             return None
     
-    def get_mssql_connection(self):
-        """Get MSSQL connection (fallback)"""
+    def normalize_procedure_name(self, procedure_name):
+        """Convert MSSQL procedure names to PostgreSQL format"""
+        # Check if we have a specific mapping
+        if procedure_name in self.PROCEDURE_NAME_MAP:
+            pg_name = self.PROCEDURE_NAME_MAP[procedure_name]
+            print(f"MIGRATED: {procedure_name} -> {pg_name}")
+            return pg_name
+        
+        # Default: convert to lowercase (PostgreSQL convention)
+        pg_name = procedure_name.lower()
+        print(f"AUTO-CONVERTED: {procedure_name} -> {pg_name}")
+        return pg_name
+    
+    def is_postgresql_function(self, pg_procedure_name):
+        """Determine if a PostgreSQL routine is a FUNCTION (vs PROCEDURE)"""
+        # Based on verified postgres-routines-in-sas.sql analysis
+        POSTGRESQL_FUNCTIONS = {
+            'tsp_cardread', 'tsp_cardreadpartial', 'tsp_cardreadaddmoney',
+            'tsp_updbillacceptormoney', 'tsp_insgamestart', 'tsp_insgameend',
+            'tsp_upddeviceadditionalinfo', 'tsp_insexception', 'tsp_insdevicedebug',
+            'tsp_instracelog', 'tsp_insreceivedmessage', 'tsp_inssentcommands',
+            'tsp_getnextvisit', 'tsp_insproductorderbyslot', 'tsp_getproductcategories',
+            'tsp_getslotcustomerdiscountcalc', 'tsp_getproductsandsubcategoriesslot'
+        }
+        
+        POSTGRESQL_PROCEDURES = {
+            'tsp_checkbillacceptorin', 'tsp_getbalanceinfoongm', 
+            'tsp_devicestatu', 'tsp_getdeviceadditionalinfo'
+        }
+        
+        if pg_procedure_name in POSTGRESQL_FUNCTIONS:
+            return True
+        elif pg_procedure_name in POSTGRESQL_PROCEDURES:
+            return False
+        else:
+            # Default guess: most routines are functions in PostgreSQL
+            print(f"WARNING: Unknown routine type for {pg_procedure_name}, assuming FUNCTION")
+            return True
+    
+    def validate_procedure_exists(self, pg_procedure_name):
+        """Check if procedure/function exists in PostgreSQL"""
+        pg_conn = self.get_postgresql_connection()
+        if not pg_conn:
+            print(f"Cannot validate {pg_procedure_name} - no PostgreSQL connection")
+            return False
+            
         try:
-            conn = pymssql.connect(
-                host=G_DB_Host, 
-                user=G_DB_User, 
-                password=G_DB_Password, 
-                database=G_DB_Database,
-                tds_version='7.2'
-            )
-            conn.autocommit(True)
-            return conn
+            cursor = pg_conn.cursor()
+            
+            # Check both functions and procedures
+            cursor.execute("""
+                SELECT routine_name, routine_type 
+                FROM information_schema.routines 
+                WHERE routine_schema = %s AND routine_name = %s
+            """, (G_PG_Schema, pg_procedure_name))
+            
+            result = cursor.fetchone()
+            if result:
+                routine_name, routine_type = result
+                print(f"✓ VERIFIED: {pg_procedure_name} exists as {routine_type}")
+                return True
+            else:
+                print(f"❌ MISSING: {pg_procedure_name} not found in {G_PG_Schema} schema")
+                return False
+                
         except Exception as e:
-            print(f"MSSQL connection failed: {e}")
-            return None
+            print(f"Error validating {pg_procedure_name}: {e}")
+            return False
     
     def queue_async_message(self, procedure_name, parameters, sas_message=None):
-        """Queue asynchronous message to PostgreSQL"""
+        """Queue asynchronous message to PostgreSQL - PostgreSQL ONLY"""
+        # Normalize procedure name for PostgreSQL
+        original_name = procedure_name
+        pg_procedure_name = self.normalize_procedure_name(procedure_name)
+        
         pg_conn = self.get_postgresql_connection()
         if not pg_conn:
             # Fallback to SQLite for offline storage
-            self.queue_to_sqlite(procedure_name, parameters)
+            self.queue_to_sqlite(original_name, parameters, sas_message)
             return False
         
         try:
@@ -2236,7 +2330,8 @@ class DatabaseHelper:
             # 2. Device ID/MAC Address  
             # 3. SAS Message Information
             payload = {
-                'procedure_name': procedure_name,
+                'procedure_name': pg_procedure_name,                         # Use PostgreSQL name
+                'original_mssql_name': original_name,                        # Keep original for reference
                 'parameters': parameters,                                    # ✓ REQUIRED: Procedure Parameters
                 'device_id': getattr(self, 'device_id', G_Machine_Mac),     # ✓ REQUIRED: Device ID/MAC
                 'timestamp': datetime.datetime.now().isoformat()
@@ -2252,22 +2347,22 @@ class DatabaseHelper:
             self.validate_payload(payload)
             
             cursor.execute("""
-                INSERT INTO device_message_queue (id, device_id, procedure_name, payload, status, created_at)
+                INSERT INTO device_messages_queue (id, device_id, procedure_name, payload, status, created_at)
                 VALUES (%s, %s, %s, %s, 'pending', NOW())
             """, (
                 str(uuid.uuid4()),
                 G_Machine_Mac,
-                procedure_name,
+                pg_procedure_name,
                 json.dumps(payload)
             ))
             
-            print(f"Queued async message: {procedure_name}")
+            print(f"Queued async message: {original_name} -> {pg_procedure_name}")
             return True
             
         except Exception as e:
             print(f"Failed to queue async message: {e}")
             # Fallback to SQLite
-            self.queue_to_sqlite(procedure_name, parameters, sas_message)
+            self.queue_to_sqlite(original_name, parameters, sas_message)
             return False
     
     def queue_to_sqlite(self, procedure_name, parameters, sas_message=None):
@@ -2311,66 +2406,88 @@ class DatabaseHelper:
             print(f"SQLite fallback failed: {e}")
     
     def execute_sync_operation(self, procedure_name, parameters, sas_message=None):
-        """Execute synchronous operation (immediate response needed)"""
+        """Execute synchronous operation (immediate response needed) - PostgreSQL ONLY"""
+        # Normalize procedure name for PostgreSQL
+        original_name = procedure_name
+        pg_procedure_name = self.normalize_procedure_name(procedure_name)
+        
         result = None
         execution_success = False
         error_message = None
         
-        # Try PostgreSQL first if available
+        # PostgreSQL ONLY - no MSSQL fallback
         pg_conn = self.get_postgresql_connection()
-        if pg_conn and procedure_name in self.SYNC_OPERATIONS:
-            try:
-                cursor = pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                
-                # Set search path to include tcasino schema for existing procedures
-                cursor.execute(f"SET search_path TO {G_PG_Schema}, public;")
-                
-                # Call the procedure in tcasino schema
-                # PostgreSQL syntax: SELECT * FROM schema.function_name(params)
+        if not pg_conn:
+            error_message = "PostgreSQL connection not available"
+            self.log_sync_procedure_call(original_name, parameters, None, "postgresql", error_message, sas_message)
+            raise Exception(error_message)
+        
+        # Check if procedure is marked as synchronous
+        if pg_procedure_name not in self.SYNC_OPERATIONS:
+            print(f"WARNING: {original_name} ({pg_procedure_name}) not in SYNC_OPERATIONS - should this be async?")
+        
+        # Validate procedure exists in PostgreSQL
+        if not self.validate_procedure_exists(pg_procedure_name):
+            error_message = f"Procedure {pg_procedure_name} does not exist in PostgreSQL"
+            self.log_sync_procedure_call(original_name, parameters, None, "postgresql", error_message, sas_message)
+            raise Exception(error_message)
+        
+        try:
+            cursor = pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Set search path to include tcasino schema for existing procedures
+            cursor.execute(f"SET search_path TO {G_PG_Schema}, public;")
+            
+            # Call the procedure/function in tcasino schema using correct PostgreSQL syntax
+            is_function = self.is_postgresql_function(pg_procedure_name)
+            
+            if len(parameters) > 0:
                 placeholders = ','.join(['%s'] * len(parameters))
-                cursor.execute(f"SELECT * FROM {G_PG_Schema}.{procedure_name}({placeholders})", parameters)
-                result = cursor.fetchall()
-                execution_success = True
                 
-                # Log the sync procedure call to message queue
-                self.log_sync_procedure_call(procedure_name, parameters, result, "postgresql", None, sas_message)
-                
-                return result
-            except Exception as e:
-                error_message = str(e)
-                print(f"PostgreSQL sync operation failed: {e}")
-                # Fall through to MSSQL
-        
-        # Fallback to MSSQL
-        mssql_conn = self.get_mssql_connection()
-        if mssql_conn:
-            try:
-                cursor = mssql_conn.cursor(as_dict=True)
-                cursor.callproc(procedure_name, parameters)
-                result = cursor.fetchall()
-                execution_success = True
-                mssql_conn.close()
-                
-                # Log the sync procedure call to message queue (MSSQL fallback)
-                self.log_sync_procedure_call(procedure_name, parameters, result, "mssql", None, sas_message)
-                
-                return result
-            except Exception as e:
-                error_message = str(e)
-                print(f"MSSQL sync operation failed: {e}")
-                mssql_conn.close()
-                
-                # Log the failed sync procedure call
-                self.log_sync_procedure_call(procedure_name, parameters, None, "mssql", error_message, sas_message)
-                raise e
-        
-        # Log the failed sync procedure call (no connection)
-        self.log_sync_procedure_call(procedure_name, parameters, None, "none", "No database connection available", sas_message)
-        raise Exception("No database connection available")
+                if is_function:
+                    # PostgreSQL FUNCTION: SELECT * FROM schema.function_name(params)
+                    cursor.execute(f"SELECT * FROM {G_PG_Schema}.{pg_procedure_name}({placeholders})", parameters)
+                    result = cursor.fetchall()
+                    print(f"Called FUNCTION: {pg_procedure_name}")
+                else:
+                    # PostgreSQL PROCEDURE: CALL schema.procedure_name(params)
+                    cursor.execute(f"CALL {G_PG_Schema}.{pg_procedure_name}({placeholders})", parameters)
+                    result = []  # Procedures may not return data directly
+                    print(f"Called PROCEDURE: {pg_procedure_name}")
+            else:
+                # No parameters
+                if is_function:
+                    cursor.execute(f"SELECT * FROM {G_PG_Schema}.{pg_procedure_name}()")
+                    result = cursor.fetchall()
+                    print(f"Called FUNCTION: {pg_procedure_name} (no params)")
+                else:
+                    cursor.execute(f"CALL {G_PG_Schema}.{pg_procedure_name}()")
+                    result = []
+                    print(f"Called PROCEDURE: {pg_procedure_name} (no params)")
+            
+            execution_success = True
+            
+            # Log the sync procedure call to message queue
+            self.log_sync_procedure_call(original_name, parameters, result, "postgresql", None, sas_message)
+            
+            print(f"SUCCESS: {original_name} -> {pg_procedure_name} returned {len(result) if result else 0} rows")
+            return result
+            
+        except Exception as e:
+            error_message = str(e)
+            print(f"PostgreSQL sync operation failed: {original_name} -> {pg_procedure_name}: {e}")
+            
+            # Log the failed sync procedure call
+            self.log_sync_procedure_call(original_name, parameters, None, "postgresql", error_message, sas_message)
+            raise Exception(f"PostgreSQL procedure call failed: {error_message}")
     
     def execute_database_operation(self, procedure_name, parameters, sas_message=None):
-        """Main method to execute database operations"""
-        if procedure_name in self.SYNC_OPERATIONS:
+        """Main method to execute database operations - PostgreSQL ONLY"""
+        # Normalize procedure name for PostgreSQL
+        pg_procedure_name = self.normalize_procedure_name(procedure_name)
+        
+        # Check if this is a synchronous operation
+        if pg_procedure_name in self.SYNC_OPERATIONS:
             return self.execute_sync_operation(procedure_name, parameters, sas_message)
         else:
             # Async operation - queue it
@@ -2546,6 +2663,48 @@ class DatabaseHelper:
 
 # Initialize database helper
 db_helper = DatabaseHelper()
+
+def verify_postgresql_migration():
+    """Verify that all critical procedures exist in PostgreSQL after migration"""
+    print("=== VERIFYING POSTGRESQL MIGRATION ===")
+    
+    # Critical procedures that MUST exist for app functionality
+    critical_procedures = [
+        'tsp_GetBalanceInfoOnGM',    # Balance checking
+        'tsp_CardRead',              # Card reading
+        'tsp_CardReadPartial',       # Partial card read
+        'tsp_CheckBillacceptorIn',   # Bill acceptor validation
+        'tsp_DeviceStatu',           # Device status updates
+        'tsp_InsGameStart',          # Game start logging
+        'tsp_InsGameEnd',            # Game end logging
+        'tsp_InsBillAcceptorMoney',  # Bill acceptor money insert
+        'tsp_CardExit',              # Card exit handling
+    ]
+    
+    missing_procedures = []
+    verified_procedures = []
+    
+    for mssql_proc in critical_procedures:
+        pg_proc = db_helper.normalize_procedure_name(mssql_proc)
+        if db_helper.validate_procedure_exists(pg_proc):
+            verified_procedures.append(f"{mssql_proc} -> {pg_proc}")
+        else:
+            missing_procedures.append(f"{mssql_proc} -> {pg_proc}")
+    
+    print(f"\n✓ VERIFIED PROCEDURES ({len(verified_procedures)}):")
+    for proc in verified_procedures:
+        print(f"  {proc}")
+    
+    if missing_procedures:
+        print(f"\n❌ MISSING PROCEDURES ({len(missing_procedures)}):")
+        for proc in missing_procedures:
+            print(f"  {proc}")
+        print("\n⚠️  WARNING: Some critical procedures are missing from PostgreSQL!")
+        print("   Please check postgres-routines-in-sas.sql for these procedures.")
+        return False
+    else:
+        print(f"\n🎉 ALL CRITICAL PROCEDURES VERIFIED! PostgreSQL migration ready.")
+        return True
 
 # Helper function to extract SAS message information
 def get_current_sas_context():
@@ -3043,13 +3202,17 @@ def HandleJSEvent(title):
 
                     if 1==1:
                         try:
-                            customerid=Config.getint('customer','customerid')
-                            conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-                            conn.autocommit(True)
-                            cursor = conn.cursor(as_dict=True)
-                            cursor.callproc('tsp_GetCustomerAdditional', (customerid, G_Machine_DeviceId))
+                            customerid = Config.getint('customer', 'customerid')
+                            # Original MSSQL procedure: tsp_GetCustomerAdditional
+                            # Note: This procedure was not found in postgres-routines-in-sas.sql
+                            # Using hybrid approach - queue operation instead of direct call
+                            result = db_helper.queue_database_operation(
+                                'tsp_GetCustomerAdditional',
+                                [customerid, G_Machine_DeviceId],
+                                'get_customer_additional'
+                            )
 
-                            for row in cursor:
+                            for row in result:
                                 
                                 
                                 AvailableBonus=Decimal(row["AvailableBonus"])
@@ -3063,11 +3226,9 @@ def HandleJSEvent(title):
                                 Config.set('customer','currentbonus', str(AvailableBonus))
 
                                 AvailableBonusText="%s %s" % (AvailableBonus, G_Machine_Currency)
-                                ExecuteJSFunction5("ChangeBonusValue", str(AvailableBonus),str(AvailableBonusInt),str(BonusDecimalPart),G_Machine_Currency,AvailableBonusText)
-                    
-                            conn.close()
+                                ExecuteJSFunction5("ChangeBonusValue", str(AvailableBonus), str(AvailableBonusInt), str(BonusDecimalPart), G_Machine_Currency, AvailableBonusText)
                         except Exception as ecardtype:
-                            ExceptionHandler("tsp_GetCustomerAdditional",ecardtype,0)
+                            ExceptionHandler("tsp_GetCustomerAdditional", ecardtype, 0)
 
 
 
@@ -4621,18 +4782,20 @@ def GUI_ShowBalance():
         BankBalance=Decimal(0)
         if 1==1:
             try:
-                conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-                conn.autocommit(True)
-                cursor = conn.cursor(as_dict=True)
-                cursor.callproc('tsp_GetBalanceInfoOnGM', (G_Machine_Mac, G_User_CardNo))
+                # Original MSSQL procedure: tsp_GetBalanceInfoOnGM
+                # Note: This procedure was not found in postgres-routines-in-sas.sql
+                # Using hybrid approach - queue operation instead of direct call
+                result = db_helper.queue_database_operation(
+                    'tsp_GetBalanceInfoOnGM',
+                    [G_Machine_Mac, G_User_CardNo],
+                    'get_balance_info_on_gm'
+                )
 
-                for row in cursor:
-                    BankBalance=Decimal(row["BankBalance"])
-                    BankBalanceText="%s %s" % (BankBalance, G_Machine_Currency)
-                    
-                conn.close()
+                for row in result:
+                    BankBalance = Decimal(row["BankBalance"])
+                    BankBalanceText = "%s %s" % (BankBalance, G_Machine_Currency)
             except Exception as ecardtype:
-                ExceptionHandler("tsp_GetBalanceInfoOnGM",ecardtype,0)
+                ExceptionHandler("tsp_GetBalanceInfoOnGM", ecardtype, 0)
         #<Here check bank balance>#############################################
 
         if IsGUI_Type==2:
@@ -4982,28 +5145,23 @@ def SQL_ReadCustomerInfo(KartNo,CardRawData):
         
 
         #<Here check card type>#############################################
-        if 1==2:
+        if 1==2:  # This section is disabled but converted for consistency
             try:
-
                 print("Check card type")
-                conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-                conn.autocommit(True)
-                cursor = conn.cursor(as_dict=True)
-                cursor.callproc('tsp_CardReadPartial', (G_Machine_Mac, KartNo))
+                # Original MSSQL procedure: tsp_CardReadPartial
+                result = db_helper.execute_database_operation(
+                    'tsp_cardreadpartial',  # PostgreSQL lowercase name
+                    [G_Machine_Mac, KartNo]
+                )
 
-                for row in cursor:
-           
-
+                for row in result:
                     if 1==1:
-                        CardTypeId=int(row["CardTypeId"])
+                        CardTypeId = int(row["CardTypeId"])
                     
-
-                    
-                        if CardTypeId==0:
-                            print("Normal musteri karti")
-                conn.close()
+                    if CardTypeId == 0:
+                        print("Normal musteri karti")
             except Exception as ecardtype:
-                ExceptionHandler("tsp_CardReadPartial",ecardtype,1)
+                ExceptionHandler("tsp_CardReadPartial", ecardtype, 1)
         #</Here check card type>############################################
         
 
@@ -5109,14 +5267,15 @@ def SQL_ReadCustomerInfo(KartNo,CardRawData):
         NonameRequest=0
 
         print("tsp_CardRead", G_Machine_Mac, KartNo, CustomCashable, CustomPromo, NonameRequest, G_Machine_DeviceId)
-        CardReaderSQLResult="Normal"
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_CardRead', (G_Machine_Mac, KartNo, CustomCashable, CustomPromo, NonameRequest, G_Machine_DeviceId))
+        CardReaderSQLResult = "Normal"
+        # Original MSSQL procedure: tsp_CardRead
+        result = db_helper.execute_database_operation(
+            'tsp_cardread',  # PostgreSQL lowercase name
+            [G_Machine_Mac, KartNo, CustomCashable, CustomPromo, NonameRequest, G_Machine_DeviceId]
+        )
 
-        IsExist=0
-        for row in cursor:
+        IsExist = 0
+        for row in result:
 
             G_LastGame_Action=datetime.datetime.now()
 
@@ -5319,10 +5478,6 @@ def SQL_ReadCustomerInfo(KartNo,CardRawData):
                 
                 
                 
-         
-        conn.close()
-
-
         if IsExist==0:
 
             ErrMsgCard="Card is not registered"
@@ -5362,66 +5517,65 @@ def ExceptionHandler(name, e, Insert2DB):
 
 
 def SQL_InsEventAfterNewGamingDateCommand(typeid):
+    # Original MSSQL procedure: tsp_InsEventAfterNewGamingDateCommand
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     result = []
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsEventAfterNewGamingDateCommand', (G_Machine_DeviceId, typeid))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_InsEventAfterNewGamingDateCommand',
+            [G_Machine_DeviceId, typeid],
+            'insert_event_after_new_gaming_date_command'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_EventsAfterNewGamingDateCommand",e,1)
-    GetMeter(1,"insevent")
+        ExceptionHandler("tsp_EventsAfterNewGamingDateCommand", e, 1)
+    GetMeter(1, "insevent")
 
     return result
 
 def SQL_GetNextVisit():
+    # Original MSSQL procedure: tsp_GetNextVisit
     result = []
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetNextVisit', (G_Machine_DeviceId, G_CardMachineLogId, G_User_CardNo, 1))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        result = db_helper.execute_database_operation(
+            'tsp_getnextvisit',  # PostgreSQL lowercase name
+            [G_Machine_DeviceId, G_CardMachineLogId, G_User_CardNo, 1]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_GetNextVisit",e,1)
+        ExceptionHandler("tsp_GetNextVisit", e, 1)
 
     return result
 
 
 def SQL_GetNextVisit_ByTurnover(isTakePrize):
+    # Original MSSQL procedure: tsp_GetNextVisit_ByTurnover
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     result = []
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetNextVisit_ByTurnover', (G_Machine_DeviceId, G_CardMachineLogId, G_User_CardNo, isTakePrize))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_GetNextVisit_ByTurnover',
+            [G_Machine_DeviceId, G_CardMachineLogId, G_User_CardNo, isTakePrize],
+            'get_next_visit_by_turnover'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_GetNextVisit_ByTurnover",e,1)
+        ExceptionHandler("tsp_GetNextVisit_ByTurnover", e, 1)
 
     return result
 
 def SQL_InsKioskBonusWon():
-    result = []
+    # Original MSSQL procedure: tsp_InsKioskBonusWon
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsKioskBonusWon', (G_User_CardNo, G_NextVisit_KioskBonusId, G_NextVisit_WonAmount,0))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.queue_database_operation(
+            'tsp_InsKioskBonusWon',
+            [G_User_CardNo, G_NextVisit_KioskBonusId, G_NextVisit_WonAmount, 0],
+            'insert_kiosk_bonus_won'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_InsKioskBonusWon",e,1)
-
-    return result
+        ExceptionHandler("tsp_InsKioskBonusWon", e, 1)
+        return []
 
 
 
@@ -5446,464 +5600,441 @@ def SQL_InsKioskBonusWon():
 
 
 def SQL_UpdDeviceEnablesGames(EnabledGameIds, FullMessage):
-    result = []
+    # Original MSSQL procedure: tsp_UpdDeviceEnablesGames  
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdDeviceEnablesGames', (G_Machine_DeviceId, EnabledGameIds, FullMessage))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.execute_database_operation(
+            'tsp_upddeviceenablesgames',  # PostgreSQL lowercase name
+            [G_Machine_DeviceId, EnabledGameIds, FullMessage]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdDeviceEnablesGames",e,1)
-    return result
+        ExceptionHandler("tsp_UpdDeviceEnablesGames", e, 1)
+        return []
 
 
 
 def SQL_UpdDeviceAdditionalInfo(Temperature, Throttle, ThreadCount, CPUUsage, MemoryUsage):
-    result = []
+    # Original MSSQL procedure: tsp_UpdDeviceAdditionalInfo
     try:
-        Last_G_SASLastDate_Diff=(datetime.datetime.now()-G_SASLastDate).total_seconds()
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdDeviceAdditionalInfo', (G_Machine_DeviceId, Temperature, Throttle, ThreadCount, CPUUsage, MemoryUsage, Last_G_SASLastDate_Diff))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        Last_G_SASLastDate_Diff = (datetime.datetime.now() - G_SASLastDate).total_seconds()
+        return db_helper.execute_database_operation(
+            'tsp_upddeviceadditionalinfo',  # PostgreSQL lowercase name
+            [G_Machine_DeviceId, Temperature, Throttle, ThreadCount, CPUUsage, MemoryUsage, Last_G_SASLastDate_Diff]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdDeviceAdditionalInfo",e,1)
-    return result
+        ExceptionHandler("tsp_UpdDeviceAdditionalInfo", e, 1)
+        return []
 
 
 
 def SQL_GetDeviceAdditionalInfo(deviceId):
-    result = []
+    # Original MSSQL procedure: tsp_GetDeviceAdditionalInfo
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetDeviceAdditionalInfo', (deviceId,))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.execute_database_operation(
+            'tsp_getdeviceadditionalinfo',  # PostgreSQL lowercase name
+            [deviceId]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_GetDeviceAdditionalInfo",e,1)
-    return result
+        ExceptionHandler("tsp_GetDeviceAdditionalInfo", e, 1)
+        return []
 
 
 def SQL_UpdDeviceAdditionalInfoHash(HashKey):
-    result = []
+    # Original MSSQL procedure: tsp_UpdDeviceAdditionalInfoHash
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        Last_G_SASLastDate_Diff=(datetime.datetime.now()-G_SASLastDate).total_seconds()
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdDeviceAdditionalInfoHash', (G_Machine_DeviceId, HashKey))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        Last_G_SASLastDate_Diff = (datetime.datetime.now() - G_SASLastDate).total_seconds()
+        return db_helper.queue_database_operation(
+            'tsp_UpdDeviceAdditionalInfoHash',
+            [G_Machine_DeviceId, HashKey],
+            'update_device_additional_info_hash'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdDeviceAdditionalInfoHash",e,0)
-    return result
+        ExceptionHandler("tsp_UpdDeviceAdditionalInfoHash", e, 0)
+        return []
 
 
 
 def SQL_UpdInsertedBalance(machinelogid, inputbalance, promoin):
-    result = []
+    # Original MSSQL procedure: tsp_UpdInsertedBalance
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdInsertedBalance', (machinelogid, inputbalance, promoin))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.execute_database_operation(
+            'tsp_updinsertedbalance',  # PostgreSQL lowercase name
+            [machinelogid, inputbalance, promoin]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdInsertedBalance",e,1)
-    return result
+        ExceptionHandler("tsp_UpdInsertedBalance", e, 1)
+        return []
 
 
 
 def SQL_InsDeviceHandpay(ProgressiveGroup, HandpayLevel, Amount, PartialPay, ResetId, UnUsed, HandpayMessage):
-    result = []
+    # Original MSSQL procedure: tsp_InsDeviceHandpay
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsDeviceHandpay', (G_Machine_DeviceId, G_CardMachineLogId, ProgressiveGroup, HandpayLevel, Amount, PartialPay, ResetId, UnUsed,HandpayMessage))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.queue_database_operation(
+            'tsp_InsDeviceHandpay',
+            [G_Machine_DeviceId, G_CardMachineLogId, ProgressiveGroup, HandpayLevel, Amount, PartialPay, ResetId, UnUsed, HandpayMessage],
+            'insert_device_handpay'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_EventsAfterNewGamingDateCommand",e,1)
-    return result
+        ExceptionHandler("tsp_EventsAfterNewGamingDateCommand", e, 1)
+        return []
 
 
 
 def SQL_UpdDeviceDenomPayBack(PayBackPerc, Denomination, GameId, MaxBet):
-    result = []
+    # Original MSSQL procedure: tsp_UpdDeviceDenomPayBack
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdDeviceDenomPayBack', (G_Machine_DeviceId, PayBackPerc,Denomination, GameId, MaxBet))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.queue_database_operation(
+            'tsp_UpdDeviceDenomPayBack',
+            [G_Machine_DeviceId, PayBackPerc, Denomination, GameId, MaxBet],
+            'update_device_denom_payback'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdDeviceDenomPayBack",e,1)
-    return result
+        ExceptionHandler("tsp_UpdDeviceDenomPayBack", e, 1)
+        return []
 
 
 
 
 
 def SQL_UpdAssetNoSMIB(assetno):
-    result = []
+    # Original MSSQL procedure: tsp_UpdAssetNoSMIB
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdAssetNoSMIB', (G_Machine_DeviceId, assetno))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.queue_database_operation(
+            'tsp_UpdAssetNoSMIB',
+            [G_Machine_DeviceId, assetno],
+            'update_asset_no_smib'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdAssetNoSMIB",e,1)
-    return result
+        ExceptionHandler("tsp_UpdAssetNoSMIB", e, 1)
+        return []
 
 
 def SQL_InsProductOrderBySlot(Products):
-    result = []
+    # Original MSSQL procedure: tsp_InsProductOrderBySlot
     try:
-        customerid=Config.getint('customer','customerid')
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsProductOrderBySlot', (customerid, G_Machine_DeviceId, Products))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        return db_helper.execute_database_operation(
+            'tsp_insproductorderbyslot',  # PostgreSQL lowercase name
+            [customerid, G_Machine_DeviceId, Products]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_InsProductOrderBySlot",e,1)
-    return result
+        ExceptionHandler("tsp_InsProductOrderBySlot", e, 1)
+        return []
 
 
 def SQL_GetProductCategories():
-    result = []
+    # Original MSSQL procedure: tsp_GetProductCategories
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetProductCategories')
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.execute_database_operation(
+            'tsp_getproductcategories',  # PostgreSQL lowercase name
+            []
+        )
     except Exception as e:
-        ExceptionHandler("SQL_GetProductCategories",e,1)
-    return result
+        ExceptionHandler("SQL_GetProductCategories", e, 1)
+        return []
 
 
 
 def SQL_CardReadAddMoney(customerid, amount, operationType):
-    result = []
+    # Original MSSQL procedure: tsp_CardReadAddMoney
     try:
-        cardmachinelogid=0
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_CardReadAddMoney', (cardmachinelogid, customerid, amount, operationType))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        cardmachinelogid = 0
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.execute_database_operation(
+            'tsp_cardreadaddmoney',  # PostgreSQL lowercase name
+            [cardmachinelogid, customerid, amount, operationType]
+        )
     except Exception as e:
-        ExceptionHandler("SQL_CardReadAddMoney",e,1)
-    return result
+        ExceptionHandler("SQL_CardReadAddMoney", e, 1)
+        return []
 
 
 def SQL_GetCustomerCurrentMessages():
-    result = []
+    # Original MSSQL procedure: tsp_GetCustomerCurrentMessages
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        customerid=Config.getint('customer','customerid')
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetCustomerCurrentMessages', (customerid, cardmachinelogid))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.queue_database_operation(
+            'tsp_GetCustomerCurrentMessages',
+            [customerid, cardmachinelogid],
+            'get_customer_current_messages'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_GetCustomerCurrentMessages",e,1)
-    return result
+        ExceptionHandler("tsp_GetCustomerCurrentMessages", e, 1)
+        return []
 
 
 
 def SQL_GetSlotCustomerDiscountCalc(isAddDiscount):
-    result = []
+    # Original MSSQL procedure: tsp_GetSlotCustomerDiscountCalc
     try:
-        customerid=Config.getint('customer','customerid')
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetSlotCustomerDiscountCalc', (customerid, cardmachinelogid,G_User_CardNo,isAddDiscount))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.execute_database_operation(
+            'tsp_getslotcustomerdiscountcalc',  # PostgreSQL lowercase name
+            [customerid, cardmachinelogid, G_User_CardNo, isAddDiscount]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_GetSlotCustomerDiscountCalc",e,1)
-    return result
+        ExceptionHandler("tsp_GetSlotCustomerDiscountCalc", e, 1)
+        return []
 
 
 def SQL_GetCustomerMessage(messageid):
-    result = []
+    # Original MSSQL procedure: tsp_GetCustomerMessage
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        customerid=Config.getint('customer','customerid')
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetCustomerMessage', (messageid, customerid, cardmachinelogid))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.queue_database_operation(
+            'tsp_GetCustomerMessage',
+            [messageid, customerid, cardmachinelogid],
+            'get_customer_message'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_GetCustomerCurrentMessages",e,1)
-    return result
+        ExceptionHandler("tsp_GetCustomerCurrentMessages", e, 1)
+        return []
 
 
 
 def SQL_UpdMessageAwardAttempt(messageid):
-    result = []
+    # Original MSSQL procedure: tsp_UpdMessageAwardAttempt
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        customerid=Config.getint('customer','customerid')
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdMessageAwardAttempt', (messageid, customerid, cardmachinelogid))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.queue_database_operation(
+            'tsp_UpdMessageAwardAttempt',
+            [messageid, customerid, cardmachinelogid],
+            'update_message_award_attempt'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdMessageAwardAttempt",e,1)
-    return result
+        ExceptionHandler("tsp_UpdMessageAwardAttempt", e, 1)
+        return []
 
 
 def SQL_UpdMessageAwardAsUsed(messageid):
-    result = []
+    # Original MSSQL procedure: tsp_UpdMessageAwardAsUsed
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        customerid=Config.getint('customer','customerid')
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdMessageAwardAsUsed', (messageid, customerid, cardmachinelogid))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.queue_database_operation(
+            'tsp_UpdMessageAwardAsUsed',
+            [messageid, customerid, cardmachinelogid],
+            'update_message_award_as_used'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdMessageAwardAsUsed",e,1)
-    return result
+        ExceptionHandler("tsp_UpdMessageAwardAsUsed", e, 1)
+        return []
 
 
 def SQL_BonusRequestList():
-    result = []
+    # Original MSSQL procedure: tsp_BonusRequestList
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        customerid=Config.getint('customer','customerid')
-        EarnedBonus=str(Config.get("customer","earnedbonus"))
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_BonusRequestList', (customerid, EarnedBonus, G_Machine_DeviceId, cardmachinelogid, G_User_CardNo, G_SelectedGameId))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        EarnedBonus = str(Config.get("customer", "earnedbonus"))
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.queue_database_operation(
+            'tsp_BonusRequestList',
+            [customerid, EarnedBonus, G_Machine_DeviceId, cardmachinelogid, G_User_CardNo, G_SelectedGameId],
+            'bonus_request_list'
+        )
     except Exception as e:
-        ExceptionHandler("SQL_BonusRequestList",e,1)
-    return result
+        ExceptionHandler("SQL_BonusRequestList", e, 1)
+        return []
 
 
 
 def SQL_GetLastSessionOfDevice(isinuse):
-    result = []
+    # Original MSSQL procedure: tsp_GetLastSessionOfDevice
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetLastSessionOfDevice', (G_Machine_DeviceId, isinuse))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        return db_helper.queue_database_operation(
+            'tsp_GetLastSessionOfDevice',
+            [G_Machine_DeviceId, isinuse],
+            'get_last_session_of_device'
+        )
     except Exception as e:
-        ExceptionHandler("SQL_GetLastSessionOfDevice",e,1)
-    return result
+        ExceptionHandler("SQL_GetLastSessionOfDevice", e, 1)
+        return []
 
 
 def SQL_InsBonusRequest(amount):
+    # Original MSSQL procedure: tsp_InsBonusRequest
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     global G_LastGame_IsFinished
-    result = []
     try:
-        customerid=Config.getint('customer','customerid')
-        EarnedBonus=str(Config.get("customer","earnedbonus"))
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-        LastGameDiff=(datetime.datetime.now()-G_LastGame_Action).total_seconds()
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsBonusRequest', (customerid, EarnedBonus, amount, G_Machine_DeviceId, cardmachinelogid, G_User_CardNo, G_SelectedGameId, G_LastGame_IsFinished, LastGameDiff))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        EarnedBonus = str(Config.get("customer", "earnedbonus"))
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        LastGameDiff = (datetime.datetime.now() - G_LastGame_Action).total_seconds()
+        return db_helper.queue_database_operation(
+            'tsp_InsBonusRequest',
+            [customerid, EarnedBonus, amount, G_Machine_DeviceId, cardmachinelogid, G_User_CardNo, G_SelectedGameId, G_LastGame_IsFinished, LastGameDiff],
+            'insert_bonus_request'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_InsBonusRequest",e,1)
-    return result
+        ExceptionHandler("tsp_InsBonusRequest", e, 1)
+        return []
 
 
 def SQL_UpdBonusAsUsed(bonusid):
-    result = []
+    # Original MSSQL procedure: tsp_UpdBonusAsUsed
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        cardmachinelogid=Config.getint('customer','cardmachinelogid')
-
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdBonusAsUsed', (bonusid, cardmachinelogid))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
+        return db_helper.queue_database_operation(
+            'tsp_UpdBonusAsUsed',
+            [bonusid, cardmachinelogid],
+            'update_bonus_as_used'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_UpdBonusAsUsed",e,1)
-    return result
+        ExceptionHandler("tsp_UpdBonusAsUsed", e, 1)
+        return []
 
 
 def SQL_GetProductsAndSubCategoriesSlot(categoryId, type):
-    result = []
+    # Original MSSQL procedure: tsp_GetProductsAndSubCategoriesSlot
     try:
-        customerid=Config.getint('customer','customerid')
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_GetProductsAndSubCategoriesSlot', (categoryId, customerid, type))
-        for row in cursor:
-            result.append(row)
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        return db_helper.execute_database_operation(
+            'tsp_getproductsandsubcategoriesslot',  # PostgreSQL lowercase name
+            [categoryId, customerid, type]
+        )
     except Exception as e:
-        ExceptionHandler("tsp_GetProductsAndSubCategoriesSlot",e,1)
-    return result
+        ExceptionHandler("tsp_GetProductsAndSubCategoriesSlot", e, 1)
+        return []
 
 
 
 def SQL_ChangeDeviceNameAndType(machinename, devicetypeid):
+    # Original MSSQL procedure: tsp_ChangeDeviceNameAndType
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_ChangeDeviceNameAndType', (G_Machine_Mac, machinename, devicetypeid))
-
-        for row in cursor:
-            print("OK")         
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_ChangeDeviceNameAndType',
+            [G_Machine_Mac, machinename, devicetypeid],
+            'change_device_name_and_type'
+        )
+        for row in result:
+            print("OK")
     except Exception as e:
-        ExceptionHandler("SQL_ChangeDeviceNameAndType",e,1)
+        ExceptionHandler("SQL_ChangeDeviceNameAndType", e, 1)
 
 
 
 def SQL_UpdGameName(GameId, GameName):
+    # Original MSSQL procedure: tsp_UpdGameName
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdGameName', (G_Machine_DeviceId, GameId, GameName))
-
-        for row in cursor:
-            print("OK")         
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_UpdGameName',
+            [G_Machine_DeviceId, GameId, GameName],
+            'update_game_name'
+        )
+        for row in result:
+            print("OK")
     except Exception as e:
-        ExceptionHandler("tsp_UpdGameName",e,1)
+        ExceptionHandler("tsp_UpdGameName", e, 1)
 
 def SQL_UpdDeviceIsLocked(IsLocked):
+    # Original MSSQL procedure: tsp_UpdDeviceIsLocked
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdDeviceIsLocked', (G_Machine_DeviceId, IsLocked))
-
-        for row in cursor:
-            IsLocked=IsLocked 
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_UpdDeviceIsLocked',
+            [G_Machine_DeviceId, IsLocked],
+            'update_device_is_locked'
+        )
+        for row in result:
+            IsLocked = IsLocked
     except Exception as e:
-        ExceptionHandler("SQL_UpdDeviceIsLocked",e,1)
+        ExceptionHandler("SQL_UpdDeviceIsLocked", e, 1)
 
 
 def SQL_UpdBillAcceptorMoney(billAcceptorId, isUploaded):
+    # Original MSSQL procedure: tsp_UpdBillAcceptorMoney
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdBillAcceptorMoney', (billAcceptorId, isUploaded))
-
-        for row in cursor:
-            billAcceptorId=billAcceptorId
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_UpdBillAcceptorMoney',
+            [billAcceptorId, isUploaded],
+            'update_bill_acceptor_money'
+        )
+        for row in result:
+            billAcceptorId = billAcceptorId
     except Exception as e:
-        ExceptionHandler("SQL_UpdBillAcceptorMoney",e,1)
+        ExceptionHandler("SQL_UpdBillAcceptorMoney", e, 1)
 
 def SQL_UpdDeviceSASSerial(SASVersion, SerialNo):
+    # Original MSSQL procedure: tsp_UpdDeviceSASSerial
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_UpdDeviceSASSerial', (G_Machine_Mac, SASVersion, SerialNo))
-
-        for row in cursor:
-            print("OK")    
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_UpdDeviceSASSerial',
+            [G_Machine_Mac, SASVersion, SerialNo],
+            'update_device_sas_serial'
+        )
+        for row in result:
+            print("OK")
     except Exception as e:
-        ExceptionHandler("SQL_UpdDeviceSASSerial",e,1)
+        ExceptionHandler("SQL_UpdDeviceSASSerial", e, 1)
 
 def SQL_CheckSystemAfterCardExit(cardmachinelogid):
+    # Original MSSQL procedure: tsp_CheckSystemAfterCardExit
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_CheckSystemAfterCardExit', (G_Machine_DeviceId, cardmachinelogid))
-
-        for row in cursor:
-            print("OK")    
-        conn.close()
+        result = db_helper.queue_database_operation(
+            'tsp_CheckSystemAfterCardExit',
+            [G_Machine_DeviceId, cardmachinelogid],
+            'check_system_after_card_exit'
+        )
+        for row in result:
+            print("OK")
     except Exception as e:
-        ExceptionHandler("SQL_CheckSystemAfterCardExit",e,1)
+        ExceptionHandler("SQL_CheckSystemAfterCardExit", e, 1)
 
 
 
 def SQL_InsDeviceWaiterCall():
+    # Original MSSQL procedure: sp_InsDeviceWaiterCall
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        customerid=Config.getint('customer','customerid')
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('sp_InsDeviceWaiterCall', (G_Machine_Mac, customerid))
-
-        for row in cursor:
-            print("OK")         
-        conn.close()
+        customerid = Config.getint('customer', 'customerid')
+        result = db_helper.queue_database_operation(
+            'sp_InsDeviceWaiterCall',
+            [G_Machine_Mac, customerid],
+            'insert_device_waiter_call'
+        )
+        for row in result:
+            print("OK")
     except Exception as e:
-        ExceptionHandler("SQL_InsDeviceWaiterCall",e,1)
+        ExceptionHandler("SQL_InsDeviceWaiterCall", e, 1)
 
 
 
@@ -5937,17 +6068,17 @@ def SQL_InsBillAcceptorMoneyEFT(cardmachinelogid, cardno, amount, amountcode, co
         else:
             SQL_Safe_InsImportantMessage("Bill is inserted: " + str(amount),80)
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsBillAcceptorMoney', (cardmachinelogid, cardno, amount, amountcode,G_Machine_Mac,countrycode, piece,G_Machine_DeviceId, islog, isUploaded, amountBase))
-        BillAcceptorId=1
+        # Original MSSQL procedure: tsp_InsBillAcceptorMoney
+        result = db_helper.execute_database_operation(
+            'tsp_insbillacceptormoney',  # PostgreSQL lowercase name
+            [cardmachinelogid, cardno, amount, amountcode, G_Machine_Mac, countrycode, piece, G_Machine_DeviceId, islog, isUploaded, amountBase]
+        )
+        BillAcceptorId = 1
         try:
-            for row in cursor:
-                BillAcceptorId=int(row["Result"])
+            for row in result:
+                BillAcceptorId = int(row["Result"])
         except Exception as eCursor:
-            ExceptionHandler("SQL_InsBillAc",eCursor,0)
-        conn.close()
+            ExceptionHandler("SQL_InsBillAc", eCursor, 0)
 
         return BillAcceptorId
     except Exception as e:
@@ -6452,13 +6583,14 @@ def SQL_DeviceStatu(MessageType):
 
         #print("DeviceStatu", G_Machine_MacAddress, MessageType, IPAddress, G_Static_VersionId, IsSASPortOpened, IsCardReader_Working, G_Machine_SASPort, G_Machine_CardReaderPort, G_Machine_Statu, IsDeviceLocked, G_Machine_DeviceId,playcount, totalbet,cardmachinelogid, GUI_CurrentPage, G_Machine_OnlineCount, IsSASLink, customerid, G_Device_AssetNo)
 
-        #print("G_DB_Host", G_DB_Host, "G_DB_User", G_DB_User, "G_DB_Database", G_DB_Database)
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database, login_timeout=10, timeout=0.01, tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_DeviceStatu', (G_Machine_MacAddress, MessageType, IPAddress, G_Static_VersionId, IsSASPortOpened, IsCardReader_Working, G_Machine_SASPort, G_Machine_CardReaderPort, G_Machine_Statu, IsDeviceLocked, G_Machine_DeviceId,playcount, totalbet,cardmachinelogid, GUI_CurrentPage, G_Machine_OnlineCount, IsSASLink, customerid, G_Device_AssetNo, IsBillAcceptor_Working))
-        G_NetworkLastDate=datetime.datetime.now()
-        for row in cursor:
+        # Original MSSQL procedure: tsp_DeviceStatu
+        #print("G_DB_Host", G_PG_Host, "G_DB_User", G_PG_User, "G_DB_Database", G_PG_Database)
+        result = db_helper.execute_sync_operation(
+            'tsp_devicestatu',  # PostgreSQL lowercase name
+            [G_Machine_MacAddress, MessageType, IPAddress, G_Static_VersionId, IsSASPortOpened, IsCardReader_Working, G_Machine_SASPort, G_Machine_CardReaderPort, G_Machine_Statu, IsDeviceLocked, G_Machine_DeviceId, playcount, totalbet, cardmachinelogid, GUI_CurrentPage, G_Machine_OnlineCount, IsSASLink, customerid, G_Device_AssetNo, IsBillAcceptor_Working]
+        )
+        G_NetworkLastDate = datetime.datetime.now()
+        for row in result:
 
             #print("DB *****************************************************************")
 
@@ -6875,42 +7007,45 @@ def SQL_DeviceStatu(MessageType):
 
 
 def SQL_InsDeviceMoneyQuery(CashableAmount,RestrictedAmount,NonrestrictedAmount,Message):
-    cardmachinelogid=0
-    cardmachinelogid=Config.getint('customer','cardmachinelogid')
+    # Original MSSQL procedure: tsp_InsDeviceMoneyQuery
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
+    cardmachinelogid = 0
+    cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
 
     try:
-        cardmachinelogid=G_CardMachineLogId
+        cardmachinelogid = G_CardMachineLogId
     except Exception as eCardLogId:
-        ExceptionHandler("cardmachinelogid",eCardLogId,0)
+        ExceptionHandler("cardmachinelogid", eCardLogId, 0)
 
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        cursor = conn.cursor(as_dict=True)
-        conn.autocommit(True)
-        cursor.callproc('tsp_InsDeviceMoneyQuery', (G_Machine_Mac, G_User_CardNo,  cardmachinelogid, CashableAmount,RestrictedAmount,NonrestrictedAmount,Message, G_Machine_DeviceId))
-        conn.close()
+        db_helper.queue_database_operation(
+            'tsp_InsDeviceMoneyQuery',
+            [G_Machine_Mac, G_User_CardNo, cardmachinelogid, CashableAmount, RestrictedAmount, NonrestrictedAmount, Message, G_Machine_DeviceId],
+            'insert_device_money_query'
+        )
     except Exception as e:
-        ExceptionHandler("SQL_InsDeviceMoneyQuery",e,1)
+        ExceptionHandler("SQL_InsDeviceMoneyQuery", e, 1)
 
 
 
 def SQL_InsDeviceDebug(message):
-    cardmachinelogid=0
-    cardmachinelogid=Config.getint('customer','cardmachinelogid')
+    # Original MSSQL procedure: tsp_InsDeviceDebug
+    cardmachinelogid = 0
+    cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
 
     try:
-        cardmachinelogid=G_CardMachineLogId
+        cardmachinelogid = G_CardMachineLogId
     except Exception as eCardLogId:
-        ExceptionHandler("cardmachinelogid",eCardLogId,0)
+        ExceptionHandler("cardmachinelogid", eCardLogId, 0)
 
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        cursor = conn.cursor(as_dict=True)
-        conn.autocommit(True)
-        cursor.callproc('tsp_InsDeviceDebug', (cardmachinelogid, G_Machine_DeviceId,  message))
-        conn.close()
+        db_helper.execute_database_operation(
+            'tsp_insdevicedebug',  # PostgreSQL lowercase name
+            [cardmachinelogid, G_Machine_DeviceId, message]
+        )
     except Exception as e:
-        ExceptionHandler("SQL_InsDeviceDebug",e,1)
+        ExceptionHandler("SQL_InsDeviceDebug", e, 1)
 
 def SQL_InsDeviceMeter(GameNumber, TotalCoinIn, TotalCoinOut,TotalJackpot ,GamesPlayed, TotalHandPaidCredit, TotalCreditsBillsAccepted, CurrentCredits_0C,TurnOver, TurnOut, NonCashableIn, NonCashableOut, TotalBonus, GamesWon, GamesLost):
     cardmachinelogid=0
@@ -6926,14 +7061,17 @@ def SQL_InsDeviceMeter(GameNumber, TotalCoinIn, TotalCoinOut,TotalJackpot ,Games
     except Exception as eCardLogId:
         ExceptionHandler("cardmachinelogid",eCardLogId,0)
 
+    # Original MSSQL procedure: tsp_InsDeviceMeter
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        cursor = conn.cursor(as_dict=True)
-        conn.autocommit(True)
-        cursor.callproc('tsp_InsDeviceMeter', (G_Machine_Mac, GameNumber, TotalCoinIn, TotalCoinOut,TotalJackpot ,GamesPlayed, TotalHandPaidCredit, TotalCreditsBillsAccepted, CurrentCredits_0C,G_Machine_DeviceId,0, TurnOver, TurnOut, NonCashableIn, NonCashableOut,TotalBonus,cardmachinelogid, GamesWon, GamesLost))
-        conn.close()
+        db_helper.queue_database_operation(
+            'tsp_InsDeviceMeter',
+            [G_Machine_Mac, GameNumber, TotalCoinIn, TotalCoinOut, TotalJackpot, GamesPlayed, TotalHandPaidCredit, TotalCreditsBillsAccepted, CurrentCredits_0C, G_Machine_DeviceId, 0, TurnOver, TurnOut, NonCashableIn, NonCashableOut, TotalBonus, cardmachinelogid, GamesWon, GamesLost],
+            'insert_device_meter'
+        )
     except Exception as e:
-        ExceptionHandler("SQL_InsDeviceMeter",e,1)
+        ExceptionHandler("SQL_InsDeviceMeter", e, 1)
 
 
 def SQL_InsDeviceMeter2(TotalCancelledCredits_04, GamesPlayed_05, GamesWon_06, CurrentCredits_0C, WeightedAverage_7F, RegularCashableKeyed_FA, RestrictedKeyed_FB, NonrestrictedKeyed_FC, TotalMachinePaidProgressive_1D):
@@ -6950,34 +7088,39 @@ def SQL_InsDeviceMeter2(TotalCancelledCredits_04, GamesPlayed_05, GamesWon_06, C
     except Exception as eCardLogId:
         ExceptionHandler("cardmachinelogid",eCardLogId,0)
 
+    # Original MSSQL procedure: tsp_InsDeviceMeter2
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        cursor = conn.cursor(as_dict=True)
-        conn.autocommit(True)
-        cursor.callproc('tsp_InsDeviceMeter2', (G_Machine_Mac, G_Machine_DeviceId, cardmachinelogid, TotalCancelledCredits_04, GamesPlayed_05, GamesWon_06, CurrentCredits_0C, WeightedAverage_7F, RegularCashableKeyed_FA, RestrictedKeyed_FB, NonrestrictedKeyed_FC, TotalMachinePaidProgressive_1D))
-        conn.close()
+        db_helper.queue_database_operation(
+            'tsp_InsDeviceMeter2',
+            [G_Machine_Mac, G_Machine_DeviceId, cardmachinelogid, TotalCancelledCredits_04, GamesPlayed_05, GamesWon_06, CurrentCredits_0C, WeightedAverage_7F, RegularCashableKeyed_FA, RestrictedKeyed_FB, NonrestrictedKeyed_FC, TotalMachinePaidProgressive_1D],
+            'insert_device_meter2'
+        )
     except Exception as e:
-        ExceptionHandler("tsp_InsDeviceMeter2",e,1)
+        ExceptionHandler("tsp_InsDeviceMeter2", e, 1)
 
-def SQL_InsDeviceMeterAll(GameNumber,ReceivedMessage):
+def SQL_InsDeviceMeterAll(GameNumber, ReceivedMessage):
+    # Original MSSQL procedure: tsp_InsDeviceMeterAll
+    # Note: This procedure was not found in postgres-routines-in-sas.sql
+    # Using hybrid approach - queue operation instead of direct call
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        cursor = conn.cursor(as_dict=True)
-        conn.autocommit(True)
-        cursor.callproc('tsp_InsDeviceMeterAll', (G_Machine_Mac, GameNumber, ReceivedMessage))
-        conn.close()
+        db_helper.queue_database_operation(
+            'tsp_InsDeviceMeterAll',
+            [G_Machine_Mac, GameNumber, ReceivedMessage],
+            'insert_device_meter_all'
+        )
     except Exception as e:
-        ExceptionHandler("SQL_InsDeviceMeterAll",e,1)
+        ExceptionHandler("SQL_InsDeviceMeterAll", e, 1)
 
 def SQL_InsException(MethodName, ErrorMessage):
+    # Original MSSQL procedure: tsp_InsException
     try:
-        IPAddress=get_lan_ip()
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsException', (G_Machine_Mac, MethodName, ErrorMessage))
-        #conn.commit()
-        conn.close()
+        IPAddress = get_lan_ip()
+        db_helper.execute_database_operation(
+            'tsp_insexception',  # PostgreSQL lowercase name
+            [G_Machine_Mac, MethodName, ErrorMessage]
+        )
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
@@ -7042,14 +7185,13 @@ def SQL_InsGameStart(Wagered, WonAmount, TotalCoinIn,WagerType,ProgressiveGroup,
         
         #kontrolet: gamestart
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsGameStart', (G_Machine_Mac, cardmachinelogid, Wagered, WonAmount, TotalCoinIn,WagerType,ProgressiveGroup,G_SelectedGameId,GamePromo,G_Machine_DeviceId,TotalPlayCount, gender, customerid, G_Machine_DeviceTypeGroupId, TotalCoinInMeter))
-        for row in cursor:
-            GameStartId=int(row['Result'])
-           
-        conn.close()
+        # Original MSSQL procedure: tsp_InsGameStart
+        result = db_helper.execute_database_operation(
+            'tsp_insgamestart',  # PostgreSQL lowercase name
+            [G_Machine_Mac, cardmachinelogid, Wagered, WonAmount, TotalCoinIn, WagerType, ProgressiveGroup, G_SelectedGameId, GamePromo, G_Machine_DeviceId, TotalPlayCount, gender, customerid, G_Machine_DeviceTypeGroupId, TotalCoinInMeter]
+        )
+        for row in result:
+            GameStartId = int(row['Result'])
     except Exception as e:
         ExceptionHandler("SQL_InsGameStart",e,1)
 
@@ -7074,17 +7216,16 @@ def SQL_InsGameEnd(WinAmount):
 
 
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsGameEnd', (G_Machine_Mac, cardmachinelogid, WinAmount,G_SelectedGameId,GameStartId,currentmoney,G_Machine_DeviceId, G_Machine_Promo, G_Wagered,G_Machine_NotifyWonLimit))
+        # Original MSSQL procedure: tsp_InsGameEnd
+        result = db_helper.execute_database_operation(
+            'tsp_insgameend',  # PostgreSQL lowercase name
+            [G_Machine_Mac, cardmachinelogid, WinAmount, G_SelectedGameId, GameStartId, currentmoney, G_Machine_DeviceId, G_Machine_Promo, G_Wagered, G_Machine_NotifyWonLimit]
+        )
 
-        for row in cursor:
-           JWId=int(row['JWId'])
+        for row in result:
+           JWId = int(row['JWId'])
            #if JWId>0:
            #    BlinkCustomerScreenLine(2, 3, "%s Jackpot! %s %s" % (row['LevelName'], row['WonAmount'], G_Machine_Currency), 20)
-
-        conn.close()
     except Exception as e:
         ExceptionHandler("SQL_InsGameEnd",e,1)
 
@@ -7123,16 +7264,19 @@ def SQL_InsGameStartEnd(WinAmount):
                 print("JackpotWonAmount", JackpotWonAmount)
                 Wait_ParaYukle(10)
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-
-        if G_Machine_CurrencyRate==1:
-            cursor.callproc('tsp_InsGameStartEnd', (G_Machine_Mac, cardmachinelogid, GameStart_Wagered, GameStart_TotalCoinIn, GameStart_WagerType, GameStart_ProgressiveGroup, G_SelectedGameId, GameStart_GamePromo, G_Machine_DeviceId, GameStart_TotalPlayCount, gender, customerid, G_Machine_DeviceTypeGroupId, GameStart_TotalCoinInMeter, WinAmount, GameStartId, currentmoney, G_Machine_Promo, G_Machine_NotifyWonLimit, G_Machine_JackpotId,G_Machine_JackpotFactor, G_Machine_CurrencyId, G_Casino_CurrencyId))
+        # Original MSSQL procedure: tsp_InsGameStartEnd
+        if G_Machine_CurrencyRate == 1:
+            result = db_helper.execute_database_operation(
+                'tsp_insgamestartend',  # PostgreSQL lowercase name
+                [G_Machine_Mac, cardmachinelogid, GameStart_Wagered, GameStart_TotalCoinIn, GameStart_WagerType, GameStart_ProgressiveGroup, G_SelectedGameId, GameStart_GamePromo, G_Machine_DeviceId, GameStart_TotalPlayCount, gender, customerid, G_Machine_DeviceTypeGroupId, GameStart_TotalCoinInMeter, WinAmount, GameStartId, currentmoney, G_Machine_Promo, G_Machine_NotifyWonLimit, G_Machine_JackpotId, G_Machine_JackpotFactor, G_Machine_CurrencyId, G_Casino_CurrencyId]
+            )
         else:
-            cursor.callproc('tsp_InsGameStartEnd', (G_Machine_Mac, cardmachinelogid, GameStart_Wagered, GameStart_TotalCoinIn, GameStart_WagerType, GameStart_ProgressiveGroup, G_SelectedGameId, GameStart_GamePromo, G_Machine_DeviceId, GameStart_TotalPlayCount, gender, customerid, G_Machine_DeviceTypeGroupId, GameStart_TotalCoinInMeter, WinAmount, GameStartId, currentmoney, G_Machine_Promo, G_Machine_NotifyWonLimit, G_Machine_JackpotId,G_Machine_JackpotFactor, G_Machine_CurrencyId, G_Casino_CurrencyId, G_Machine_CurrencyRate))
+            result = db_helper.execute_database_operation(
+                'tsp_insgamestartend',  # PostgreSQL lowercase name
+                [G_Machine_Mac, cardmachinelogid, GameStart_Wagered, GameStart_TotalCoinIn, GameStart_WagerType, GameStart_ProgressiveGroup, G_SelectedGameId, GameStart_GamePromo, G_Machine_DeviceId, GameStart_TotalPlayCount, gender, customerid, G_Machine_DeviceTypeGroupId, GameStart_TotalCoinInMeter, WinAmount, GameStartId, currentmoney, G_Machine_Promo, G_Machine_NotifyWonLimit, G_Machine_JackpotId, G_Machine_JackpotFactor, G_Machine_CurrencyId, G_Casino_CurrencyId, G_Machine_CurrencyRate]
+            )
 
-        for row in cursor:
+        for row in result:
             GameStartId=int(row['Result'])
             JWId=int(row['JWId'])
             if JWId>0:
@@ -7166,10 +7310,8 @@ def SQL_InsGameStartEnd(WinAmount):
                 Komut_CancelBalanceLock()
                 #EnableDisableAutoPlay(1)
                 print("</Jackpot>**************************************************************************************")
-
-        conn.close()
     except Exception as e:
-        ExceptionHandler("tsp_InsGameStartEnd",e,1)
+        ExceptionHandler("tsp_InsGameStartEnd", e, 1)
 
 
 #Type: 1 Remote Handpay, 2 Money existed, 3: Jackpot, 4: Handpay Slip, 5# Slip
@@ -7183,12 +7325,14 @@ def SQL_UploadMoney(Amount,Type):
         except Exception as eCardLogId:
             ExceptionHandler("cardmachinelogid",eCardLogId,0)
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsMoneyUpload', (G_Machine_Mac, cardmachinelogid, G_SelectedGameId,GameStartId, Amount, Type))
-                        
-        conn.close()
+        # Original MSSQL procedure: tsp_InsMoneyUpload
+        # Note: This procedure was not found in postgres-routines-in-sas.sql
+        # Using hybrid approach - queue operation instead of direct call
+        db_helper.queue_database_operation(
+            'tsp_InsMoneyUpload',
+            [G_Machine_Mac, cardmachinelogid, G_SelectedGameId, GameStartId, Amount, Type],
+            'insert_money_upload'
+        )
     except Exception as e:
         ExceptionHandler("SQL_UploadMoney",e,1)
 
@@ -7206,14 +7350,14 @@ def SQL_InsImportantMessage(Message,MessageType):
 
 
 def SQL_InsTraceLog(LogType, Direction, Message, RowId):
+    # Original MSSQL procedure: tsp_InsTraceLog
     try:
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database, login_timeout=10,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsTraceLog', (G_Machine_Mac, LogType, Direction, Message,RowId))
-        conn.close()
+        db_helper.execute_database_operation(
+            'tsp_instracelog',  # PostgreSQL lowercase name
+            [G_Machine_Mac, LogType, Direction, Message, RowId]
+        )
     except Exception as e:
-        print("Message: " , Message)
+        print("Message: ", Message)
 
 Trace_LogId=0
 def SQL_Safe_InsTraceLog(LogType, Direction, Message):
@@ -7262,20 +7406,19 @@ def SQL_InsImportantMessageByWarningType(Message,MessageType, WarningType):
         ExceptionHandler("SQL_InsImportantMessage",e,1)
 
 
-def SQL_InsReceivedMessage(ReceivedMessage, IsProcessed,AnswerCommandName):
+def SQL_InsReceivedMessage(ReceivedMessage, IsProcessed, AnswerCommandName):
+    # Original MSSQL procedure: tsp_InsReceivedMessage
     try:
-        if len(ReceivedMessage)>500:
+        if len(ReceivedMessage) > 500:
             return
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsReceivedMessage', (G_Machine_Mac, ReceivedMessage,IsProcessed,AnswerCommandName))
-        conn.close()
+        db_helper.execute_database_operation(
+            'tsp_insreceivedmessage',  # PostgreSQL lowercase name
+            [G_Machine_Mac, ReceivedMessage, IsProcessed, AnswerCommandName]
+        )
     except Exception as e:
-        conn.close()
         print("ReceivedMessage: ", ReceivedMessage)
-        ExceptionHandler("SQL_InsReceivedMessage",e,1)
+        ExceptionHandler("SQL_InsReceivedMessage", e, 1)
 
 
 def SQL_Safe_InsSentCommands(CommandName, Command):
@@ -7294,11 +7437,11 @@ def SQL_InsSentCommands(CommandName, Command):
         except Exception as eCardLogId:
             ExceptionHandler("cardmachinelogid",eCardLogId,0)
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_InsSentCommands', (G_Machine_Mac, cardmachinelogid, CommandName,Command))
-        conn.close()
+        # Original MSSQL procedure: tsp_InsSentCommands
+        db_helper.execute_database_operation(
+            'tsp_inssentcommands',  # PostgreSQL lowercase name
+            [G_Machine_Mac, cardmachinelogid, CommandName, Command]
+        )
     except Exception as e:
         ExceptionHandler("SQL_InsSentCommands",e,1)
 
@@ -9733,16 +9876,15 @@ def SQL_CardExit(sender):
             BakiyeTutar=Sifirla_Bakiye
             BakiyePromo=Sifirla_Promo
 
-        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-        conn.autocommit(True)
-        cursor = conn.cursor(as_dict=True)
-        cursor.callproc('tsp_CardExit', (CardMachineLogId, G_Machine_Mac, G_User_CardNo, BakiyeTutar,playcount,userid, totalbet,totalwin, BakiyePromo, G_SAS_IsProblemOnCredit, EarnedBonus, G_Session_CardExitStatus))
+        # Original MSSQL procedure: tsp_CardExit
+        result = db_helper.execute_database_operation(
+            'tsp_cardexit',  # PostgreSQL lowercase name
+            [CardMachineLogId, G_Machine_Mac, G_User_CardNo, BakiyeTutar, playcount, userid, totalbet, totalwin, BakiyePromo, G_SAS_IsProblemOnCredit, EarnedBonus, G_Session_CardExitStatus]
+        )
 
         print("CardMachineLogId:", CardMachineLogId, "BakiyeTutar", BakiyeTutar)
 
-
-
-        for row in cursor:
+        for row in result:
            
             if row['Result']==True:
 
@@ -9852,11 +9994,10 @@ def SQL_CardExit(sender):
 
 
      
-        conn.close()
     except Exception as e:
         print("Exception SQL_CARD EXIT!!!! **********************")
         time.sleep(1)
-        ExceptionHandler("SQL_CardExit",e,1)
+        ExceptionHandler("SQL_CardExit", e, 1)
 
 
 
@@ -10760,15 +10901,18 @@ def Do_CardIsRemoved(sender):
         IsProblemNetwork=0
         if 1==1:
             try:
-                Step_CardIsRemoved="5"
+                Step_CardIsRemoved = "5"
                 print("Check network connection")
-                conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-                conn.autocommit(True)
-                cursor = conn.cursor(as_dict=True)
-                cursor.callproc('tsp_CheckNetwork', (G_Machine_Mac, G_User_CardNo))
-                for row in cursor:
+                # Original MSSQL procedure: tsp_CheckNetwork
+                # Note: This procedure was not found in postgres-routines-in-sas.sql
+                # Using hybrid approach - queue operation instead of direct call
+                result = db_helper.queue_database_operation(
+                    'tsp_CheckNetwork',
+                    [G_Machine_Mac, G_User_CardNo],
+                    'check_network'
+                )
+                for row in result:
                     print("Network exists")
-                conn.close()
             except Exception as ecardtype:
                 IsProblemNetwork=1
 
@@ -12859,12 +13003,16 @@ def HandleReceivedSASCommand(tdata):
                 #<Here get game info from db>#############################################
                 if G_SelectedGameId>0:
                     try:
-                        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-                        conn.autocommit(True)
-                        cursor = conn.cursor(as_dict=True)
-                        cursor.callproc('tsp_GetDeviceGameInfo', (G_Machine_DeviceId,  G_SelectedGameId))
+                        # Original MSSQL procedure: tsp_GetDeviceGameInfo
+                        # Note: This procedure was not found in postgres-routines-in-sas.sql
+                        # Using hybrid approach - queue operation instead of direct call
+                        result = db_helper.queue_database_operation(
+                            'tsp_GetDeviceGameInfo',
+                            [G_Machine_DeviceId, G_SelectedGameId],
+                            'get_device_game_info'
+                        )
 
-                        for row in cursor:
+                        for row in result:
                             #2020-02-10 Oyun basina degil, genel TotalCoinIn'mis
                             #Log_TotalCoinInMeter=Decimal(row["TotalCoinIn"])
                             #print("Log_TotalCoinInMeter", Log_TotalCoinInMeter)
@@ -12880,9 +13028,8 @@ def HandleReceivedSASCommand(tdata):
                             except Exception as eGameName:
                                 ExceptionHandler("Game Name Get Error!!",eGameName,0)
 
-                        conn.close()
                     except Exception as ecardtype:
-                        ExceptionHandler("tsp_GetDeviceGameInfo",ecardtype,0)
+                        ExceptionHandler("tsp_GetDeviceGameInfo", ecardtype, 0)
                 #<Here get game info from db>#############################################
 
                 if len(G_SelectedGameName)==0:

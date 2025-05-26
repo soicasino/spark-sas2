@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title></title>
+    <script src="gauge.min.js" type="text/javascript"></script>
+    <script src="jquery-3.4.1.min.js" type="text/javascript"></script>
+    
+</head>
+<body>
+
+
+
+
+    <style>
+        body {
+            margin: 0px;
+            font-family: Arial;
+            /*            cursor:none;*/
+        }
+
+
+
+        .table {
+            display: table;
+            width: 100%;
+        }
+
+        .row {
+            display: table-row;
+        }
+
+        .cell {
+            display: table-cell;
+            width: 50%;
+        }
+
+        .BonusButtons {
+            width: 140px;
+            height: 75px;
+            font-size: 25px;
+            font-weight: bold;
+            margin: 10px;
+        }
+
+        .LeftButtons {
+            vertical-align: middle;
+            font-size: 23px;
+            font-weight: bold;
+            display: table-cell;
+        }
+
+        .BarButtons {
+            height: 50px;
+            font-size: 20px;
+            margin: 10px;
+        }
+            .BarButtons:hover {
+                background-color:red;
+            }
+
+        .button20 {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 17px;
+            text-align: center;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 20px;
+            margin: 4px 2px;
+            border-radius: 12px;
+        }
+
+
+
+        img {
+            border: 0px;
+            /*Selection*/
+            -moz-user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -o-user-select: none;
+        }
+
+        div {
+            /*Selection*/
+            -moz-user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -o-user-select: none;
+        }
+
+        a {
+            color: white;
+        }
+
+        div {
+            color: black;
+        }
+
+            div.MainScreen {
+                width: 1280px;
+                height: 480px;
+            }
+
+        input.button {
+            width: 68px;
+            height: 50px;
+            font-size: 20px;
+        }
+
+            input.button:hover {
+                background-color: Gray;
+            }
+
+        .button20Top {
+            background-color: #4CAF50;
+            border: none;
+            color: black;
+            padding: 5px;
+            text-align: center;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 18px;
+            margin: 4px 2px;
+            border-radius: 12px;
+        }
+
+
+        .Corner20 {
+            border: none;
+            color: black;
+            padding: 5px;
+            border-radius: 12px;
+            background-color: #dbb2a4;
+            height: 340px;
+            overflow: hidden;
+        }
+
+        .divContentHeader {
+            width: 200px;
+            background-color: #fcb03c;
+            overflow: hidden;
+            border: none;
+            color: #7f571b;
+            padding: 7px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            font-size: 16px;
+            font-weight: 900
+        }
+
+
+        .borderBalance {
+            border: 2px solid #FFFFFF;
+            border-radius: 13px;
+            width: 440px;
+            height: 75px;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 75px;
+            font-size: 30px;
+            font-weight: bold;
+            margin: auto;
+        }
+
+        .borderMessageAward{
+            border: 2px solid #FFFFFF;
+            border-radius: 13px;
+            width: 440px;
+            height: 75px;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 75px;
+            font-size: 30px;
+            font-weight: bold;
+            margin: auto;
+            background-color:#fcb03c; color:#7f571b; border-color:#fcb03c; font-size:23px;
+        }
+
+
+        .borderBonus {
+            border: 2px solid #FFFFFF;
+            border-radius: 13px;
+            width: 440px;
+            height: 75px;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 75px;
+            font-size: 30px;
+            font-weight: bold;
+            margin: auto;
+            position: relative;
+        }
+
+            .borderBonus:after {
+                border-radius: 13px;
+                content: '\A';
+                position: absolute;
+                background: black;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                width: 90%;
+            }
+    </style>
+
+
+
+
+
+
+
+    <style>
+        .rTable {
+            display: table;
+        }
+
+        .rTableRow {
+            display: table-row;
+        }
+
+        .rTableHeading {
+            display: table-header-group;
+        }
+
+        .rTableBody {
+            display: table-row-group;
+        }
+
+        .rTableFoot {
+            display: table-footer-group;
+        }
+
+        .rTableCell, .rTableHead {
+            display: table-cell;
+        }
+    </style>
+
+
+
+    <div id="divCustomerLine1" style="display:none">
+    </div>
+    <div id="divCustomerLine3" style="display:none">
+    </div>
+
+    <div id="divMainAll" style="width:1280px; height: 480px; overflow: hidden; background-image: url(background1280.png);   ">
+
+
+        <div id="divStatuSASNetwork" style="position:absolute; margin-top:400px; margin-left:1150px; font-size:25px; font-weight:bold; text-align:right; color:white;">
+        </div>
+
+
+        <div id="divNotify"
+             class="MainScreen"
+             style="display:none;">
+
+            <div style="background:black; position:absolute; height:480px; width:1280px; opacity: 0.9;">
+
+            </div>
+
+            <div style="position:absolute; width:1280px;">
+                <div>
+                    <center style="padding-top: 20px;">
+                        <span id="divNotifyHeader" style="font-size:50px; font-weight:bold; color:white; ">Header</span>
+                    </center>
+                </div>
+
+
+                <div style="padding-left:30px; padding-right:30px; padding-top:15px;">
+                    <span id="divNotifyText" style="font-size:44px; color:white; ">Text</span>
+                </div>
+
+
+
+
+                <center style="padding-top:20px;" id="divNotifyOkCancel">
+                    <input type="button" value="OKAY" class="button" onclick="ShowNotifyButtonClick('ok')" style="background-color:green; width:200px; color:white;" />
+                    &nbsp;
+                    <input type="button" value="CANCEL" class="button" onclick="ShowNotifyButtonClick('cancel')" style="background-color:red; width:200px; color:white;" />
+                </center>
+
+                <center style="padding-top:20px;" id="divNotifyOk">
+                    <input type="button" value="OKAY" class="button" onclick="ShowNotifyButtonClick('ok')" style="background-color:green; width:200px; color:white;" />
+                </center>
+
+            </div>
+
+
+
+        </div>
+
+        <div id="divVideo"
+             class="MainScreen"
+             style=" background-color:black; display:none;">
+            <center>
+
+                <video id="videoElement" autoplay loop muted class="video" loop width="800" height="400">
+                    <source src="" type="video/mp4">
+                </video>
+
+
+            </center>
+        </div>
+
+
+
+        <div id="divAdmin"
+             class="MainScreen"
+             style="display: none">
+
+
+
+
+            <center style="padding-top: 90px;">
+                <span id="divAdminIPAddress" style="font-size:36px;">127.0.0.1</span>
+                <br />
+
+
+                <input type="button" value="LOCK" onclick="PythonCustomerNavIconClicked('divAdminLock')" style="width:150px; height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="UNLOCK" onclick="PythonCustomerNavIconClicked('divAdminUnLock')" style="width:150px; height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="RESTART" onclick="PythonCustomerNavIconClicked('divAdminRestart')" style="width:150px; height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="JACKPOT TEST" onclick="PythonCustomerNavIconClicked('divAdminJackpot')" style=" height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="EFT +1" onclick="PythonCustomerNavIconClicked('divAdminEFTPlus')" style=" height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="EFT -1" onclick="PythonCustomerNavIconClicked('divAdminEFTMinus')" style=" height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="EFT Log" onclick="PythonCustomerNavIconClicked('divAdminEFTRequest')" style=" height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="EFT Balance" onclick="PythonCustomerNavIconClicked('divAdminEFTBalance')" style=" height:65px; font-size:20px;" />
+                <br /><br />
+
+                <input type="button" value="HANDPAY" onclick="PythonCustomerNavIconClicked('divAdminHandpay')" style="width:150px; height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="BALANCE" onclick="PythonCustomerNavIconClicked('divAdminBalance')" style="width:150px; height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="METER" onclick="PythonCustomerNavIconClicked('divAdminMeter')" style="width:150px; height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="BONUS TEST" onclick="PythonCustomerNavIconClicked('divAdminBonus')" style="width:150px; height:65px; font-size:20px;" />
+
+
+                <br /><br />
+                <input type="button" value="CONFIGURATION" onclick="PythonCustomerNavIconClicked('divAdminConfiguration')" style="height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="Read Asset" onclick="PythonCustomerNavIconClicked('divAdminReadAsset')" style=" height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="Register SAS" onclick="PythonCustomerNavIconClicked('divAdminRegisterSAS')" style="height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="RAM CLEAR" onclick="PythonCustomerNavIconClicked('divAdminRamClear')" style="height:65px; font-size:20px;" />
+                &nbsp;&nbsp;<input type="button" value="CLEAR CREDIT ON EGM" onclick="PythonCustomerNavIconClicked('divAdminClearBalance')" style="height:65px; font-size:20px;" />
+
+                <br /><br />
+
+                <center>
+                    <input type="button" value="EXIT" onclick="CloseDiv('divAdmin'); PythonCustomerNavIconClicked('divAdminExit')" style="width:250px; height:65px; font-size:20px;" />
+                </center>
+
+            </center>
+
+
+            <div style="">
+                <div id="divAdminStatu" style="font-size:35px;"></div>
+            </div>
+
+
+        </div>
+
+
+
+
+        <div id="divKeyboard"
+             class="MainScreen"
+             style="display:none;">
+
+            <div>
+                <center style="padding-top: 20px;">
+                    <span id="divKeyboardQuestion" style="font-size:25px; ">Please type your password</span>
+                </center>
+            </div>
+
+            <center style="padding-top: 20px;">
+                <div id="divKeyboardAnswer" style="background-color:white; border: 5px dashed solid black; color:black; width:150px; font-size:20px; padding:5px; min-height:23px;">1</div>
+            </center>
+
+            <center style="padding-top: 20px;">
+                <table border="0" cellpadding="0">
+                    <tr>
+                        <td><input type="button" value="7" class="button" onclick="OnKeyboardClick('7')" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="8" class="button" onclick="OnKeyboardClick('8')" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="9" class="button" onclick="OnKeyboardClick('9')" /></td>
+                    </tr>
+                    <tr>
+                        <td style="height:10px;"></td>
+                    </tr>
+                    <tr>
+                        <td><input type="button" value="4" class="button" onclick="OnKeyboardClick('4')" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="5" class="button" onclick="OnKeyboardClick('5')" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="6" class="button" onclick="OnKeyboardClick('6')" /></td>
+                    </tr>
+                    <tr>
+                        <td style="height:10px;"></td>
+                    </tr>
+                    <tr>
+                        <td><input type="button" value="1" class="button" onclick="OnKeyboardClick('1')" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="2" class="button" onclick="OnKeyboardClick('2')" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="3" class="button" onclick="OnKeyboardClick('3')" /></td>
+                    </tr>
+                    <tr>
+                        <td style="height:10px;"></td>
+                    </tr>
+                    <tr>
+                        <td><input type="button" value="" class="button" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="0" class="button" onclick="OnKeyboardClick('0')" /></td>
+                        <td style="width:20px"></td>
+                        <td><input type="button" value="DEL" class="button" onclick="OnKeyboardClick('del')" /></td>
+                    </tr>
+
+                </table>
+            </center>
+
+
+            <center style="padding-top:20px;">
+                <input type="button" value="OKAY" class="button" onclick="OnKeyboardClick('ok')" style="background-color:green; width:200px; color:white;" />
+                &nbsp;
+                <input type="button" value="CANCEL" class="button" onclick="OnKeyboardClick('cancel')" style="background-color:red; width:200px; color:white;" />
+            </center>
+
+
+
+        </div>
+
+        <div id="divMain" style="width:1280px; height: 480px; overflow: hidden; background-image: url(background_idle1280.png);  ">
+            <div id="divMachineName" style="position:relative; font-size:45px; margin-top:10px; text-align:right; margin-right:35px; color:white;">###</div>
+            <div id="divMainStatu" style="position:relative;font-size:45px; margin-top:320px; color:white;">....</div>
+            <div id="StatuText" style="position:relative;font-size:45px; margin-top:300px; display:none; color:white;">....</div>
+        </div>
+
+
+
+        <div id="divCustomer" style="display:none">
+
+            <div id="divBarProducts" style="display:none; position:absolute;">
+
+                <script>
+                    function RefreshPage(sender) {
+                        location.reload();
+
+                    }
+
+                    function ProductSelected(productId, productName, categoryName, fullCategoryName) {
+
+                        var DoIsAdd = true;
+                        for (var i = 0; i < ProductBasket.length; i++) {
+                            var Row = ProductBasket[i];
+                            if (Row[0] == productId) {
+                                DoIsAdd = false;
+                            }
+                        }
+                        if (DoIsAdd) {
+                            ProductBasket.push([productId, productName, categoryName, fullCategoryName]);
+                        }
+
+                        PythonCustomerNavIconClicked("divBarClicked|Product|" + productId);
+
+                        CreateBasketIcon();
+
+                    }
+
+
+                    function OnBarButtonClicked(sender) {
+
+                        //alert("OnBarButtonClicked Sender: " + sender + " BarActiveScreen: " + BarActiveScreen);
+
+                        if (sender == "Back") {
+
+                            if (BarActiveScreen == 0) {
+
+                                ReturnCustomerPage('divBar');
+
+                            } else {
+                                BarActiveScreen = 0;
+                                //CategorySelected(BarLastCategoryId);
+                                SendData2Python('divBar');
+                            }
+
+                        }
+
+                        if (sender == "Show") {
+                            document.getElementById("divBarProducts").style.display = "";
+                        }
+
+                        if (sender == "Cancel") {
+                            document.getElementById("divBarProducts").style.display = "none";
+                        }
+                        if (sender == "Confirm") {
+
+                            if (ProductBasket.length == 0) {
+                                return;
+                            }
+
+                            var ProductList = "";
+
+                            for (var i = 0; i < ProductBasket.length; i++) {
+                                var Row = ProductBasket[i];
+                                if (ProductList.length > 0) {
+                                    ProductList += ">";
+                                }
+                                ProductList += Row[0] + ",1";
+                            }
+                            SendData2Python("divBarOrder|" + ProductList);
+                            document.getElementById("divBarProducts").style.display = "none";
+
+
+                        }
+
+                    }
+
+
+                    function DeleteFromBasket(val) {
+                        for (var i = 0; i < ProductBasket.length; i++) {
+                            if (ProductBasket[i][0] === val) {
+
+                                ProductBasket.splice(i, 1);
+                            }
+
+                        }
+
+                        CreateBasketIcon();
+
+                    }
+
+
+
+
+                    function CreateBasketIcon() {
+                        var HTML = "<table>";
+                        for (var i = 0; i < ProductBasket.length; i++) {
+                            var Row = ProductBasket[i];
+
+                            HTML += "<tr>";
+
+                            HTML += "<td onclick=\"DeleteFromBasket(" + Row[0] + ")\">";
+                            HTML += "<img src='icon_delete1280.png' style='height:30px;width:30px;' onclick=\"DeleteFromBasket(" + Row[0] + ")\" />";
+                            HTML += "</td>";
+
+                            HTML += "<td onclick=\"DeleteFromBasket(" + Row[0] + ")\">";
+                            HTML += "<span style='font-size:29px; color:white'>";
+                            HTML += Row[3] + " " + Row[1];
+                            HTML += "</span>";
+
+                            HTML += "</td>";
+                            HTML += "<tr>";
+
+                        }
+                        HTML += "</table>";
+                        document.getElementById("divBarProductList").innerHTML = HTML;
+
+                        document.getElementById("divBarCount").innerHTML = "ORDER: " + ProductBasket.length;
+                        if (ProductBasket.length == 0) {
+                            document.getElementById("divBarCount").style.display = "none";
+                        } else {
+                            document.getElementById("divBarCount").style.display = "";
+                        }
+
+
+                    }
+                    var BarLastCategoryId = 0;
+                    function CategorySelected(categoryid) {
+                        BarLastCategoryId = categoryid;
+                        BarActiveScreen = 1;
+                        PythonCustomerNavIconClicked("divBarClicked|Category|" + categoryid);
+                    }
+                </script>
+
+                <div style="background:black; position:absolute; height:480px; width:1280px; opacity: 0.9;">
+
+                </div>
+
+
+                <div style="position:absolute; width:1280px;  ">
+                    <center style="font-size:32px; font-weight:bold"><br />ORDER LIST</center>
+
+                    <div id="divBarProductList" style="min-height:210px; margin-left:50px; margin-right:50px; ">
+
+                        Ürün Listesi Burada.
+                    </div>
+
+                    <center>
+
+                        <button class="button20" style="background-color:Red" onclick="OnBarButtonClicked('Cancel')">CANCEL</button>
+                        &nbsp;
+                        <button class="button20" style="background-color:Green; width:150px;" onclick="OnBarButtonClicked('Confirm')">CONFIRM</button>
+
+                    </center>
+
+                </div>
+
+
+
+            </div>
+
+
+            <div style="height:41px;">
+
+
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tbody>
+                        <tr>
+                            <td style="width:200px;">&nbsp;</td>
+                            <td style="width:20px;">&nbsp;</td>
+
+                            <td style="width:auto; ">
+                                <div style="display: table; height: 42px; overflow: hidden;">
+                                    <div id="divCustomerStatu" style="display: table-cell; vertical-align: middle; font-size:25px;">
+                                        -----
+                                    </div>
+                                </div>
+
+                            </td>
+
+
+
+                            <td style="width:30px;">
+                                <div class="button20Top" style="background-color:#dbb2a4; display: table; height: 42px; overflow: hidden;">
+                                    <div id="divMainMachineName" style="display: table-cell; vertical-align: middle; padding-left:10px; padding-right:10px; font-size:35px; ">
+
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="width:40px; "></td>
+                            <td style="">
+
+
+
+
+
+
+                                <div id="divMessagesButton" class="button20Top" style="background-color:#dbb2a4; display: table; height: 42px; overflow: hidden; ">
+
+                                    <script>
+
+                                        $(function () {
+
+
+                                            $("#divMessagesButton").mousedown(function () { // on mousedown
+                                                $(this).css("background-color", "#F00"); // toggle bgColor
+
+                                            });
+
+                                            $("#divMessagesButton").mouseup(function () { // on mousedown
+                                                $(this).css("background-color", "#dbb2a4"); // toggle bgColor
+                                            });
+
+                                        });
+                                    </script>
+                                    <style>
+                                        .make-me-green {
+                                            background-color: #33ff00 !important;
+                                        }
+
+                                        .blink_me {
+                                            animation: blinker 1s linear infinite;
+                                        }
+
+                                        @keyframes blinker {
+                                            50% {
+                                                opacity: 0;
+                                            }
+                                        }
+                                    </style>
+                                    <script>
+                                        function ShowMessageAwardClicked(awardid, messageid) {
+                                            SendData2Python("divMessagesAward|" + awardid + "|" + messageid);
+                                        }
+                                        function ShowMessage(id) {
+                                            SendData2Python("divMessagesShow|" + id);
+                                        }
+                                        function ShowMessagesClicked() {
+                                            //ilyas
+                                            ShowDiv("divMessages");
+                                            SendData2Python("divMessages")
+                                        }
+                                        function ShowHideMessageCountBox(messagecount, texti) {
+                                            if (messagecount == 0) {
+                                                document.getElementById("divMessagesButton").style.display = "none";
+                                            } else {
+                                                document.getElementById("divMessagesButton").style.display = "";
+                                                ChangeText("divMessagesButtonText", texti)
+                                            }
+
+                                        }
+                                    </script>
+
+                                    <div style="display: table-cell; vertical-align: middle;" onclick="ShowMessagesClicked()">
+                                        <table>
+                                            <tr>
+
+                                                <td valign="middle">
+                                                    <img src="icon_messages1280.png" style="width:25px; height:25px;" />
+                                                </td>
+                                                <td valign="middle" class="blink_me" id="divMessagesButtonText">
+                                                    0 MESSAGE
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </div>
+
+
+
+                            </td>
+
+                            <td style="width:40px;"></td>
+
+
+
+
+
+                            <td style="width:400px;">
+                                <div class="button20Top" style="background-color:#dbb2a4; display: table; height: 42px; overflow: hidden;">
+                                    <div style="display: table-cell; vertical-align: middle;">
+                                        <table>
+                                            <tr>
+
+                                                <td valign="middle">
+                                                    <img src="icon_user1280.png" style="width:25px; height:25px;" />
+                                                </td>
+                                                <td id="divCustomerLine2" valign="middle" style="font-size:30px;">
+                                                    USERID
+                                                </td>
+                                            </tr>
+                                        </table>
+
+
+                                    </div>
+                                </div>
+                            </td>
+
+
+
+                        </tr>
+                    </tbody>
+                </table>
+
+
+            </div>
+
+            <div style="height:25px; ">
+
+            </div>
+
+
+
+            <script>
+                function HideElement(elementid) {
+                    document.getElementById(elementid).style.display = "none";
+                }
+
+                function ShowBonusOptions(HTML) {
+                    document.getElementById("divBonusMain").style.display = "none";
+                    document.getElementById("divBonusSelection").style.display = "";
+                    ChangeHTML("divBonusSelectionButtons", HTML);
+
+                }
+
+                function BonusSelected(amount) {
+
+
+                    SendData2Python("divBonusAmount:" + amount);
+
+                }
+
+                function ChangeBonusValue(amountWithDecimal, amountInt, amountOnlyDecimal, currency, amountByText) {
+                    var PercentageOfDecimal = parseInt(100 * parseFloat(amountOnlyDecimal));
+
+                    //alert(amountWithDecimal + " " +  amountInt+ " " +  amountOnlyDecimal+ " " +  currency+ " " +  amountByText + " PercentageOfDecimal:" + PercentageOfDecimal);
+                    //document.getElementById("txtBonusBar").style.width = PercentageOfDecimal + "%";
+
+                    ChangeText("txtBonus", amountInt + " " + currency);
+
+                    var BonusCent = Math.round((amountOnlyDecimal * 10000), 0);
+                    while (BonusCent.toString().length < 4) {
+                        BonusCent = "0" + BonusCent.toString();
+                    }
+
+                    ChangeText("txtBonusCent", "" + BonusCent);
+
+                }
+
+
+
+
+                var gauge = null;
+                var Value = 0;
+                function KadranDegistir(betnumber) {
+                    if (gauge == null)
+                        return;
+
+                    Value++;
+                    gauge.set(betnumber); // set actual value
+                    if (Value == 20)
+                        Value = 0;
+                }
+
+
+                var StaticZones;
+                var Labels;
+                var PercentColors;
+                var BetMaxValue = 0;
+                var MaxPercentage = 0
+                function InitGadgetValues(staticZones, labels, percentColors, betMaxValue, maxPercentage) {
+
+                    /*
+                    alert("staticZones" + staticZones);
+                    alert("labels" + labels);
+                    alert("percentColors" +  percentColors);
+                    */
+
+
+
+                    try {
+                        BetMaxValue = parseFloat(betMaxValue);
+                        MaxPercentage = parseFloat(maxPercentage);
+
+                        StaticZones = eval(staticZones);
+                        //alert("StaticZones-OK" + StaticZones);
+
+                        Labels = eval(labels);
+                        //alert("Labels-OK" +  Labels);
+
+                        PercentColors = eval(percentColors);
+                        //alert("PercentColors-OK" + PercentColors);
+                    } catch (e) {
+                        //alert("PARSE ERROR" + e);
+                    }
+                }
+                function CreateGadgetBonus() {
+                    if (gauge != null)
+                        return;
+
+
+                    var opts = {
+                        angle: 0, // The span of the gauge arc
+                        lineWidth: 0.2, // The line thickness
+                        radiusScale: 1, // Relative radius
+                        pointer: {
+                            length: 0.6, // // Relative to gauge radius
+                            strokeWidth: 0.035, // The thickness
+                            color: '#000000' // Fill color
+                        },
+                        limitMax: false,     // If false, max value increases automatically if value > maxValue
+                        limitMin: false,     // If true, the min value of the gauge will be fixed
+                        colorStart: '#6FADCF',   // Colors
+                        colorStop: '#8FC0DA',    // just experiment with them
+                        strokeColor: '#E0E0E0',  // to see which ones work best for you
+                        generateGradient: true,
+                        highDpiSupport: true,     // High resolution support
+
+
+                        percentColors: PercentColors,     //OKIDOKI
+
+                        /*
+                        staticLabels: {
+                            font: "20px sans-serif",  // Specifies font
+                            labels: Labels,  //OKIDOKI
+                            color: "#000000",  // Optional: Label text color
+                            fractionDigits: 0  // Optional: Numerical precision. 0=round off.
+                        },
+                        */
+                        staticZones: StaticZones, //OKIDOKI
+
+                        strokeStyle: "rgb(80,80,80)", min: 2470, max: 2530, height: 1.3,
+                    };
+                    var target = document.getElementById('foo'); // your canvas element
+                    gauge = new Gauge(target).setOptions(opts); // create sexy gauge!
+                    gauge.maxValue = MaxPercentage; // set max gauge value
+                    gauge.setMinValue(0);  // Prefer setter over gauge.minValue = 0
+                    gauge.animationSpeed = 32; // set animation speed (32 is default value)
+                    gauge.set(0); // set actual value
+
+                }
+
+
+
+                function FillBonusStarsAndBonusValue(_count, _currentindex, betamount, startpercentage, nextpercentage, minwager, maxwager, amountWithDecimal, amountInt, amountOnlyDecimal, currency, amountByText) {
+
+                    try {
+                        ChangeBonusValue(amountWithDecimal, amountInt, amountOnlyDecimal, currency, amountByText);
+                    } catch (e) {
+
+                    }
+                    try {
+                        FillBonusStars(_count, _currentindex, betamount, startpercentage, nextpercentage, minwager, maxwager);
+                    } catch (e) {
+
+                    }
+                }
+                var Prev_GaugeValue = 0;
+                function FillBonusStars(_count, _currentindex, betamount, startpercentage, nextpercentage, minwager, maxwager) {
+                    //FillBonusStars('9','2','0.40','30','60','0.40','1.20')
+                    //0,40      1,20
+                    //0,80
+
+
+
+
+                    try {
+
+                        betamount = parseFloat(betamount);
+                        startpercentage = parseFloat(startpercentage);
+                        nextpercentage = parseFloat(nextpercentage);
+                        minwager = parseFloat(minwager);
+                        maxwager = parseFloat(maxwager);
+
+
+                        var BetDiff = (maxwager - minwager);
+                        if (BetDiff < 1) {
+                            BetDiff = 1;
+                        }
+                        //30 / 0,8          37,5: Her bir kusurat Kurus
+                        var PercantageForEachCredit = (nextpercentage - startpercentage) / BetDiff;//
+                        var newpercentage = startpercentage + (betamount - minwager) * PercantageForEachCredit; //
+
+                        if (newpercentage > nextpercentage) {
+                            newpercentage = nextpercentage;
+                        }
+                        if (newpercentage < startpercentage) {
+                            newpercentage = startpercentage;
+                        }
+
+                        if (newpercentage > MaxPercentage) {
+                            //alert("newpercentage : " + newpercentage + " ==> " + MaxPercentage)
+                        }
+
+
+
+                        GaugeValue = newpercentage;
+
+
+                        if (gauge != null) {
+                            if (Prev_GaugeValue != GaugeValue) {
+                                gauge.set(GaugeValue); // set actual value
+                                Prev_GaugeValue = GaugeValue;
+                            }
+                        }
+
+                    } catch (e) {
+
+                    }
+
+
+                    return;
+
+
+
+
+
+                    var count = parseInt(_count);
+                    var currentindex = parseInt(_currentindex);
+
+                    var HTML = "<center>";
+                    for (var i = 1; i < count; i++) {
+                        if (i <= currentindex) {
+                            HTML += "<img src=\"star_full1280.png\"  style=\"width:50px; height:50px;\" />";
+                        } else {
+                            HTML += "<img src=\"star_empty1280.png\"  style=\"width:50px; height:50px;\" />";
+                        }
+                    }
+                    HTML += "</center>";
+                    document.getElementById("divBonusStars").innerHTML = HTML;
+
+
+
+                }
+
+            </script>
+
+
+
+            <script>
+
+                function SendData2Python(params) {
+                    try {
+                        pywebview.api.DoSomethingFromJavascript(params);
+                    } catch (e) {
+
+                    }
+                }
+
+
+                var BarActiveScreen = 0;
+                var ProductBasket = [];
+                function PythonCustomerNavIconClicked(params) {
+
+
+                    if (params == "divBalance") {
+                        ChangeText("txtCashable", "0");
+                        ChangeText("txtPromo", "0");
+                        ChangeText("txtBank", "0");
+                    }
+
+                    if (params == "divBar") {
+                        BarActiveScreen = 0;
+                        ProductBasket = [];
+                        CreateBasketIcon();
+                        document.getElementById("divBarProducts").style.display = "none";
+                    }
+
+                    SendData2Python(params);
+
+                }
+
+                var CurrentGUI = "";
+                function CustomerNavIconClicked(openDiv) {
+
+                    CurrentGUI = openDiv;
+
+
+
+                    try {
+                        document.getElementById("btnBonus").style.backgroundImage = "";
+                        document.getElementById("btnJackpot").style.backgroundImage = "";
+                        document.getElementById("btnBalance").style.backgroundImage = "";
+                        document.getElementById("btnBar").style.backgroundImage = "";
+                        document.getElementById("btnSettings").style.backgroundImage = "";
+
+                        document.getElementById(openDiv.replace("div", "btn")).style.backgroundImage = "url('btnBackgroundSelected1280.png')";
+
+                    } catch (e) {
+
+                    }
+
+
+                    try {
+                        document.getElementById("divMessages").style.display = "none";
+                    } catch (e) {
+
+                    }
+
+                    try {
+                        document.getElementById("divBonus").style.display = "none";
+                        document.getElementById("divJackpot").style.display = "none";
+                        document.getElementById("divBalance").style.display = "none";
+                        document.getElementById("divBar").style.display = "none";
+                        document.getElementById("divSettings").style.display = "none";
+
+                        //BONUS SELECTION
+                        document.getElementById("divBonusMain").style.display = "";
+                        document.getElementById("divBonusSelection").style.display = "none";
+
+                    } catch (e) {
+
+                    }
+
+
+                    if (openDiv == "divBonus") {
+
+                        setTimeout(function () {
+                            CreateGadgetBonus();
+                        }, 10);
+
+
+                    }
+
+
+                    document.getElementById(openDiv).style.display = "";
+                    PythonCustomerNavIconClicked(openDiv);
+                }
+
+
+
+
+
+                function ReturnCustomerPage(senderDiv) {
+                    CurrentGUI = "divCustomer";
+
+                    try {
+                        document.getElementById(senderDiv).style.display = "none";
+                    } catch (e) {
+
+                    }
+                    ShowDiv("divCustomer");
+                    PythonCustomerNavIconClicked("divCustomer");
+                }
+                function ChangeText(element, val) {
+
+                    if (element == "AllStatus")
+                    {
+                        ChangeText("divMainStatu", val);
+                        ChangeText("divCustomerStatu", val);
+                        ChangeText("divAdminStatu", val);
+                        return;
+                    }
+
+                    try {
+                        document.getElementById(element).innerText = val;
+                    } catch (e) {
+
+                    }
+                }
+
+                function ChangeHTML(element, val) {
+                    try {
+                        document.getElementById(element).innerHTML = val;
+                    } catch (e) {
+
+                    }
+                }
+
+
+                function ShowVideo(deneme) {
+
+                    try {
+                        var aud = document.getElementById("videoElement");
+                        document.getElementById("videoElement").play();
+                        aud.load();
+                        setTimeout(function () {
+                            aud.play();
+                        }, 0);
+
+                    } catch (e) {
+
+                    }
+
+                    document.getElementById("divMain").style.display = "none";
+                    document.getElementById("divCustomer").style.display = "none";
+                    document.getElementById("divVideo").style.display = "";
+
+                    try {
+                        document.getElementById("videoElement").play();
+                    } catch (e) {
+
+                    }
+                }
+
+
+                function CloseVideo() {
+                    var aud = document.getElementById("videoElement");
+                    setTimeout(function () {
+                        aud.stop();
+                    }, 0);
+                    document.getElementById("divVideo").style.display = "none";
+                }
+
+                var IsSentHelloFromPython = 0;
+                function ShowIdleScreen(ekAciklama) {
+                    CloseVideo();
+
+
+
+                    document.getElementById("divMain").style.display = "";
+
+                    CloseAllCustomerAndPages();
+
+                }
+
+
+                function ShowCustomerPage(ekAciklama) {
+
+
+
+                    document.getElementById("divNotify").style.display = "none";
+
+                    document.getElementById("divCustomer").style.display = "";
+                    document.getElementById("divMain").style.display = "none";
+                }
+
+
+
+                var KeyboardSender = "";
+                var KeyboardAnswer = "";
+                function AskQuestion(question, sender) {
+                    CurrentGUI = "divKeyboard";
+                    KeyboardSender = sender;
+
+                    document.getElementById("divKeyboard").style.display = "";
+
+                    KeyboardAnswer = "";
+                    document.getElementById("divKeyboardQuestion").innerText = question;
+                    document.getElementById("divKeyboardAnswer").innerText = "";
+                }
+
+
+                function OnKeyboardClick(key) {
+
+                    var DoUpdateKeyboard = false;
+                    if (key == "ok") {
+
+                        PythonCustomerNavIconClicked("divKeyboard|ok|" + KeyboardAnswer);
+
+                    } else if (key == "cancel") {
+
+                        PythonCustomerNavIconClicked("divKeyboard|cancel|" + KeyboardAnswer);
+                    } else if (key == "del") {
+                        DoUpdateKeyboard = true;
+                        try {
+                            KeyboardAnswer = KeyboardAnswer.substring(0, KeyboardAnswer.length - 1);
+                        } catch (e) {
+
+                        }
+
+                    } else {
+                        DoUpdateKeyboard = true;
+                        KeyboardAnswer += key;
+                    }
+
+                    if (DoUpdateKeyboard) {
+                        document.getElementById("divKeyboardAnswer").innerText = KeyboardAnswer;
+                    }
+
+                }
+
+
+
+                var decodeHTML = function (html) {
+                    var txt = document.createElement('textarea');
+                    txt.innerHTML = html;
+                    return txt.value;
+                };
+
+                function ShowNotify(isShowOKButton, isShowCancelButton, header, text, duration) {
+                    CurrentGUI = "divNotify";
+                    document.getElementById("divNotify").style.display = "";
+
+
+
+
+                    KeyboardAnswer = "";
+                    document.getElementById("divNotifyHeader").innerText = decodeHTML(header);
+                    document.getElementById("divNotifyText").innerHTML = decodeHTML(text);
+
+                    document.getElementById("divNotifyOk").style.display = "none";
+                    document.getElementById("divNotifyOkCancel").style.display = "none";
+
+                    var IsWaitingForButton = false;
+                    if (isShowOKButton == 1 && isShowCancelButton == 0) {
+                        IsWaitingForButton = true;
+                        document.getElementById("divNotifyOk").style.display = "";
+                    }
+
+                    if (isShowOKButton == 1 && isShowCancelButton == 1) {
+                        IsWaitingForButton = true;
+                        document.getElementById("divNotifyOkCancel").style.display = "";
+                    }
+
+                    if (duration > 0) {
+                        setTimeout(function () { ReturnCustomerPage('divNotify'); }, duration * 1000);
+                    }
+
+                }
+
+                function CloseDiv(element) {
+                    document.getElementById(element).style.display = "none";
+                }
+
+
+
+                function ShowDiv(element) {
+                    document.getElementById(element).style.display = "";
+
+                    if (element == "divCustomer" || element == "divMessages") {
+                        document.getElementById("divBonus").style.display = "none";
+                        document.getElementById("divJackpot").style.display = "none";
+                        document.getElementById("divBalance").style.display = "none";
+                        document.getElementById("divBar").style.display = "none";
+                        document.getElementById("divSettings").style.display = "none";
+
+                        if (element != "divMessages") {
+
+                            document.getElementById("divMessages").style.display = "none";
+                        }
+
+                    }
+
+                }
+
+
+
+
+
+                function CloseAllCustomerAndPages() {
+                    document.getElementById("divCustomer").style.display = "none";
+
+                    document.getElementById("divBonus").style.display = "none";
+                    document.getElementById("divJackpot").style.display = "none";
+                    document.getElementById("divBalance").style.display = "none";
+                    document.getElementById("divBar").style.display = "none";
+                    document.getElementById("divSettings").style.display = "none";
+                }
+
+
+                function ShowNotifyButtonClick(sender) {
+                    if (sender == "ok") {
+                        document.getElementById("divNotify").style.display = "none";
+                    }
+                    PythonCustomerNavIconClicked("divNotify" + sender)
+                }
+
+            </script>
+
+            <div>
+                <table width="100%" style="height:414px;" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td style="width:210px" valign="top">
+
+
+
+
+                            <div id="btnBonus" onclick="CustomerNavIconClicked('divBonus')" class="rTable" style="width:100%; height:83px; border-bottom: 1px solid black;">
+
+                                <div class="rTableRow">
+                                    <div class="rTableCell" style="vertical-align: middle; padding-left:20px; padding-right:15px; width:40px;"><img src="btnBonus1280.png" /></div>
+                                    <div class="LeftButtons">BONUS</div>
+                                </div>
+
+                            </div>
+
+
+                            <div id="btnJackpot" onclick="CustomerNavIconClicked('divJackpot')" class="rTable" style="width:100%; height:83px; border-bottom: 1px solid black;">
+
+                                <div class="rTableRow">
+                                    <div class="rTableCell" style="vertical-align: middle; padding-left:20px; padding-right:15px; width:40px;"><img src="btnJackpot1280.png" /></div>
+                                    <div class="LeftButtons">JACKPOT</div>
+                                </div>
+
+                            </div>
+
+
+
+                            <div id="btnBalance" onclick="CustomerNavIconClicked('divBalance')" class="rTable" style="width:100%; height:83px; border-bottom: 1px solid black;">
+
+                                <div class="rTableRow">
+                                    <div class="rTableCell" style="vertical-align: middle; padding-left:20px; padding-right:15px; width:40px;"><img src="btnBalance1280.png" /></div>
+                                    <div class="LeftButtons">BALANCE</div>
+                                </div>
+
+                            </div>
+
+                            <div id="btnBar" onclick="CustomerNavIconClicked('divBar');" class="rTable" style="width:100%; height:83px; border-bottom: 1px solid black;">
+
+                                <div class="rTableRow">
+                                    <div class="rTableCell" style="vertical-align: middle; padding-left:20px; padding-right:15px; width:40px;"><img src="btnBar1280.png" /></div>
+                                    <div class="LeftButtons">BAR</div>
+                                </div>
+
+                            </div>
+                            <div id="btnSettings" onclick="CustomerNavIconClicked('divSettings')" class="rTable" style="width:100%; height:83px; border-bottom: 1px solid black;">
+
+                                <div class="rTableRow">
+                                    <div class="rTableCell" style="vertical-align: middle; padding-left:20px; padding-right:15px; width:40px;"><img src="btnSettings1280.png" /></div>
+                                    <div class="LeftButtons">SETTINGS</div>
+                                </div>
+
+                            </div>
+
+
+
+                        </td>
+                        <td style="width:1px; background-color:black"></td>
+                        <td style="width:35px"></td>
+                        <td style="width:525px">
+
+
+
+                            <div style="display:none">
+                                <center>
+                                    <div class="divContentHeader">
+                                        <center>
+                                            WELCOME
+                                        </center>
+                                    </div>
+                                </center>
+
+                                <div class="Corner20">
+
+
+                                    xxxxxxxxxxx
+
+                                </div>
+
+                            </div>
+
+
+                            <div id="divBonus" style="display:none">
+                                <center>
+                                    <div class="divContentHeader">
+                                        <center>
+                                            BONUS (TEST)
+                                        </center>
+                                    </div>
+                                </center>
+
+                                <div class="Corner20">
+
+
+
+                                    <div id="divBonusMain" style="display:none;">
+
+
+                                        <div id="gauges" style="">
+                                            <center>
+                                                <canvas id="foo" width="450" height="175"></canvas>
+
+                                            </center>
+
+                                        </div>
+
+                                        <div id="divBonusStars"></div>
+
+
+
+                                        <div class="table" style="border: 2px solid #FFFFFF;
+
+                                                line-height: 50px;">
+                                            <div class="row" style="font-size:auto; line-height:normal; font-size:25px;">
+                                                <div class="cell" style="text-align:center; border-right: 2px solid #FFFFFF;
+                                                   font-size:42px; font-weight:bold;
+                                                " id="txtBonus">
+                                                    00000 TRY
+                                                </div>
+                                                <div class="cell" style="text-align:center;
+
+                                                font-size:42px; font-weight:bold;"
+                                                     id="txtBonusCent">
+                                                    0000
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!--<style>
+                                        .progress {
+                                            margin-left: 20px;
+                                            margin-right: 20px;
+                                            position: relative;
+                                            width: 500px;
+                                            border: 3px solid white;
+                                            position: relative;
+                                            padding: 0px;
+                                        }
+
+                                        .bar {
+                                            background-color: darkblue;
+                                            width: 20%;
+                                            height: 75px;
+                                            transition: width 150ms;
+                                        }
+
+                                        .percent {
+                                            position: absolute;
+                                            display: inline-block;
+                                            top: 3px;
+                                            left: 50%;
+                                            transform: translateX(-50%);
+                                            font-size: 45px;
+                                            line-height: 75px;
+                                        }
+                                    </style>
+
+                                    <div class="progress" style="border:0px;">
+                                        <div id="txtBonusBar" class="bar"></div>
+                                        <div class="percent" id="txtBonus">
+                                            314 TRY
+                                        </div>
+
+
+
+
+                                    </div>-->
+
+
+
+
+
+
+                                        <br />
+                                        <div id="aBonusRequestLink" class="borderBalance" style="background-color:#fcb03c; color:#7f571b; border-color:#fcb03c; font-size:23px;" onclick="PythonCustomerNavIconClicked('divBonusRequest')">REDEEM YOUR BONUS</div>
+                                    </div>
+
+
+                                    <div id="divBonusSelection">
+
+                                        <br /><br />
+
+                                        <center>
+                                            <span style="font-size:25px;">
+                                                Please select your bonus
+                                            </span>
+                                        </center>
+
+                                        <br />
+                                        <center>
+
+                                            <div id="divBonusSelectionButtons">
+                                                <input type="button" value="0 TRY" class="BonusButtons" onclick="BonusSelected(0)" />
+                                            </div>
+
+
+                                        </center>
+
+                                    </div>
+
+
+                                </div>
+
+                            </div>
+
+
+
+                            <div id="divJackpot" style="display:none">
+                                <center>
+                                    <div class="divContentHeader">
+                                        <center>
+                                            JACKPOT
+                                        </center>
+                                    </div>
+                                </center>
+
+                                <div class="Corner20">
+                                    <center>
+                                        <br />
+                                        <table style="padding-top:20px;">
+                                            <tr>
+                                                <td style="width:223px;">
+
+
+                                                    <center>
+                                                        <span style="font-size:20px;">Platinum</span>
+                                                        <div id="divJackpotLine4" class="borderBalance" style="width:100%;">0</div>
+                                                    </center>
+
+
+
+
+                                                </td>
+                                                <td style="width:20px;"></td>
+                                                <td style="width:223px;">
+                                                    <center>
+                                                        <span style="font-size:20px;">Gold</span>
+                                                        <div id="divJackpotLine3" class="borderBalance" style="width:100%;">0</div>
+                                                    </center>
+
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="height:35px"></td>
+                                            </tr>
+
+
+                                            <tr>
+                                                <td>
+
+                                                    <center>
+                                                        <span style="font-size:20px;">Silver</span>
+                                                        <div id="divJackpotLine2" class="borderBalance" style="width:100%;">0</div>
+                                                    </center>
+
+
+
+                                                </td>
+                                                <td></td>
+                                                <td>
+                                                    <center>
+                                                        <span style="font-size:20px;">Bronze</span>
+                                                        <div id="divJackpotLine1" class="borderBalance" style="width:100%;">0</div>
+                                                    </center>
+
+                                                </td>
+                                            </tr>
+
+
+                                        </table>
+                                    </center>
+                                </div>
+
+                            </div>
+
+
+
+
+
+
+                            <div id="divBalance" style="display:none">
+                                <center>
+                                    <div class="divContentHeader">
+                                        <center>
+                                            BALANCE
+                                        </center>
+                                    </div>
+                                </center>
+
+                                <div class="Corner20">
+
+
+
+
+
+                                    <br />
+
+                                    <span style="margin-left:55px; font-size:20px; z-index:1; background-color:white; color:black">&nbsp;CASHABLE&nbsp;</span>
+                                    <div id="txtCashable" class="borderBalance" style="margin-top:-15px;">0</div>
+
+
+                                    <br /><br />
+                                    <span style="margin-left:55px; font-size:20px; z-index:1; background-color:white; color:black">&nbsp;PROMO&nbsp;</span>
+                                    <div id="txtPromo" class="borderBalance" style="margin-top:-15px;">0</div>
+
+                                    <br /><br />
+                                    <span style="margin-left:55px; font-size:15px; z-index:1; background-color:white; color:black">&nbsp;BANK&nbsp;</span>
+                                    <div id="txtBank" class="borderBalance" style="margin-top:-15px; height:50px; line-height:50px; ">0</div>
+
+
+
+                                </div>
+
+                            </div>
+
+
+
+
+                            <div id="divBar" style="display:none">
+                                <center>
+                                    <div class="divContentHeader">
+                                        <center>
+                                            BAR
+                                        </center>
+                                    </div>
+                                </center>
+
+                                <div class="Corner20">
+
+
+
+                                    <div id="divBarCategories">
+                                        <div style="vertical-align: middle;">
+                                            <center>
+
+
+                                                <div id="divBarCategoriesList" style="min-height:275px;">
+
+                                                </div>
+
+
+                                            </center>
+                                        </div>
+
+                                        <table width="100%">
+                                            <tr>
+                                                <td>
+                                                    <button class="button20" style="background-color:Red" onclick="OnBarButtonClicked('Back')">&lt; Back</button>
+
+                                                </td>
+                                                <td>
+                                                    <button class="button20" style="background-color:Green;float: right;" id="divBarCount" onclick="OnBarButtonClicked('Show')">0</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+
+
+                            <div id="divSettings" style="display:none">
+                                <center>
+                                    <div class="divContentHeader">
+                                        <center>
+                                            SETTINGS
+                                        </center>
+                                    </div>
+                                </center>
+
+                                <div class="Corner20">
+
+                                    <br />
+                                    <div class="borderBalance" style="background-color:#fcb03c; color:#7f571b; border-color:#fcb03c; font-size:16px; height:60px; line-height:60px;" onclick="SendData2Python('divSettingsReserve')">
+                                        Reserve GM for 10 minutes
+                                    </div>
+
+                                    <br />
+                                    <div class="borderBalance" style="background-color:#fcb03c; color:#7f571b; border-color:#fcb03c; font-size:16px; height:60px; line-height:60px;" onclick="SendData2Python('divSettingsCashout')">
+                                        CASH-OUT
+                                    </div>
+
+
+
+
+                                </div>
+
+                            </div>
+
+
+
+
+
+
+                            <div id="divMessages" style="display:none">
+                                <center>
+                                    <div class="divContentHeader">
+                                        <center>
+                                            MESSAGES
+                                        </center>
+                                    </div>
+                                </center>
+
+                                <div class="Corner20">
+
+                                    <style>
+                                        .MessageRow {
+                                            border: 2px solid #FFFFFF;
+                                            border-radius: 13px;
+                                            width: 440px;
+                                            height: 75px;
+                                            text-align: center;
+                                            vertical-align: middle;
+                                            line-height: 75px;
+                                            font-size: 30px;
+                                            font-weight: bold;
+                                            background-color: #fcb03c;
+                                            border-color: black;
+                                            font-size: 16px;
+                                            height: 60px;
+                                            line-height: 60px;
+                                            margin: 20px;
+                                            color: black;
+                                        }
+
+                                        .MessageRowReaded {
+                                            font-weight: normal;
+                                            border-color: #fcb03c;
+                                        }
+                                    </style>
+
+                                    <div id="divMessagesContent">
+
+                                    </div>
+
+
+
+
+                                </div>
+
+                            </div>
+
+                        </td>
+
+
+
+                        <td style="width:29px"></td>
+                        <td style="width:480px">
+                            <img src="customer_adverts.png" style="margin-top:45px;" />
+                        </td>
+
+                    </tr>
+                </table>
+
+            </div>
+        </div>
+
+    </div>
+
+
+    <script>
+
+        var x = document.getElementById("aBonusRequestLink");
+        x.addEventListener("click", StopPropagation);
+        function StopPropagation(event) {
+            event.stopImmediatePropagation();
+        }
+
+
+        function ResponseHelloPython(sender) {
+            IsSentHelloFromPython = 1;
+        }
+        function SendHelloPython() {
+            if (IsSentHelloFromPython == 0) {
+                try {
+                    SendData2Python("HTMLStarted")
+                } catch (e) {
+
+                }
+                setTimeout("SendHelloPython()", 4000);
+            }
+        }
+
+        setTimeout("SendHelloPython()", 4000);
+
+    </script>
+
+
+    <!--
+    <input type="button" value="Test" onclick="FillBonusStars('5','1')" />
+    -->
+
+
+    <script>
+        //InitGadgetValues('[{ strokeStyle: "#42fe00", min: 0.00, max: 0.80 },{ strokeStyle: "#89fd00", min: 0.80, max: 1.20 },{ strokeStyle: "#cffc00", min: 1.20, max: 1.60 },{ strokeStyle: "#fffc00", min: 1.60, max: 2.00 },{ strokeStyle: "#f6c800", min: 2.00, max: 2.40 }]','[0.00, 0.80, 1.20, 1.60, 2.00]','[[0.00, "#42fe00"] , [0.80, "#89fd00"] , [1.20, "#cffc00"] , [1.60, "#fffc00"] , [2.00, "#f6c800"] ]',5)
+
+    </script>
+
+</body>
+</html>

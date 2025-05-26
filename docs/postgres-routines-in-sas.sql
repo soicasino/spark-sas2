@@ -3097,3 +3097,659 @@ BEGIN
 
 END;
 $BODY$;
+
+---------------------------
+-- PostgreSQL version of sp_InsDeviceWaiterCall
+CREATE OR REPLACE FUNCTION tcasino.sp_InsDeviceWaiterCall(
+    p_MacAddress VARCHAR,
+    p_CustomerId BIGINT
+)
+RETURNS TABLE(Result INTEGER, ErrorMessage TEXT)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Update the device table with current timestamp
+    UPDATE tcasino.T_Device 
+    SET BarCallingDate = NOW() 
+    WHERE MacAddress = p_MacAddress;
+    
+    -- Return result set
+    RETURN QUERY 
+    SELECT 1 AS Result, ''::TEXT AS ErrorMessage;
+END;
+$$;
+--------------------------------------
+
+-- PostgreSQL version of tsp_GetNextVisit
+CREATE OR REPLACE FUNCTION tcasino.tsp_GetNextVisit(
+    p_DeviceId BIGINT DEFAULT 0,
+    p_MachineLogId BIGINT DEFAULT 0,
+    p_CardNo VARCHAR DEFAULT NULL,
+    p_KioskId BIGINT DEFAULT 1
+)
+RETURNS TABLE(
+    KioskBonusId BIGINT,
+    IsWon INTEGER,
+    Adet INTEGER,
+    Prize INTEGER,
+    PrizeType INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_Currency VARCHAR;
+    v_GamingDate DATE;
+    v_Yesterday DATE;
+    v_CustomerId BIGINT;
+    v_WinLoss NUMERIC(18,2);
+    v_KioskBonusId BIGINT;
+    v_TodayCageStartedDate TIMESTAMP;
+    v_YesterdayCageStartedDate TIMESTAMP;
+    v_BonusWonId BIGINT;
+    v_Prizes VARCHAR;
+    v_PrizeList VARCHAR;
+    v_TotalChance BIGINT;
+    v_RandomNumber BIGINT;
+    v_WonId BIGINT;
+    v_Prize NUMERIC(18,2);
+    v_Id BIGINT;
+    v_ChanceStart BIGINT;
+    v_ChanceEnd BIGINT;
+    cur CURSOR FOR SELECT id FROM temp_possible_wins;
+BEGIN
+    -- Get currency from casino settings
+    SELECT Currency INTO v_Currency 
+    FROM tcasino.T_CasinoSettings 
+    LIMIT 1;
+
+    -- Get gaming dates
+    SELECT GamingDay, CageStartedDate 
+    INTO v_GamingDate, v_TodayCageStartedDate
+    FROM tcasino.T_GamingDays 
+    ORDER BY GamingDayId DESC 
+    LIMIT 1;
+
+    SELECT GamingDay, CageStartedDate 
+    INTO v_Yesterday, v_YesterdayCageStartedDate
+    FROM tcasino.T_GamingDays 
+    WHERE GamingDay < v_GamingDate 
+    ORDER BY GamingDayId DESC 
+    LIMIT 1;
+
+    -- Get customer ID
+    SELECT CustomerId INTO v_CustomerId 
+    FROM tcasino.T_Card 
+    WHERE CardNo = p_CardNo AND IsActive = 1;
+
+    -- Calculate win/loss
+    SELECT COALESCE(SUM(OutputBalance - (InputBalance + COALESCE(BillAcceptorAmount, 0))), 0)
+    INTO v_WinLoss
+    FROM tcasino.T_CardMachineLogs c
+    INNER JOIN tcasino.T_Card tc ON tc.CardNo = c.CardNo
+    INNER JOIN tcasino.T_Customer tcc ON tcc.CustomerId = tc.CustomerId AND tcc.CustomerId = v_CustomerId
+    WHERE c.CageDate = v_Yesterday AND c.ExitDate IS NOT NULL;
+
+    v_WinLoss := COALESCE(v_WinLoss, 0);
+
+    -- Debug output (PostgreSQL equivalent of PRINT)
+    RAISE NOTICE 'Yesterday: %', v_Yesterday;
+    RAISE NOTICE 'WinLoss: %', v_WinLoss;
+
+    -- Get kiosk bonus ID based on loss
+    SELECT KioskBonusId INTO v_KioskBonusId
+    FROM tcasino.T_KioskBonus 
+    WHERE ABS(v_WinLoss) >= MinLoss 
+    ORDER BY MinLoss DESC 
+    LIMIT 1;
+
+    v_KioskBonusId := COALESCE(v_KioskBonusId, 0);
+
+    -- If no loss, no bonus
+    IF v_WinLoss >= 0 THEN
+        v_KioskBonusId := 0;
+        RAISE NOTICE 'No loss occurred yesterday';
+    END IF;
+
+    v_WinLoss := ABS(v_WinLoss);
+
+    -- Check if bonus already won today
+    SELECT kb.BonusWonId INTO v_BonusWonId
+    FROM tcasino.T_Card c
+    INNER JOIN tcasino.T_KioskBonusWons kb ON kb.CardNo = c.CardNo
+    WHERE kb.GamingDate = tcasino.fn_GetGamingDate(NOW()) AND c.CustomerId = v_CustomerId
+    LIMIT 1;
+
+    v_BonusWonId := COALESCE(v_BonusWonId, 0);
+    
+    IF v_BonusWonId > 0 THEN
+        v_KioskBonusId := 0;
+        RAISE NOTICE 'Bonus already received today';
+    END IF;
+
+    -- Check if cage started today
+    IF v_TodayCageStartedDate IS NULL THEN
+        v_KioskBonusId := 0;
+    END IF;
+
+    -- Get prizes and prize list
+    SELECT Prizes, PrizeList INTO v_Prizes, v_PrizeList
+    FROM tcasino.T_KioskBonus 
+    WHERE KioskBonusId = v_KioskBonusId;
+
+    -- Create temporary table for possible wins
+    DROP TABLE IF EXISTS temp_possible_wins;
+    
+    CREATE TEMP TABLE temp_possible_wins (
+        id SERIAL PRIMARY KEY,
+        data VARCHAR,
+        MinLoss NUMERIC(18,2),
+        Factor NUMERIC(18,2),
+        Adet NUMERIC(18,2),
+        Prize NUMERIC(18,2),
+        PrizeType NUMERIC(18,2),
+        ChanceStart BIGINT DEFAULT 0,
+        ChanceEnd BIGINT DEFAULT 0,
+        IsWon INTEGER DEFAULT 0
+    );
+
+    -- Split prize list and populate temp table
+    INSERT INTO temp_possible_wins (data, MinLoss, Factor, Adet, Prize, PrizeType)
+    SELECT 
+        value as data,
+        CAST(split_part(value, '|', 1) AS NUMERIC(18,2)) as MinLoss,
+        CAST(split_part(value, '|', 2) AS NUMERIC(18,2)) as Factor,
+        CAST(split_part(value, '|', 3) AS NUMERIC(18,2)) as Adet,
+        CASE 
+            WHEN CAST(split_part(value, '|', 5) AS NUMERIC(18,2)) > 0 THEN
+                CAST(split_part(value, '|', 5) AS NUMERIC(18,2))
+            ELSE
+                CAST(split_part(value, '|', 4) AS NUMERIC(18,2))
+        END as Prize,
+        CAST(split_part(value, '|', 5) AS NUMERIC(18,2)) as PrizeType
+    FROM unnest(string_to_array(v_PrizeList, ',')) as value
+    WHERE LENGTH(TRIM(value)) > 0;
+
+    -- Calculate chance ranges using cursor
+    OPEN cur;
+    LOOP
+        FETCH cur INTO v_Id;
+        EXIT WHEN NOT FOUND;
+
+        -- Calculate chance start
+        SELECT COALESCE(SUM(CAST(Factor AS BIGINT)), 0) INTO v_ChanceStart
+        FROM temp_possible_wins 
+        WHERE id < v_Id AND v_WinLoss >= MinLoss;
+
+        -- Calculate chance end
+        SELECT COALESCE(SUM(CAST(Factor AS BIGINT)), 0) INTO v_ChanceEnd
+        FROM temp_possible_wins 
+        WHERE id <= v_Id AND v_WinLoss >= MinLoss;
+
+        IF v_ChanceEnd > 0 THEN
+            v_ChanceStart := v_ChanceStart + 1;
+        END IF;
+
+        UPDATE temp_possible_wins
+        SET ChanceStart = v_ChanceStart, ChanceEnd = v_ChanceEnd
+        WHERE id = v_Id;
+    END LOOP;
+    CLOSE cur;
+
+    -- Get total chance
+    SELECT COALESCE(SUM(CAST(Factor AS BIGINT)), 0) INTO v_TotalChance
+    FROM temp_possible_wins 
+    WHERE v_WinLoss >= MinLoss;
+
+    -- Generate random number
+    v_RandomNumber := ROUND(((v_TotalChance - 1) * RANDOM() + 1), 0);
+
+    -- Find winner
+    SELECT id, Prize INTO v_WonId, v_Prize
+    FROM temp_possible_wins
+    WHERE v_RandomNumber BETWEEN ChanceStart AND ChanceEnd
+    LIMIT 1;
+
+    v_WonId := COALESCE(v_WonId, 0);
+    
+    IF v_WonId = 0 THEN
+        SELECT MAX(id) INTO v_WonId FROM temp_possible_wins;
+    END IF;
+
+    -- Mark winner
+    UPDATE temp_possible_wins SET IsWon = 1 WHERE id = v_WonId;
+
+    -- Return results
+    RETURN QUERY
+    SELECT 
+        v_KioskBonusId as KioskBonusId,
+        CAST(a.IsWon AS INTEGER) as IsWon,
+        CAST(a.Adet AS INTEGER) as Adet,
+        CAST(a.Prize AS INTEGER) as Prize,
+        CAST(a.PrizeType AS INTEGER) as PrizeType
+    FROM temp_possible_wins a
+    WHERE Prize > 0 OR PrizeType > 0;
+
+    -- Clean up
+    DROP TABLE IF EXISTS temp_possible_wins;
+END;
+$$;
+
+---------------------------------------------------------
+
+-- PostgreSQL version of tsp_InsProductOrderBySlot
+CREATE OR REPLACE FUNCTION tcasino.tsp_InsProductOrderBySlot(
+    p_CustomerId BIGINT,
+    p_DeviceId BIGINT,
+    p_Products VARCHAR
+)
+RETURNS TABLE(Result BIGINT, ErrorMessage TEXT)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_GamingDate DATE;
+    v_OrderByType INTEGER := 1;
+    v_OrderDate TIMESTAMP := NOW();
+    v_IsWaitingApproval BOOLEAN := FALSE;
+    v_ApprovedBy INTEGER := 0;
+    v_ApprovedDate TIMESTAMP := NOW();
+    v_IsWaitingServed BOOLEAN := TRUE;
+    v_ServedDate TIMESTAMP := NOW();
+    v_DeliveryTypeId BIGINT := 1;
+    v_DeliveryLocationId BIGINT;
+    v_OrderById BIGINT := 0;
+    v_CustomNote TEXT := '';
+    v_OrderInfo TEXT := '';
+    v_OrderId BIGINT;
+BEGIN
+    -- Get gaming date
+    v_GamingDate := tcasino.fn_GetGamingDate(NOW());
+    v_DeliveryLocationId := p_DeviceId;
+
+    -- Insert into T_ProductOrders
+    INSERT INTO tcasino.T_ProductOrders (
+        GamingDate,
+        CustomerId,
+        OrderByType,
+        OrderById,
+        OrderDate,
+        IsWaitingApproval,
+        ApprovedBy,
+        ApprovedDate,
+        IsWaitingServed,
+        ServedDate,
+        CustomNote,
+        DeliveryTypeId,
+        DeliveryLocationId,
+        OrderInfo
+    )
+    VALUES (
+        v_GamingDate,
+        p_CustomerId,
+        v_OrderByType,
+        v_OrderById,
+        v_OrderDate,
+        v_IsWaitingApproval,
+        v_ApprovedBy,
+        v_ApprovedDate,
+        v_IsWaitingServed,
+        v_ServedDate,
+        v_CustomNote,
+        v_DeliveryTypeId,
+        v_DeliveryLocationId,
+        v_OrderInfo
+    )
+    RETURNING OrderId INTO v_OrderId;
+
+    -- Insert order items
+    INSERT INTO tcasino.T_ProductOrderItems (OrderId, ProductId, ProductPrice)
+    SELECT 
+        v_OrderId,
+        CAST(split_part(value, ',', 1) AS BIGINT) as ProductId,
+        0 as ProductPrice
+    FROM unnest(string_to_array(p_Products, '>')) as value
+    WHERE LENGTH(TRIM(value)) > 0;
+
+    -- Update total cost and price
+    UPDATE tcasino.T_ProductOrders
+    SET 
+        TotalCost = (
+            SELECT COALESCE(SUM(ProductCost), 0) 
+            FROM tcasino.T_Products 
+            WHERE ProductId IN (
+                SELECT ProductId 
+                FROM tcasino.T_ProductOrderItems 
+                WHERE OrderId = v_OrderId
+            )
+        ),
+        TotalPrice = (
+            SELECT COALESCE(SUM(ProductPrice), 0) 
+            FROM tcasino.T_Products 
+            WHERE ProductId IN (
+                SELECT ProductId 
+                FROM tcasino.T_ProductOrderItems 
+                WHERE OrderId = v_OrderId
+            )
+        )
+    WHERE OrderId = v_OrderId;
+
+    -- Return result
+    RETURN QUERY 
+    SELECT v_OrderId AS Result, ''::TEXT AS ErrorMessage;
+
+END;
+$$;
+
+-----------------------------------------------------
+
+-- PostgreSQL version of tsp_GetProductCategories
+CREATE OR REPLACE FUNCTION tcasino.tsp_GetProductCategories()
+RETURNS TABLE(
+    CategoryId BIGINT,
+    CategoryName VARCHAR,
+    ParentCategoryId BIGINT,
+    IsActive BOOLEAN,
+    OrderKey INTEGER,
+    CreatedDate TIMESTAMP,
+    UpdatedDate TIMESTAMP,
+    CreatedBy INTEGER,
+    UpdatedBy INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT *
+    FROM tcasino.T_ProductCategories
+    WHERE ParentCategoryId = 0 AND IsActive = TRUE
+    ORDER BY OrderKey, CategoryName;
+END;
+$$;
+
+---------------------------------------
+-- PostgreSQL version of tsp_GetSlotCustomerDiscountCalc
+CREATE OR REPLACE FUNCTION tcasino.tsp_GetSlotCustomerDiscountCalc(
+    p_CustomerId BIGINT,
+    p_MachineLogId BIGINT,
+    p_CardNo VARCHAR,
+    p_IsAddDiscount BOOLEAN DEFAULT FALSE
+)
+RETURNS TABLE(
+    NetResult NUMERIC(18,2),
+    Result NUMERIC(18,2),
+    Discount NUMERIC(18,2),
+    AvailableDiscount NUMERIC(18,2),
+    DiscountPercentage NUMERIC(18,2),
+    DiscountPercentageInt INTEGER,
+    Result_Status INTEGER,
+    ErrorMessage TEXT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_StartDate DATE;
+    v_EndDate DATE;
+    v_DiscountAmount NUMERIC(18,2);
+    v_DiscountCount BIGINT;
+    v_NetResult NUMERIC(18,2);
+    v_DiscountPercentage NUMERIC(18,2);
+    v_SpecialDescription VARCHAR;
+    v_SpecialDiscount NUMERIC(18,2);
+    v_AvailableDiscount NUMERIC(18,2);
+    v_Result INTEGER := 1;
+    v_ErrorMessage TEXT;
+    v_IsDiscountOK BOOLEAN := FALSE;
+    v_DiscountPercentageInt INTEGER;
+    v_Description TEXT := '';
+    v_AccountId BIGINT;
+BEGIN
+    -- Get gaming dates
+    v_StartDate := tcasino.fn_GetCageGamingDate();
+    v_EndDate := v_StartDate;
+
+    -- Get discount amount and count
+    SELECT 
+        COALESCE(SUM(Amount), 0),
+        COALESCE(COUNT(*), 0)
+    INTO v_DiscountAmount, v_DiscountCount
+    FROM tcasino.T_OperatorTransactions ot
+    INNER JOIN tcasino.T_Account ac ON ac.AccountId = ot.AccountId AND ac.CustomerId = p_CustomerId
+    WHERE ot.GamingDate BETWEEN v_StartDate AND v_EndDate
+    AND ot.OperationType IN (4, 11, 17, 18);
+
+    -- Create temporary table for balance calculation
+    DROP TABLE IF EXISTS temp_self_calc_balance;
+    
+    CREATE TEMP TABLE temp_self_calc_balance (
+        NetResult NUMERIC(18,2),
+        Result NUMERIC(18,2),
+        Discount NUMERIC(18,2)
+    );
+
+    -- Insert calculated balance
+    INSERT INTO temp_self_calc_balance (NetResult, Result, Discount)
+    SELECT 
+        ROUND(x.Result + x.Discount, 2) as NetResult,
+        x.Result,
+        x.Discount
+    FROM (
+        SELECT 
+            ROUND(tcasino.fn_GetCustomerWinLossByCageDates(p_CustomerId, v_StartDate, v_EndDate), 2) as Result,
+            tcasino.fn_GetCustomerGetDiscounts(p_CustomerId, v_StartDate, v_EndDate) as Discount
+    ) x;
+
+    -- Get net result
+    SELECT NetResult INTO v_NetResult FROM temp_self_calc_balance;
+    v_NetResult := COALESCE(v_NetResult, 0);
+
+    -- Get discount percentage based on net result
+    SELECT DiscountRate INTO v_DiscountPercentage
+    FROM tcasino.T_DiscountRates 
+    WHERE (MinAmount * -1) >= v_NetResult 
+    ORDER BY MinAmount DESC 
+    LIMIT 1;
+    
+    v_DiscountPercentage := COALESCE(v_DiscountPercentage, 0);
+
+    -- Check for special discount
+    SELECT Description INTO v_SpecialDescription
+    FROM tcasino.T_CustomerNotes c 
+    WHERE c.CustomerId = p_CustomerId 
+    AND c.NoteType = 1 
+    AND c.DeletedDate IS NULL 
+    AND Description LIKE '%[%]%' 
+    ORDER BY InfoNoteId DESC 
+    LIMIT 1;
+
+    -- Extract special discount percentage
+    BEGIN
+        SELECT REPLACE(value, '%', '') INTO v_SpecialDiscount
+        FROM unnest(string_to_array(v_SpecialDescription, ' ')) as value
+        WHERE value LIKE '%[%]%'
+        LIMIT 1;
+        
+        v_SpecialDiscount := CAST(v_SpecialDiscount AS NUMERIC(18,2));
+    EXCEPTION
+        WHEN OTHERS THEN
+            v_SpecialDiscount := 0;
+    END;
+
+    v_SpecialDiscount := COALESCE(v_SpecialDiscount, 0);
+    
+    IF v_SpecialDiscount > 0 THEN
+        v_DiscountPercentage := v_SpecialDiscount;
+    END IF;
+
+    -- Convert percentage to decimal
+    v_DiscountPercentage := v_DiscountPercentage / 100;
+
+    -- Calculate available discount
+    SELECT 
+        CASE 
+            WHEN x.NetResult < 0 THEN 
+                ROUND(ABS(x.NetResult * v_DiscountPercentage) - v_DiscountAmount, 2)
+            ELSE 0 
+        END
+    INTO v_AvailableDiscount
+    FROM temp_self_calc_balance x;
+
+    IF v_AvailableDiscount < 0 THEN
+        v_AvailableDiscount := 0;
+    END IF;
+    
+    v_AvailableDiscount := ROUND(v_AvailableDiscount, 2);
+
+    -- Debug output
+    RAISE NOTICE 'AvailableDiscount: %', v_AvailableDiscount;
+
+    -- Check if discount should be added
+    IF p_IsAddDiscount = TRUE THEN
+        v_Result := -1;
+        v_ErrorMessage := 'NO DISCOUNT AVAILABLE';
+        
+        IF v_AvailableDiscount > 0 THEN
+            v_IsDiscountOK := TRUE;
+            v_Result := 1;
+            v_ErrorMessage := 'Good luck! Please re-insert your card.';
+        END IF;
+    END IF;
+
+    v_DiscountPercentageInt := CAST(v_DiscountPercentage * 100 AS INTEGER);
+
+    -- Return the main result
+    RETURN QUERY
+    SELECT 
+        x.NetResult,
+        x.Result,
+        x.Discount,
+        v_AvailableDiscount as AvailableDiscount,
+        v_DiscountPercentage as DiscountPercentage,
+        v_DiscountPercentageInt as DiscountPercentageInt,
+        v_Result as Result_Status,
+        v_ErrorMessage::TEXT as ErrorMessage
+    FROM temp_self_calc_balance x;
+
+    -- Add discount transaction if approved
+    IF v_IsDiscountOK = TRUE THEN
+        BEGIN
+            v_Description := 'Result:' || v_NetResult::TEXT || '  %' || v_DiscountPercentageInt::TEXT;
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_Description := '';
+        END;
+
+        -- Get account ID
+        SELECT AccountId INTO v_AccountId 
+        FROM tcasino.T_Account 
+        WHERE CustomerId = p_CustomerId;
+
+        -- Call the operator transactions procedure
+        PERFORM tcasino.tsp_InsOperatorTransactions(
+            p_UserId := 1,
+            p_CardNo := p_CardNo,
+            p_AccountId := v_AccountId,
+            p_Amount := v_AvailableDiscount,
+            p_RealAmount := v_AvailableDiscount,
+            p_Discount := 0,
+            p_OperationType := 4,
+            p_Description := v_Description,
+            p_CageId := 1,
+            p_SourceCurrencyId := 3,
+            p_SourceAmount := v_AvailableDiscount,
+            p_OperationDeviceInfo := '1.1.1.1'
+        );
+    END IF;
+
+    -- Clean up
+    DROP TABLE IF EXISTS temp_self_calc_balance;
+
+END;
+$$;
+------------------------------------------
+-- PostgreSQL version of tsp_GetProductsAndSubCategoriesSlot
+CREATE OR REPLACE FUNCTION tcasino.tsp_GetProductsAndSubCategoriesSlot(
+    p_CategoryId BIGINT,
+    p_CustomerId BIGINT,
+    p_Type BIGINT  -- 1: Product, 2: Category
+)
+RETURNS TABLE(
+    -- Product fields (when Type = 1)
+    ProductId BIGINT,
+    ProductName VARCHAR,
+    CategoryId BIGINT,
+    ProductCost NUMERIC(18,2),
+    ProductPrice NUMERIC(18,2),
+    IsActive BOOLEAN,
+    OrderKey INTEGER,
+    CreatedDate TIMESTAMP,
+    UpdatedDate TIMESTAMP,
+    CreatedBy INTEGER,
+    UpdatedBy INTEGER,
+    ProductDescription TEXT,
+    ProductImage VARCHAR,
+    FullCategoryName VARCHAR,
+    CategoryName VARCHAR,
+    
+    -- Category fields (when Type = 2)
+    ParentCategoryId BIGINT,
+    CategoryDescription TEXT,
+    CategoryImage VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Return products if Type = 1
+    IF p_Type = 1 THEN
+        RETURN QUERY
+        SELECT 
+            p.ProductId,
+            p.ProductName,
+            p.CategoryId,
+            p.ProductCost,
+            p.ProductPrice,
+            p.IsActive,
+            p.OrderKey,
+            p.CreatedDate,
+            p.UpdatedDate,
+            p.CreatedBy,
+            p.UpdatedBy,
+            p.ProductDescription,
+            p.ProductImage,
+            pc.FullCategoryName,
+            pc.CategoryName,
+            NULL::BIGINT as ParentCategoryId,  -- Null for product queries
+            NULL::TEXT as CategoryDescription,
+            NULL::VARCHAR as CategoryImage
+        FROM tcasino.T_Products p
+        INNER JOIN tcasino.T_ProductCategories pc ON pc.CategoryId = p.CategoryId
+        WHERE p.CategoryId = p_CategoryId AND p.IsActive = TRUE
+        ORDER BY p.OrderKey, p.ProductName;
+    END IF;
+    
+    -- Return categories if Type = 2
+    IF p_Type = 2 THEN
+        RETURN QUERY
+        SELECT 
+            NULL::BIGINT as ProductId,           -- Null for category queries
+            NULL::VARCHAR as ProductName,
+            CategoryId,
+            NULL::NUMERIC(18,2) as ProductCost,
+            NULL::NUMERIC(18,2) as ProductPrice,
+            IsActive,
+            OrderKey,
+            CreatedDate,
+            UpdatedDate,
+            CreatedBy,
+            UpdatedBy,
+            NULL::TEXT as ProductDescription,
+            NULL::VARCHAR as ProductImage,
+            NULL::VARCHAR as FullCategoryName,
+            CategoryName,
+            ParentCategoryId,
+            CategoryDescription,
+            CategoryImage
+        FROM tcasino.T_ProductCategories
+        WHERE ParentCategoryId = p_CategoryId AND IsActive = TRUE
+        ORDER BY OrderKey, CategoryName;
+    END IF;
+END;
+$$;

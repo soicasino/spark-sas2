@@ -9,6 +9,8 @@ set -u
 set -o pipefail
 
 echo "Starting Raspberry Pi Python environment setup for your SAS application..."
+echo "This script will install dependencies for SAS protocol communication, GUI (PyQt5),"
+echo "database connectivity (PostgreSQL, MS SQL Server), and web services (Flask)."
 
 # --- 1. Update System Package List ---
 echo ""
@@ -31,6 +33,16 @@ if sudo apt install -y python3-pymssql; then
     echo "[INFO] python3-pymssql installed successfully via apt."
 else
     echo "[WARNING] python3-pymssql could not be installed via apt. The script will later try pip, which might fail."
+fi
+
+# For PostgreSQL (database connection)
+echo "[INFO] Installing PostgreSQL client libraries and development files..."
+sudo apt install -y postgresql-client libpq-dev python3-psycopg2
+echo "[INFO] Attempting to install python3-psycopg2 via apt..."
+if sudo apt install -y python3-psycopg2; then
+    echo "[INFO] python3-psycopg2 installed successfully via apt."
+else
+    echo "[WARNING] python3-psycopg2 could not be installed via apt. The script will later try pip."
 fi
 
 # For pywebview (if needed, especially if the script uses it and PyQt5 is not the primary GUI)
@@ -83,7 +95,7 @@ echo "[INFO] Installing required Python packages into the virtual environment...
 # PyQt5 and pymssql should ideally be picked up from the system install if `python3-pyqt5` and `python3-pymssql`
 # were successfully installed by apt AND the venv has access to system-site-packages.
 
-PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful"
+PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful psycopg2-binary"
 
 # Check if python3-pymssql is accessible. If not, and apt didn't install it, add to pip list.
 # This check assumes the venv (with --system-site-packages) makes apt-installed packages importable.
@@ -112,6 +124,19 @@ if ! "$VENV_PYTHON" -c "from PyQt5 import QtCore" >/dev/null 2>&1; then
     fi
 else
     echo "[INFO] PyQt5 is accessible in the virtual environment (likely from system site-packages via apt)."
+fi
+
+# Check for psycopg2 (PostgreSQL adapter)
+if ! "$VENV_PYTHON" -c "import psycopg2" >/dev/null 2>&1; then
+    if ! dpkg -s python3-psycopg2 >/dev/null 2>&1; then
+        echo "[INFO] python3-psycopg2 was not found via apt and is not accessible in venv. psycopg2-binary is already in pip install list."
+    else
+        echo "[WARNING] python3-psycopg2 is installed via apt, but still not accessible in the virtual environment created with --system-site-packages."
+    fi
+else
+    echo "[INFO] psycopg2 is accessible in the virtual environment (likely from system site-packages via apt)."
+    # Remove psycopg2-binary from pip install list since system package is working
+    PACKAGES_TO_INSTALL=$(echo "$PACKAGES_TO_INSTALL" | sed 's/psycopg2-binary//g')
 fi
 
 
