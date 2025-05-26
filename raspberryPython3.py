@@ -96,6 +96,25 @@ try:
 except ImportError:
     print("PostgreSQL dependencies not available")
     POSTGRESQL_AVAILABLE = False
+
+# Missing imports for Raspberry Pi compatibility
+try:
+    import multiprocessing as mp
+except ImportError:
+    print("multiprocessing module not available")
+    mp = None
+
+try:
+    from cefpython3 import cefpython as cef
+except ImportError:
+    print("CEF Python not available - using fallback")
+    cef = None
+
+# Initialize variables that might be undefined
+wx = None
+MyBrowser = None
+struct = None
+QtCore = None
 import os
 import array
 import sys
