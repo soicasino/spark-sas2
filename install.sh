@@ -48,8 +48,10 @@ fi
 # For pywebview and wxPython (HTML GUI support)
 echo "[INFO] Ensuring system dependencies for wxPython and HTML GUI are installed..."
 sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0 libgtk-3-dev
-# For wxPython dependencies
-sudo apt install -y libgtk-3-dev libwebkitgtk-3.0-dev libwxgtk3.0-gtk3-dev
+# For wxPython dependencies (using correct package names for current Debian/Raspberry Pi)
+echo "[INFO] Installing wxPython system dependencies..."
+sudo apt install -y libgtk-3-dev libwebkit2gtk-4.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+# Note: libwxgtk3.0-gtk3-dev might not be available, wxpython will be installed via pip
 
 echo "[INFO] System dependencies installation attempt complete."
 
