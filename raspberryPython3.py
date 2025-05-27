@@ -7163,7 +7163,13 @@ def SQL_DeviceStatu(MessageType):
                 G_Machine_OnlineCount=G_Machine_OnlineCount+1
 
 
-                IsDeviceLocked=int(row["IsLocked"])
+                # Handle missing IsLocked field from database
+                try:
+                    IsDeviceLocked=int(row["IsLocked"])
+                except KeyError:
+                    # Default to unlocked if field is missing
+                    IsDeviceLocked=0
+                    print("Warning: IsLocked field missing from database result, defaulting to 0 (unlocked)")
                 if IsNewRecord==1:
                     print("New device")
                     GetMeter(0,"new")
