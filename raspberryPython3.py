@@ -3741,8 +3741,10 @@ def CheckNextVisit_ByTurnover():
 
 
 def CreateHTMLGui():
+    # Use wxPython WebView as primary HTML GUI (works on all platforms including ARM)
     CreateHTMLWX()
 
+    # CEF Python is only available on x86_64, not on ARM/Raspberry Pi
     #CreateCEFPython()
 
 if IsGUI_Type==3:

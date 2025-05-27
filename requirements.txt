@@ -12,8 +12,8 @@ psycopg2-binary>=2.9
 
 # GUI frameworks
 PyQt5>=5.15
-wxpython>=4.1  # For HTML GUI support
-cefpython3>=66.0  # For CEF browser support
+wxpython>=4.1  # For HTML GUI support (works on all platforms)
+cefpython3>=66.0  # For CEF browser support (x86_64 only, not available on ARM/Raspberry Pi)
 pywebview>=3.6
 
 # Web framework

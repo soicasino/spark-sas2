@@ -98,7 +98,19 @@ echo "[INFO] Installing required Python packages into the virtual environment...
 # PyQt5 and pymssql should ideally be picked up from the system install if `python3-pyqt5` and `python3-pymssql`
 # were successfully installed by apt AND the venv has access to system-site-packages.
 
-PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful psycopg2-binary wxpython cefpython3"
+# Base packages that work on all architectures
+PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful psycopg2-binary wxpython"
+
+# Check architecture and conditionally add cefpython3
+ARCH=$(uname -m)
+echo "[INFO] Detected architecture: $ARCH"
+if [[ "$ARCH" == "x86_64" || "$ARCH" == "amd64" ]]; then
+    echo "[INFO] Adding cefpython3 for x86_64 architecture"
+    PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL cefpython3"
+else
+    echo "[WARNING] cefpython3 is not available for $ARCH architecture (ARM/Raspberry Pi)"
+    echo "[INFO] The HTML GUI will use wxPython WebView instead of CEF"
+fi
 
 # Check if python3-pymssql is accessible. If not, and apt didn't install it, add to pip list.
 # This check assumes the venv (with --system-site-packages) makes apt-installed packages importable.
