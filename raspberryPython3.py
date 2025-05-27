@@ -74,7 +74,13 @@
 
 
 import wx
-from wx import html2
+try:
+    from wx import html2
+    WX_HTML2_AVAILABLE = True
+except ImportError:
+    print("[WARNING] wx.html2 not available in this wxPython installation")
+    print("[INFO] HTML GUI will be disabled, falling back to no GUI mode")
+    WX_HTML2_AVAILABLE = False
 #import codecs
 
 import webview
@@ -2917,7 +2923,7 @@ except Exception as e:
 
 if G_Machine_ScreenTypeId>0:
     IsGUIEnabled=1
-    IsGUI_Type=3    # HTML GUI (CEF Python/wxPython)
+    IsGUI_Type=1    # Qt GUI (PyQt5) - Default and most reliable
 
 
 
@@ -3619,6 +3625,10 @@ class MyBrowser(wx.Frame):#wx.Dialog
 
     def __init__(self, *args, **kwds):
       global WXBrowser
+      if not WX_HTML2_AVAILABLE:
+          print("[ERROR] Cannot create HTML browser - wx.html2 not available")
+          return
+          
       wx.Dialog.__init__(self, *args, **kwds)
       sizer = wx.BoxSizer(wx.VERTICAL)
       self.browser = wx.html2.WebView.New(self)
@@ -3635,6 +3645,11 @@ class MyBrowser(wx.Frame):#wx.Dialog
       self.Bind(wx.html2.EVT_WEBVIEW_TITLE_CHANGED, self.OnPageTitleChanged, self.browser)
 
 def CreateHTMLWX():
+    if not WX_HTML2_AVAILABLE:
+        print("[WARNING] HTML GUI cannot start - wx.html2 not available")
+        print("[INFO] Install a full wxPython version with: pip install wxpython")
+        return
+        
     app = wx.App()
     dialog = MyBrowser(None, -1)
     if WINDOWS==True:
