@@ -5224,6 +5224,7 @@ def SQL_ReadCustomerInfo_Test(KartNo,CardRawData):
                     
                     # System control (USED)
                     'UploadMoney': 1,  # 1=Upload money to machine, 0=Don't upload
+                    'IsLocked': 0,     # Device lock status (0=unlocked, 1=locked)
                 }
             
             def __getitem__(self, key):
