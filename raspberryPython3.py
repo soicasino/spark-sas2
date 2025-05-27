@@ -2014,7 +2014,7 @@ except Exception as e:
 IsCardRead=1
 IsSasPooling=1
 
-#mevlut; Hizli
+#Spark; Hizli
 G_Machine_SasPoolingVersion=0
 
 IsCardInside=0
@@ -2066,7 +2066,7 @@ class MainWindow(QWidget):
         self.labelB = QLabel(self)
         self.labelB.setGeometry(0,225,1280,50)
         self.labelB.setFont(QFont('SansSerif', 35))
-        #self.labelB.setText("<center><font color='white'>Sn. MEVLUT (111111)</font></center>")
+        #self.labelB.setText("<center><font color='white'>Sn. Spark (111111)</font></center>")
 
         self.labelC = QLabel(self)
         self.labelC.setGeometry(0,400,1280,50)
@@ -5126,6 +5126,274 @@ G_User_CardType=0
 G_Session_CardExitStatus=0
 G_SAS_IsProblemOnCredit=0
 G_SAS_Transfer_Warning_DoorIsLocked=0
+
+
+def SQL_ReadCustomerInfo_Test(KartNo,CardRawData):
+    """
+    Test function that returns mock data for customer card reading
+    Returns only the fields that are actually used in the main SQL_ReadCustomerInfo function
+    """
+    print("                                                                ")
+    print("                                                                ")
+    print("****************************************************************")
+    print("<SQL_ReadCustomerInfo_Test>-------------------------------------")
+    
+    try:
+        global G_User_CardType
+        global G_LastGame_Action
+        global G_SessionStarted
+        global G_CardMachineLogId
+        global G_User_CardNo
+        global IsCardInside
+        global G_Machine_Balance
+        global G_Machine_Promo
+        global G_LastCardExit
+        global G_User_PrevCardNo
+        global G_LastCardEnter
+        global IsWaitAtLeastCardExistDbSaved
+        global BillAcceptor_Amount
+        global Global_ParaYuklemeFail_SQL
+        global G_SAS_Transfer_Warning_DoorIsLocked
+        global Nextion_CurrentStep
+        global IsWaitingAdminScreen
+        global G_SAS_IsProblemOnCredit
+        global Cashout_Source
+        global G_SAS_LastAFTOperation
+        global G_Machine_ReservationDate
+        global G_LastGameEnded
+        global G_Session_CardExitStatus
+        global G_MessageCount
+        global Global_ParaSifirla_84
+        
+        # Initialize variables (same as original function)
+        G_MessageCount=0
+        Cashout_Source=0
+        G_SAS_LastAFTOperation=""
+        Global_ParaSifirla_84=0
+        G_SAS_Transfer_Warning_DoorIsLocked=0
+        
+        # Learn Asset No
+        if G_Device_AssetNo==0:
+            Komut_ReadAssetNo()
+        
+        BillAcceptor_Amount=Decimal(0)
+        
+        # Check if card was just removed (same validation as original)
+        LastCardExitDiff=(datetime.datetime.now()-G_LastCardExit).total_seconds()
+        if LastCardExitDiff<=1:
+            GUI_ShowIfPossibleMainStatu("Wait 2 seconds for new card")
+            print("Wait 2 seconds for new card",LastCardExitDiff)
+            return "Wait 2 seconds for new card"
+        
+        SQL_Safe_InsImportantMessage("Card is inserted (TEST MODE) " + KartNo,76)
+        
+        # Check if system already has a card
+        if len(G_User_CardNo)>0:
+            print("Sistemde zaten kart var. E:%s Y:%s"%(G_User_CardNo, KartNo))
+            SQL_InsImportantMessage("GM already has card (TEST). E:%s Y:%s" % (G_User_CardNo, KartNo),3)
+            return "Sistemde zaten kart var."
+        
+        if IsSystemLocked==1:
+            PrintAndSetAsStatuText("System cant accept card-in")
+            return "System cant accept card-in"
+        
+        # Mock successful database result with only used fields
+        class MockRow:
+            def __init__(self):
+                # Create test data that matches what the real SQL procedure returns
+                self.data = {
+                    # Core result fields (ALWAYS USED)
+                    'Result': True,
+                    'ErrorMessage': 'Test mode - Good luck!',
+                    
+                    # Customer identification (USED)
+                    'CustomerId': 12345,
+                    'CardMachineLogId': 98765,
+                    'Fullname': 'Test Customer',
+                    'Nickname': 'TestUser',
+                    'Gender': 1,  # 1=Male, 2=Female
+                    
+                    # Financial fields (USED)
+                    'Balance': Decimal('100.50'),
+                    'PromoBalance': Decimal('25.00'),
+                    'BonusPercentage': Decimal('1.5'),
+                    'CurrentBonus': Decimal('15.75'),
+                    
+                    # Card information (USED)
+                    'CardType': 0,  # 0=Normal customer card
+                    
+                    # System control (USED)
+                    'UploadMoney': 1,  # 1=Upload money to machine, 0=Don't upload
+                }
+            
+            def __getitem__(self, key):
+                return self.data.get(key)
+            
+            def get(self, key, default=None):
+                return self.data.get(key, default)
+        
+        # Create mock result
+        mock_result = [MockRow()]
+        
+        # Process the mock result (same logic as original function)
+        IsExist = 0
+        CardReaderSQLResult = "Normal"
+        
+        for row in mock_result:
+            G_LastGame_Action=datetime.datetime.now()
+            IsExist=1
+            
+            if row['Result']==True:
+                # Process successful card read (same as original)
+                G_SessionStarted=datetime.datetime.now()
+                G_Session_CardExitStatus=0
+                Global_ParaYuklemeFail_SQL=0
+                IsWaitAtLeastCardExistDbSaved=0
+                
+                print("************************** TEST CARD INSIDE **************************")
+                print("Result: %s, Message: %s, Kart No: %s Adi:%s, Bakiye:%s" % (
+                    row['Result'], row['ErrorMessage'], KartNo, row['Fullname'], row['Balance']))
+                
+                UploadMoney=int(row["UploadMoney"])
+                print("UploadMoney",UploadMoney)
+                
+                Balance=Decimal(row['Balance'])
+                Promo=Decimal(row['PromoBalance'])
+                
+                G_CardMachineLogId=int(row["CardMachineLogId"])
+                
+                # Set global variables
+                G_User_CardNo=KartNo
+                G_User_PrevCardNo=KartNo
+                IsCardInside=1
+                G_User_CardType=int(row["CardType"])
+                
+                # Save to config (same as original)
+                try:
+                    Config.set('customer','cardnumber', G_User_CardNo)
+                    Config.set('customer','customerid', str(int(row["CustomerId"])))
+                    Config.set('customer','cardmachinelogid', str(int(row["CardMachineLogId"])))
+                    Config.set('customer','gender', str(int(row["Gender"])))
+                    Config.set('customer','customername', row['Fullname'])
+                    Config.set('customer','nickname', row['Nickname'])
+                    Config.set('customer','iscardinside', "1")
+                    SaveConfigFile()
+                    
+                    Config.set('customer','bonuspercentage', str(Decimal(row['BonusPercentage'])))
+                    Config.set('customer','currentbonus', str(Decimal(row['CurrentBonus'])))
+                    Config.set('customer','earnedbonus', str(Decimal(0)))
+                    
+                    Config.set('customer','inserteddate', str(datetime.datetime.now()))
+                    Config.set('customer','playcount', "0")
+                    Config.set('customer','totalbet', "0")
+                    Config.set('customer','totalwin', "0")
+                    Config.set('customer','ismoneytransfered', "0")
+                    
+                    G_Machine_Balance=Balance
+                    G_Machine_Promo=Promo
+                    
+                    Config.set('customer','customerbalance', str(G_Machine_Balance))
+                    Config.set("customer","currentbalance",str(G_Machine_Balance))
+                    Config.set("customer","customerpromo",str(G_Machine_Promo))
+                    Config.set("customer","currentpromo",str(G_Machine_Promo))
+                    
+                except Exception as esql:
+                    print("Config Set Err Init (TEST)!")
+                
+                SaveConfigFile()
+                
+                # Simulate money upload for cashless systems
+                ParaYukleSonuc=1
+                if G_Machine_IsCashless==1 and UploadMoney==1:
+                    print("TEST MODE: Simulating money upload...")
+                    ParaYukleSonuc=1  # Always successful in test mode
+                    SQL_Safe_InsImportantMessage("Test Cashin Result:" + str(ParaYukleSonuc) ,78)
+                
+                try:
+                    SQL_Safe_InsImportantMessage("Test session started: " + row['Fullname'] + " C:" + str(G_Machine_Balance) + " P:" +  str(G_Machine_Promo),79)
+                except Exception as esql:
+                    print("SQL_Safe 1 (TEST)")
+                
+                # Set timing variables
+                G_LastCardEnter=datetime.datetime.now()
+                G_LastGame_Action=datetime.datetime.now()
+                G_LastGameEnded=datetime.datetime.now()
+                G_SAS_IsProblemOnCredit=0
+                
+                print("TEST ParaYukleSonuc:" , ParaYukleSonuc)
+                
+                if ParaYukleSonuc==1:
+                    ChangeRealTimeReporting(1)
+                    Komut_EnableBillAcceptor()
+                
+                # Show customer window
+                GUI_ShowCustomerWindow()
+                
+                if G_Machine_IsBonusGives==1 and IsGUI_Type!=2:
+                    GUI_ShowBonus()
+                
+                # Screen updates
+                ChangeCustomerScreenLineTimed(3,"Ready! (TEST)",2,"GOOD LUCK")
+                G_LastCardExit=datetime.datetime.now()
+                
+                PrintAndSetAsStatuText("Ready for game! (TEST MODE)")
+                Ac("Ready for game (TEST)")
+                
+                # Auto visit checks (same as original)
+                print("G_Machine_IsAutoNextVisit", G_Machine_IsAutoNextVisit)
+                if G_Machine_IsAutoNextVisit==1 and G_Machine_IsRulet==0:
+                    CheckNextVisit()
+                
+                if G_Machine_IsAutoNextVisit==2 and G_Machine_IsRulet==0:
+                    CheckNextVisit_ByTurnover()
+                
+                G_SessionStarted=datetime.datetime.now()
+                
+                # Device specific commands
+                if G_Machine_DeviceTypeId==9:
+                    Komut_CancelBalanceLock()
+                else:
+                    Komut_BakiyeSorgulama(1,1,"cardinstalled-test")
+                
+                G_LastCardExit=datetime.datetime.now()
+                
+            else:
+                # Handle error case
+                CardReaderSQLResult=row['ErrorMessage']
+                try:
+                    SQL_InsImportantMessageByWarningType(CardReaderSQLResult + " (TEST)", 1, 0)
+                except Exception as eC1:
+                    print("Message: " , eC1)
+                print("Error - 1 (TEST)", row['ErrorMessage'])
+                GUI_ShowIfPossibleMainStatu(row['ErrorMessage'])
+                time.sleep(2)
+                SetMachineStatu(row['ErrorMessage'])
+        
+        # Handle case where no card found
+        if IsExist==0:
+            ErrMsgCard="Card is not registered (TEST)"
+            if KartNo=="735314E0":
+                ErrMsgCard="Card reader error (TEST)"
+            
+            print("Card is not registered (TEST) :%s" % (KartNo))
+            ScreenUpdateTextStatu(ErrMsgCard,5)
+            GUI_ShowIfPossibleMainStatu(ErrMsgCard + "!")
+            
+            if G_Machine_CardReaderModel=="Eject":
+                time.sleep(3)
+            else:
+                time.sleep(5)
+            CardReaderSQLResult= "Card is not registered"
+        
+        print("</SQL_ReadCustomerInfo_Test>------------------------------------")
+        return CardReaderSQLResult
+        
+    except Exception as e:
+        ExceptionHandler("SQL_ReadCustomerInfo_Test",e,1)
+        print("</SQL_ReadCustomerInfo_Test>------------------------------------")
+        return "Test function error"
+
+
 def SQL_ReadCustomerInfo(KartNo,CardRawData):
     print("                                                                ")
     print("                                                                ")
@@ -6664,7 +6932,12 @@ def SQL_DeviceStatu(MessageType):
 
 
 
-                MachineType=int(row["MachineType"])
+                try:
+                    MachineType=int(row["MachineType"])
+                except Exception as e:
+                    print("Err on MachineType:", e)
+                    MachineType=0  # Default value
+                
                 try:
                     G_Casino_Name=row['CasinoName']
                     #G_Machine_CardReaderType=int(row["CardReaderType"])
@@ -8154,6 +8427,7 @@ def GetLengthByMeterCode(MeterCode):
     return 4
 
 AssetNumberInt=0
+
 def Yanit_MeterAll(Yanit):
     global G_LastMeterDate
     global G_Device_AssetNo
@@ -8484,6 +8758,7 @@ def SQL_MeterInsert2(TotalCancelledCredits_04, GamesPlayed_05, GamesWon_06, Curr
 
 
 Global_ParaYuklemeFail_SQL=0
+
 def Yanit_ParaYukle(Yanit):
     #2020-07-17
     global IsWaitingForParaYukle
@@ -9593,7 +9868,7 @@ def Yanit_ParaSifirla(Yanit):
                     print("*******************************************")
 
                 #if Cashout_ImpossibleWrongTransaction%5==0:
-                #    Komut_Interragition("ImpossibleWrongTransaction Mevlut")
+                #    Komut_Interragition("ImpossibleWrongTransaction Spark")
 
                 #SQL_InsImportantMessageByWarningType("Impossible.. Wrong transaction id on cashout",18,18)
                 #2018-01-02'de actim
@@ -10340,7 +10615,7 @@ def CheckAndRestartPorts(sender):
             if G_Machine_BillAcceptorTypeId>0:
                 YeniPortlar=YeniPortlar + " - BA: ("+str(LastBillAcceptorTimeDiff)+")" + billacceptorport.port 
         except Exception as e1tmr:
-            print("MEVLUT 1", e1tmr)
+            print("Spark 1", e1tmr)
         
         print("YeniPortlar", YeniPortlar)
 
@@ -10354,7 +10629,7 @@ def CheckAndRestartPorts(sender):
                     break
                 YeniPortlar+=row + "|"
         except Exception as e1tmr:
-            print("MEVLUT-2", e1tmr)
+            print("Spark-2", e1tmr)
 
         YeniPortlar=YeniPortlar+"sender:" + sender
         if sender=="bill":
@@ -10674,7 +10949,7 @@ def DoTmrIsOnline():
                 CardIsRemoved(0)
 
 
-        #2021-09-06 Mevlut Auto cashout for oynanmayan oyun...
+        #2021-09-06 Spark Auto cashout for oynanmayan oyun...
         #if G_Session_IsByOnline==1 and IsCardInside==1:
         #    LastGameDiff=(datetime.datetime.now()-G_LastGame_Action).total_seconds()
         #    if LastGameDiff>=60 and G_LastGame_IsFinished==1:
@@ -10816,7 +11091,9 @@ def DoCardRead(tdata,CardRawData):
             CardReader_CardInsertStart()
             
             ChangeRealTimeReporting(0)#2021-11-28
-            Result_SQL_ReadCustomerInfo=SQL_ReadCustomerInfo(KartNo,CardRawData)
+            #Mehmet Test için ekledi . 
+            Result_SQL_ReadCustomerInfo=SQL_ReadCustomerInfo_Test(KartNo,CardRawData)
+            #Result_SQL_ReadCustomerInfo=SQL_ReadCustomerInfo(KartNo,CardRawData)
             ChangeRealTimeReporting(1)#2021-11-28
 
             print("Result_SQL_ReadCustomerInfo", Result_SQL_ReadCustomerInfo)
@@ -12214,7 +12491,7 @@ def DoSASPoolingMsg(isInit):
             #IsACKMessage=0#2021--10-05 Kapattim. Ne gerek var ya Ackekd vs.?
             if IsACKMessage==1:
                 #time.sleep(0.02)#2021-11-22 Kaldirdim.
-                print("ACK MEVLUT ACKED!")
+                print("ACK Spark ACKED!")
                 SendSASCommand("80")
                 #Is81Sent=0
             #burada gelen mesaji isle...
