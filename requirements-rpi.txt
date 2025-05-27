@@ -1,0 +1,24 @@
+# Raspberry Pi specific requirements (ARM architecture)
+# Core packages for SAS protocol and serial communication
+pyserial>=3.5
+crccheck>=1.0
+
+# System utilities
+psutil>=5.8
+distro>=1.6
+
+# Database connectivity
+pymssql>=2.2
+psycopg2-binary>=2.9
+
+# GUI frameworks (ARM compatible)
+PyQt5>=5.15
+# wxpython>=4.1  # Use system package: sudo apt install python3-wxgtk4.0
+pywebview>=3.6
+
+# Web framework
+Flask>=2.0
+flask-restful>=0.3
+
+# Note: cefpython3 is NOT available for ARM/Raspberry Pi
+# The HTML GUI will use wxPython WebView instead 
