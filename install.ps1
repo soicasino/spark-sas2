@@ -56,11 +56,13 @@ Write-Host "[INFO] If not already installed, download and install it from the Mi
 Write-Host "[INFO] Search for 'Download ODBC Driver for SQL Server'."
 Write-Host "[INFO] After installation, ensure it's configured in your ODBC Data Sources (odbcad32.exe)."
 
-# For pywebview (GUI)
+# For pywebview and wxPython (HTML GUI)
 Write-Host "[INFO] For 'pywebview', ensure you have a compatible web rendering engine."
 Write-Host "[INFO] On Windows 10/11, this is typically Microsoft Edge WebView2."
 Write-Host "[INFO] If pywebview has issues, you might need to install/update the WebView2 runtime."
 Write-Host "[INFO] Search for 'Download Edge WebView2 Runtime'."
+Write-Host "[INFO] For 'wxPython' and 'cefpython3', you may need Visual C++ Redistributable."
+Write-Host "[INFO] If installation fails, install Microsoft Visual C++ Redistributable (latest)."
 
 # --- 3. Create Python Virtual Environment (if it doesn't exist) ---
 $VenvDir = ".venv"
@@ -125,6 +127,8 @@ $packages = @(
     "pymssql",
     "pywebview",
     "PyQt5",    # PyQt5 usually installs from a wheel on Windows
+    "wxpython",  # For HTML GUI support
+    "cefpython3", # For CEF browser support
     "Flask",
     "flask-restful"
 )

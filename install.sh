@@ -45,10 +45,11 @@ else
     echo "[WARNING] python3-psycopg2 could not be installed via apt. The script will later try pip."
 fi
 
-# For pywebview (if needed, especially if the script uses it and PyQt5 is not the primary GUI)
-# Check if your raspberryPython3.py actually uses pywebview. If so, uncomment the next lines.
-# echo "[INFO] Ensuring system dependencies for pywebview are installed (if pywebview is used)..."
-# sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0 libgtk-3-dev
+# For pywebview and wxPython (HTML GUI support)
+echo "[INFO] Ensuring system dependencies for wxPython and HTML GUI are installed..."
+sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0 libgtk-3-dev
+# For wxPython dependencies
+sudo apt install -y libgtk-3-dev libwebkitgtk-3.0-dev libwxgtk3.0-gtk3-dev
 
 echo "[INFO] System dependencies installation attempt complete."
 
@@ -95,7 +96,7 @@ echo "[INFO] Installing required Python packages into the virtual environment...
 # PyQt5 and pymssql should ideally be picked up from the system install if `python3-pyqt5` and `python3-pymssql`
 # were successfully installed by apt AND the venv has access to system-site-packages.
 
-PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful psycopg2-binary"
+PACKAGES_TO_INSTALL="pyserial crccheck psutil distro pywebview Flask flask-restful psycopg2-binary wxpython cefpython3"
 
 # Check if python3-pymssql is accessible. If not, and apt didn't install it, add to pip list.
 # This check assumes the venv (with --system-site-packages) makes apt-installed packages importable.

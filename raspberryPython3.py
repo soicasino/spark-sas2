@@ -73,8 +73,8 @@
 
 
 
-#import wx
-#from wx import html2
+import wx
+from wx import html2
 #import codecs
 
 import webview
@@ -2917,7 +2917,7 @@ except Exception as e:
 
 if G_Machine_ScreenTypeId>0:
     IsGUIEnabled=1
-    IsGUI_Type=2
+    IsGUI_Type=3    # HTML GUI (CEF Python/wxPython)
 
 
 
@@ -3608,31 +3608,31 @@ class HtmlApi:
 #<WXPYTHON>--------------------------------------------------------------------------
 
 WXBrowser=None
-#class MyBrowser(wx.Frame):#wx.Dialog
+class MyBrowser(wx.Frame):#wx.Dialog
     
-#    #Function binding to the page loading 
-#    def OnPageTitleChanged(self, event):
-#        title = self.browser.GetCurrentTitle()
+    #Function binding to the page loading 
+    def OnPageTitleChanged(self, event):
+        title = self.browser.GetCurrentTitle()
 
-#        HandleJSEvent(title)
+        HandleJSEvent(title)
 
 
-#    def __init__(self, *args, **kwds):
-#      global WXBrowser
-#      wx.Dialog.__init__(self, *args, **kwds)
-#      sizer = wx.BoxSizer(wx.VERTICAL)
-#      self.browser = wx.html2.WebView.New(self)
-#      sizer.Add(self.browser, 1, wx.EXPAND, 10)
-#      self.SetSizer(sizer)
-#      self.SetSize((850, 550))
+    def __init__(self, *args, **kwds):
+      global WXBrowser
+      wx.Dialog.__init__(self, *args, **kwds)
+      sizer = wx.BoxSizer(wx.VERTICAL)
+      self.browser = wx.html2.WebView.New(self)
+      sizer.Add(self.browser, 1, wx.EXPAND, 10)
+      self.SetSizer(sizer)
+      self.SetSize((850, 550))
       
-#      if platform.system().startswith("Window")==False:
-#          self.ShowFullScreen(True)
+      if platform.system().startswith("Window")==False:
+          self.ShowFullScreen(True)
 
-#      WXBrowser=self.browser
+      WXBrowser=self.browser
     
-#      #Binding the function the event to the function. 
-#      self.Bind(wx.html2.EVT_WEBVIEW_TITLE_CHANGED, self.OnPageTitleChanged, self.browser)
+      #Binding the function the event to the function. 
+      self.Bind(wx.html2.EVT_WEBVIEW_TITLE_CHANGED, self.OnPageTitleChanged, self.browser)
 
 def CreateHTMLWX():
     app = wx.App()
