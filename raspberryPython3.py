@@ -73,14 +73,17 @@
 
 
 
-import wx
 try:
+    import wx
     from wx import html2
     WX_HTML2_AVAILABLE = True
+    WX_AVAILABLE = True
 except ImportError:
-    print("[WARNING] wx.html2 not available in this wxPython installation")
-    print("[INFO] HTML GUI will be disabled, falling back to no GUI mode")
+    print("[WARNING] wxPython not available or incomplete installation")
+    print("[INFO] HTML GUI will be disabled")
     WX_HTML2_AVAILABLE = False
+    WX_AVAILABLE = False
+    wx = None
 #import codecs
 
 import webview
@@ -3614,40 +3617,44 @@ class HtmlApi:
 #<WXPYTHON>--------------------------------------------------------------------------
 
 WXBrowser=None
-class MyBrowser(wx.Frame):#wx.Dialog
-    
-    #Function binding to the page loading 
-    def OnPageTitleChanged(self, event):
-        title = self.browser.GetCurrentTitle()
 
-        HandleJSEvent(title)
+# Only define MyBrowser class if wxPython is available
+if WX_AVAILABLE and WX_HTML2_AVAILABLE:
+    class MyBrowser(wx.Frame):#wx.Dialog
+        
+        #Function binding to the page loading 
+        def OnPageTitleChanged(self, event):
+            title = self.browser.GetCurrentTitle()
+
+            HandleJSEvent(title)
 
 
-    def __init__(self, *args, **kwds):
-      global WXBrowser
-      if not WX_HTML2_AVAILABLE:
-          print("[ERROR] Cannot create HTML browser - wx.html2 not available")
-          return
+        def __init__(self, *args, **kwds):
+          global WXBrowser
+          wx.Dialog.__init__(self, *args, **kwds)
+          sizer = wx.BoxSizer(wx.VERTICAL)
+          self.browser = wx.html2.WebView.New(self)
+          sizer.Add(self.browser, 1, wx.EXPAND, 10)
+          self.SetSizer(sizer)
+          self.SetSize((850, 550))
           
-      wx.Dialog.__init__(self, *args, **kwds)
-      sizer = wx.BoxSizer(wx.VERTICAL)
-      self.browser = wx.html2.WebView.New(self)
-      sizer.Add(self.browser, 1, wx.EXPAND, 10)
-      self.SetSizer(sizer)
-      self.SetSize((850, 550))
-      
-      if platform.system().startswith("Window")==False:
-          self.ShowFullScreen(True)
+          if platform.system().startswith("Window")==False:
+              self.ShowFullScreen(True)
 
-      WXBrowser=self.browser
-    
-      #Binding the function the event to the function. 
-      self.Bind(wx.html2.EVT_WEBVIEW_TITLE_CHANGED, self.OnPageTitleChanged, self.browser)
+          WXBrowser=self.browser
+        
+          #Binding the function the event to the function. 
+          self.Bind(wx.html2.EVT_WEBVIEW_TITLE_CHANGED, self.OnPageTitleChanged, self.browser)
+else:
+    # Dummy class when wxPython is not available
+    class MyBrowser:
+        def __init__(self, *args, **kwds):
+            print("[ERROR] MyBrowser cannot be created - wxPython not available")
 
 def CreateHTMLWX():
-    if not WX_HTML2_AVAILABLE:
-        print("[WARNING] HTML GUI cannot start - wx.html2 not available")
-        print("[INFO] Install a full wxPython version with: pip install wxpython")
+    if not WX_AVAILABLE or not WX_HTML2_AVAILABLE:
+        print("[WARNING] HTML GUI cannot start - wxPython not available or incomplete")
+        print("[INFO] Install wxPython with: pip install wxpython")
         return
         
     app = wx.App()
