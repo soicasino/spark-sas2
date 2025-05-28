@@ -12787,6 +12787,10 @@ def Yanit_RegisterAFT(Yanit):
     RegistrationKey=Yanit[ index : index+40]
     index=index+40
 
+    # Mehmet 28.05.2025
+    print("Yanit:", Yanit)
+    print("RegistrationKey:", RegistrationKey)
+
     if len(RegistrationKey)>20:
         print("*****************ASSET NUMBER IS SET!")
         G_Device_AssetNo=AssetNumberInt
