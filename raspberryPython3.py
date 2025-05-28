@@ -3662,9 +3662,9 @@ def CreateHTMLWX():
     if WINDOWS==True:
         dialog.browser.LoadURL("file:///D:/msvn/projectcasino/cardintegration/raspberry/guiwx.html")
     else:
-        dialog.browser.LoadURL("file:///home/pi/guiwx.html")
+        dialog.browser.LoadURL("file:///home/soi/guiwx.html")
 
-    #dialog.browser.LoadURL("file:///home/pi/guiwx.html")
+    #dialog.browser.LoadURL("file:///home/soi/guiwx.html")
     #dialog.browser.LoadURL("http://www.youtube.com")
     dialog.Show()
     app.MainLoop()
@@ -6685,7 +6685,7 @@ def CreateStreamingScriptHDMI(casinoId, deviceId, configId):
 
 
     print("CREATE STREAMING!!!")
-    textFile="/home/pi/streaming_hdmi.sh"
+    textFile="/home/soi/streaming_hdmi.sh"
     CreateTextFile(textFile,BashScript)
     ExecuteLinuxCommand("sudo chmod +x " + textFile)
     ExecuteLinuxCommand("" + textFile)
@@ -6704,7 +6704,7 @@ def CreateStreamingScriptHDMIAudio(casinoId, deviceId, configId):
 
 
     print("CREATE STREAMING!!!")
-    textFile="/home/pi/streaming_hdmiaudio.sh"
+    textFile="/home/soi/streaming_hdmiaudio.sh"
     CreateTextFile(textFile,BashScript)
     time.sleep(0.5)
     ExecuteLinuxCommand("sudo chmod +x " + textFile)
@@ -6726,7 +6726,7 @@ def CreateStreamingScriptCamera(casinoId, deviceId, cameraIp, configId):
         BashScript=BashScript + "gst-launch-1.0 -e rtspsrc location='"+cameraIp+"' protocols=tcp latency=0 ! rtph264depay ! h264parse ! flvmux name=mux streamable=true ! rtmpsink sync=true async=true location='rtmp://streaming.sanaloyun.net/LiveApp/"+ str(casinoId) + "-" + str(deviceId)+"-Camera' audiotestsrc is-live=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc bitrate=96000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! mux."
 
 
-    textFile="/home/pi/streaming_camera.sh"
+    textFile="/home/soi/streaming_camera.sh"
     CreateTextFile(textFile,BashScript)
     ExecuteLinuxCommand("sudo chmod +x " + textFile)
     ExecuteLinuxCommand("" + textFile)
@@ -12792,7 +12792,7 @@ def Yanit_RegisterAFT(Yanit):
         G_Device_AssetNo=AssetNumberInt
 
     #2020-11-27
-    CreateTextFile("/home/pi/assetno.txt",str(AssetNumberInt))
+    CreateTextFile("/home/soi/assetno.txt",str(AssetNumberInt))
 
     print("RegistrationStatus:", RegistrationStatus, "RegistrationStatusText: ", RegistrationStatusText, "AssetNumber:", AssetNumber, "AssetNumberInt:", AssetNumberInt, "RegistrationKey", RegistrationKey  )
     SQL_UpdAssetNoSMIB(AssetNumberInt)
@@ -16065,12 +16065,12 @@ if IsGUI_Type==4:
         
 
 
-    path="file:///home/pi/guiwebview.html"
-    path="/home/pi/1280.html"
+    path="file:///home/soi/guiwebview.html"
+    path="/home/soi/1280.html"
     if G_Machine_ScreenTypeId==8:
-        path="file:///home/pi/1280.html"
+        path="file:///home/soi/1280.html"
     if LinuxVersion==2 or psutil.virtual_memory().total>1557191680:
-        path="/home/pi/1280.html"
+        path="/home/soi/1280.html"
 
     if LinuxVersion==2:
         path="/home/odroid/1280.html"
