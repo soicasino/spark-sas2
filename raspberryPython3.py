@@ -6910,6 +6910,7 @@ def SQL_DeviceStatu(MessageType):
             'tsp_devicestatu',  # PostgreSQL lowercase name
             [G_Machine_MacAddress, MessageType, IPAddress, G_Static_VersionId, IsSASPortOpened, IsCardReader_Working, G_Machine_SASPort, G_Machine_CardReaderPort, G_Machine_Statu, IsDeviceLocked, G_Machine_DeviceId, playcount, totalbet, cardmachinelogid, GUI_CurrentPage, G_Machine_OnlineCount, IsSASLink, customerid, G_Device_AssetNo, IsBillAcceptor_Working]
         )
+        print("result Mehmet", result)
         G_NetworkLastDate = datetime.datetime.now()
         for row in result:
 
@@ -6958,6 +6959,7 @@ def SQL_DeviceStatu(MessageType):
 
 
                 try:
+                    print("row Mehmet", row)
                     MachineType=int(row["MachineType"])
                 except Exception as e:
                     print("Err on MachineType:", e)
