@@ -268,9 +268,9 @@ if platform.system().startswith("Window")==False and LinuxVersion!=2:
     import RPi.GPIO as GPIO
 
 
-FilePathSO="/home/soi/crt_288B_UR.so"
+FilePathSO="/home/soi/dev/spark-sas2/crt_288B_UR.so"
 if LinuxVersion==3:
-    FilePathSO="/home/soi/crt_288B_UR.so"
+    FilePathSO="/home/soi/dev/spark-sas2/crt_288B_UR.so"
 
 
 
@@ -3662,9 +3662,9 @@ def CreateHTMLWX():
     if WINDOWS==True:
         dialog.browser.LoadURL("file:///D:/msvn/projectcasino/cardintegration/raspberry/guiwx.html")
     else:
-        dialog.browser.LoadURL("file:///home/soi/guiwx.html")
+        dialog.browser.LoadURL("file:///home/soi/dev/spark-sas2/guiwx.html")
 
-    #dialog.browser.LoadURL("file:///home/soi/guiwx.html")
+    #dialog.browser.LoadURL("file:///home/soi/dev/spark-sas2/guiwx.html")
     #dialog.browser.LoadURL("http://www.youtube.com")
     dialog.Show()
     app.MainLoop()
@@ -6685,7 +6685,7 @@ def CreateStreamingScriptHDMI(casinoId, deviceId, configId):
 
 
     print("CREATE STREAMING!!!")
-    textFile="/home/soi/streaming_hdmi.sh"
+    textFile="/home/soi/dev/spark-sas2/streaming_hdmi.sh"
     CreateTextFile(textFile,BashScript)
     ExecuteLinuxCommand("sudo chmod +x " + textFile)
     ExecuteLinuxCommand("" + textFile)
@@ -6704,7 +6704,7 @@ def CreateStreamingScriptHDMIAudio(casinoId, deviceId, configId):
 
 
     print("CREATE STREAMING!!!")
-    textFile="/home/soi/streaming_hdmiaudio.sh"
+    textFile="/home/soi/dev/spark-sas2/streaming_hdmiaudio.sh"
     CreateTextFile(textFile,BashScript)
     time.sleep(0.5)
     ExecuteLinuxCommand("sudo chmod +x " + textFile)
@@ -6726,7 +6726,7 @@ def CreateStreamingScriptCamera(casinoId, deviceId, cameraIp, configId):
         BashScript=BashScript + "gst-launch-1.0 -e rtspsrc location='"+cameraIp+"' protocols=tcp latency=0 ! rtph264depay ! h264parse ! flvmux name=mux streamable=true ! rtmpsink sync=true async=true location='rtmp://streaming.sanaloyun.net/LiveApp/"+ str(casinoId) + "-" + str(deviceId)+"-Camera' audiotestsrc is-live=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc bitrate=96000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! mux."
 
 
-    textFile="/home/soi/streaming_camera.sh"
+    textFile="/home/soi/dev/spark-sas2/streaming_camera.sh"
     CreateTextFile(textFile,BashScript)
     ExecuteLinuxCommand("sudo chmod +x " + textFile)
     ExecuteLinuxCommand("" + textFile)
@@ -12798,7 +12798,7 @@ def Yanit_RegisterAFT(Yanit):
         G_Device_AssetNo=AssetNumberInt
 
     #2020-11-27
-    CreateTextFile("/home/soi/assetno.txt",str(AssetNumberInt))
+    CreateTextFile("/home/soi/dev/spark-sas2/assetno.txt",str(AssetNumberInt))
 
     print("RegistrationStatus:", RegistrationStatus, "RegistrationStatusText: ", RegistrationStatusText, "AssetNumber:", AssetNumber, "AssetNumberInt:", AssetNumberInt, "RegistrationKey", RegistrationKey  )
     SQL_UpdAssetNoSMIB(AssetNumberInt)
@@ -16071,12 +16071,12 @@ if IsGUI_Type==4:
         
 
 
-    path="file:///home/soi/guiwebview.html"
-    path="/home/soi/1280.html"
+    path="file:///home/soi/dev/spark-sas2/guiwebview.html"
+    path="/home/soi/dev/spark-sas2/1280.html"
     if G_Machine_ScreenTypeId==8:
-        path="file:///home/soi/1280.html"
+        path="file:///home/soi/dev/spark-sas2/1280.html"
     if LinuxVersion==2 or psutil.virtual_memory().total>1557191680:
-        path="/home/soi/1280.html"
+        path="/home/soi/dev/spark-sas2/1280.html"
 
     if LinuxVersion==2:
         path="/home/odroid/1280.html"
