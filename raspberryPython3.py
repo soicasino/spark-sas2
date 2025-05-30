@@ -268,7 +268,7 @@ if platform.system().startswith("Window")==False and LinuxVersion!=2:
     import RPi.GPIO as GPIO
 
 
-FilePathSO="/home/soi/dev/spark-sas2/crt_288B_UR.so"
+FilePathSO="/home/soi/crt_288B_UR.so"
 if LinuxVersion==3:
     FilePathSO="/home/soi/dev/spark-sas2/crt_288B_UR.so"
 
@@ -399,19 +399,6 @@ def Ac(sender):
     thread1 = Thread(target = SQL_UpdDeviceIsLocked, args = (0, ))
     thread1.name="Ac"
     thread1.start()
-
-
-
-    print("G_User_CardNo C=> ",G_User_CardNo)
-    if G_Machine_DeviceTypeId==7 and len(G_User_CardNo)==0 and G_Machine_IsCanPlayWithoutCard==0:
-        time.sleep(0.5)
-        print("Kontrol mevcut gambee bill acceptor kapat")
-        Komut_DisableBillAcceptor("Acildiginda billacceptor acilmasin -1")
-        time.sleep(0.5)
-        Komut_DisableBillAcceptor("Acildiginda billacceptor acilmasin -1")
-
-    Komut_CancelBalanceLock()
-    #Komut cancel balance lock
 
 
 
@@ -5210,7 +5197,7 @@ def SQL_ReadCustomerInfo_Test(KartNo,CardRawData):
             return "Wait 2 seconds for new card"
         
         SQL_Safe_InsImportantMessage("Card is inserted (TEST MODE) " + KartNo,76)
-        
+
         # Check if system already has a card
         if len(G_User_CardNo)>0:
             print("Sistemde zaten kart var. E:%s Y:%s"%(G_User_CardNo, KartNo))
@@ -6660,10 +6647,6 @@ def CreateStreamingScriptHDMI(casinoId, deviceId, configId):
     BashScript=BashScript + "sleep 3"
     BashScript=BashScript + "\n"
     BashScript=BashScript + "v4l2-ctl --query-dv-timings"
-    BashScript=BashScript + "\n"
-    BashScript=BashScript + "sleep 3"
-    BashScript=BashScript + "\n"
-    BashScript=BashScript + "v4l2-ctl --set-dv-bt-timings query"
     BashScript=BashScript + "\n"
     BashScript=BashScript + "sleep 3"
     BashScript=BashScript + "\n"
@@ -8772,7 +8755,7 @@ def Yanit_MeterAll(Yanit):
         print("Meter insert fail")
     
 
-def SQL_Safe_MeterInsert(GameNumber,TotalCoinIn, TotalCoinOut, TotalJackpotCredit, GamesPlayed, TotalHandPaidCredit, TotalCreditsBillsAccepted,CurrentCredits_0C, TurnOver, TurnOut, NonCashableIn, NonCashableOut, TotalBonus, ReceivedAllMeter, GamesWon, GamesLost):
+def SQL_Safe_MeterInsert(GameNumber,TotalCoinIn, TotalCoinOut, TotalJackpotCredit, GamesPlayed, TotalHandPaidCredit, TotalCreditsBillsAccepted,CurrentCredits_0C, TurnOver, TurnOut, NonCashableIn, NonCashableOut, TotalBonus, ReceivedAllMeter,GamesWon, GamesLost):
     processThread = Thread(target=SQL_MeterInsert, args=(GameNumber,TotalCoinIn, TotalCoinOut, TotalJackpotCredit, GamesPlayed, TotalHandPaidCredit, TotalCreditsBillsAccepted,CurrentCredits_0C, TurnOver, TurnOut, NonCashableIn, NonCashableOut, TotalBonus, ReceivedAllMeter,GamesWon, GamesLost,))
     processThread.name="SafeMeter"
     processThread.start()
@@ -9375,7 +9358,7 @@ def Yanit_BakiyeSorgulama(Yanit):
         #    GameLockStatus="00"
 
 
-        #2020-09-01 Ilk bunu yapmistik zaten. Ama Apex'lerde GameLocked gelmiyor bazen. O yuzden bunu kabul edelim.
+        #2020-09-01 Ilk bunu yapmistik zaten. Apex'lerde GameLocked gelmiyor bazen. O yuzden bunu kabul edelim.
         #Last Game Diff 60snden buyukse; cashout asamasina gecmesine izin ver.
         if G_Machine_DeviceTypeId==10 and LastGameDiff>20 and G_Machine_IsRulet==0:
             G_LastGame_IsFinished=1
@@ -13405,9 +13388,9 @@ def HandleReceivedSASCommand(tdata):
                 print("Bill acceptor kapat")
                 BillAcceptor_GameStarted()
             
-            if G_SelectedGameId==0:
+            if G_Machine_SelectedGameId==0:
                 #print("Tek oyunlu makina galiba?**************************")
-                G_SelectedGameId=1
+                G_Machine_SelectedGameId=1
 
             if tdata[0:6]!="01FF7E":
                 print("RTE is not opened!")
@@ -15840,7 +15823,7 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
 
 
                 msg="C,"+str(x)+","+str(y)+","#my old protocol
-                #msg="t,"+str(int(x))+","+str(int(y))+",300\r"#alex
+                #msg="t,"+str(int(x))+","+str(y)+",300\r"#alex
                 msg="t,"+str(x)+","+str(y)+",300"#Teensy
 
                 print(msg)
@@ -15976,7 +15959,7 @@ def FindPortForBillAcceptor():
                     print("Cant find Bill acceptor Port!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                     break
     
-            print("G_Machine_IsBillacceptorPortFound", G_Machine_IsBillacceptorPortFound)
+    print("G_Machine_IsBillacceptorPortFound", G_Machine_IsBillacceptorPortFound)
     
     print("</Find bill acceptor port>---------------------")
     print("***********************************")
