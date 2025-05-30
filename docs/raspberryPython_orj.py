@@ -15070,15 +15070,15 @@ if IsGUI_Type==4:
         
 
 
-    path="file:///home/soi/guiwebview.html"
-    path="/home/soi/1280.html"
+    path="file:///home/soi/dev/spark-sas2/guiwebview.html"
+    path="/home/soi/dev/spark-sas2/1280.html"
     if G_Machine_ScreenTypeId==8:
-        path="file:///home/soi/1280.html"
+        path="file:///home/soi/dev/spark-sas2/1280.html"
     if LinuxVersion==2 or psutil.virtual_memory().total>1557191680:
-        path="/home/soi/1280.html"
+        path="/home/soi/dev/spark-sas2/1280.html"
 
     if LinuxVersion==2:
-        path="/home/odroid/1280.html"
+        path="/home/soi/dev/spark-sas2/1280.html"
 
     if WINDOWS==True:
         path="D:/msvn/projectcasino/cardintegration/raspberry/python3/python3app/800x480/guiwebview.html"
