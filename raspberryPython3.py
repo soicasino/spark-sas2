@@ -6534,7 +6534,9 @@ def Komut_GetMeter(isall,gameid):
     #A2: restricted amount
     #BA: restricted amount end
     if isall==0 and IsNewMeter==0:
-        SAS_SendCommand("getmeter2",GetCRC("012F0C0000A0B802031E00010BA2BA"),0)#yeni
+         #mehmet
+#        SAS_SendCommand("getmeter2",GetCRC("012F0C0000A0B802031E00010BA2BA"),0)#yeni
+         SAS_SendCommand("getmeter2",GetCRC("012F000005A0B802031E00010BA2BA"),0)#yeni
 
     #A0: cardin
     #B8: cardout
