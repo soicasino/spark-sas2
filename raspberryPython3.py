@@ -742,7 +742,7 @@ G_Machine_ProtocolType=1
 
 #0: Manuel, 1: Novomatic, 2: EGT, 3: IGT, 4: Octovian, 5:Inturist Alphastreet/Zuum roulette, 
 #6: Megajack Casino Tech, 7: Gambee, 8: Bally, 9: Zoom 10: Apex (GameLocked problemliler), 11: Interblock
-G_Machine_DeviceTypeId=8
+G_Machine_DeviceTypeId=2
 try:
     G_Machine_DeviceTypeId=int(Config.get("machine","devicetypeid"))
 except Exception as esql:
