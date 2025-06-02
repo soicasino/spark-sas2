@@ -11376,7 +11376,7 @@ def SAS_SendCommand(CommandName, Command, DoSaveDB):
         #if GENEL_GonderilecekKomut[0:4]=="0172":#levent
         #    time.sleep(0.2)
 
-
+        print ("GENEL_GonderilecekKomut in SAS_Command",GENEL_GonderilecekKomut)
         
         if IsDebugMachineNotExist==1:
             GENEL_GonderilecekKomut=""
