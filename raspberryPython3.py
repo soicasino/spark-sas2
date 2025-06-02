@@ -11362,7 +11362,7 @@ def SAS_SendCommand(CommandName, Command, DoSaveDB):
             #print("SAS Baska bi mesa gonderilmek uzere bekleniliyor." , GENEL_GonderilecekKomut , Command)
             time.sleep(0.01)
 
-        print ("GENEL_GonderilecekKomut",GENEL_GonderilecekKomut )
+       
         if len(Command) % 2 != 0:
             SQL_InsException("SAS_SendCommand","len(Command) % 2 != 0")
             print("PROBLEM BUYUK!!!")
@@ -11382,7 +11382,7 @@ def SAS_SendCommand(CommandName, Command, DoSaveDB):
             GENEL_GonderilecekKomut=""
 
         print ("IsSendByThread", IsSendByThread)
-        if IsSendByThread==0:
+        if IsSendByThread==0 or 1: ## mehmet or 1
             try:
                 SendCommandIsExist()
             except Exception as e:
