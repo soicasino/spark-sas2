@@ -6279,7 +6279,8 @@ def SQL_DeviceStatu(MessageType):
             AssetNoLearnCount=0
             while AssetNoLearnCount<10:
                 if G_Device_AssetNo>0:
-                    print("Asset No Ogrendik!")
+                    print (G_Device_AssetNo)
+                    print(" Asset No Ogrendik!")
                     break
 
                 AssetNoLearnCount=AssetNoLearnCount+1
@@ -11013,12 +11014,12 @@ def CardRead_rCloud(sender=0):
             if tdata=="06":
                 IsCardReaderOpened=1
 
-            IsMessageHandled = 0
+           
             if tdata == '15': # # receive NAK "16"
                  print("+++++++Receive NAK, send command BCC error+++++++",
                       IsSpecialyCommand, "sender", sender)
             elif tdata == "06" or IsSpecialyCommand == True or sender == 1: #receive ACK "06"
-                IsMessageHandled = 1
+              
                 print_time_stamp_ms()
                 #print("05 gonder IsSpecialyCommand",IsSpecialyCommand, "sender", sender)
                 # send "05" ENQ
@@ -11064,7 +11065,7 @@ def CardRead_rCloud(sender=0):
                     # check frame BCC
                     if tdata.startswith("02") != True: # check frame start
                          #print("+++++++Response frame error+++++++", tdata)
-                         teststr="1"
+                        
                     else:
                         G_Machine_LastCardreaderTime=datetime.datetime.now()
 
@@ -11073,7 +11074,7 @@ def CardRead_rCloud(sender=0):
 
                             #2020-02-20  and IsWaitingForParaYukle==0 kaldirdim buradan
                             if tdata.startswith("020003") == True and tdata.find("02000380")==-1 and IsCardInside == 1:
-                                IsMessageHandled = 1
+                              
                                 DoCardExitProcess = 1
 
 
