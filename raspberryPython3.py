@@ -5957,7 +5957,9 @@ def Komut_GetMeter(isall,gameid):
     if isall==0 and IsNewMeter==0:
          #mehmet
 #        SAS_SendCommand("getmeter2",GetCRC("012F0C0000A0B802031E00010BA2BA"),0)#yeni
-         SAS_SendCommand("getmeter2",GetCRC("012F000005A0B802031E00010BA2BA"),0)#yeni
+         #SAS_SendCommand("getmeter2",GetCRC("012F000005A0B802031E00010BA2BA"),0)#yeni
+         #mehmet
+         SAS_SendCommand("getmeter2",GetCRC("012F0900000001020305060B"),0)#yeni
 
     #A0: cardin
     #B8: cardout
@@ -5974,6 +5976,8 @@ def Komut_GetMeter(isall,gameid):
     if isall==0 and IsNewMeter==1:
         #SAS_SendCommand("getmeter2",GetCRC("012F0C0000A0B802031E00010BA2BA"),1)#yeni
         #SAS_SendCommand("getmeter2",GetCRC("012F0C0000"),1)#yeni
+        #SAS_SendCommand("getmeter2",GetCRC("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600"),0)#yeni
+        #mehmet
         SAS_SendCommand("getmeter2",GetCRC("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600"),0)#yeni
     
 
@@ -6156,6 +6160,7 @@ G_MessageCount=0
 G_Machine_OnlineCount=0
 G_Machine_DefBetFactor=1
 G_Machine_Failed_DeviceId_Zero=0
+
 #MessageType: 0: Init 1: Program acildi, 2: Operation, 3: Online Message Interval
 def SQL_DeviceStatu(MessageType):
     global NoNetwork_Count
@@ -6312,7 +6317,7 @@ def SQL_DeviceStatu(MessageType):
         #print("G_DB_Host", G_PG_Host, "G_DB_User", G_PG_User, "G_DB_Database", G_PG_Database)
         result = db_helper.execute_sync_operation(
             'tsp_devicestatu',  # PostgreSQL lowercase name
-            [G_Machine_MacAddress, MessageType, IPAddress, G_Static_VersionId, IsSASPortOpened, IsCardReader_Working, G_Machine_SASPort, G_Machine_CardReaderPort, G_Machine_Statu, IsDeviceLocked, G_Machine_DeviceId, playcount, totalbet, cardmachinelogid, GUI_CurrentPage, G_Machine_OnlineCount, IsSASLink, customerid, G_Device_AssetNo, IsBillAcceptor_Working]
+            [G_Machine_MacAddress,  MessageType, IPAddress, G_Static_VersionId, IsSASPortOpened, IsCardReader_Working, G_Machine_SASPort, G_Machine_CardReaderPort, G_Machine_Statu, IsDeviceLocked, G_Machine_DeviceId, playcount, totalbet, cardmachinelogid, GUI_CurrentPage, G_Machine_OnlineCount, IsSASLink, customerid, G_Device_AssetNo, IsBillAcceptor_Working]
         )
         print("result Mehmet", result)
         G_NetworkLastDate = datetime.datetime.now()
@@ -7278,7 +7283,7 @@ def Komut_ParaYukleEFT(doincreasetransactionid, amount):
         SaveConfigFile()
 
 
-    CommandHeader=Config.get("sas","address")      #1-Address  01
+    CommandHeader=Config.get("sas","address")      #1-Address
     CommandHeader+="69"   #1-Command 
 
     Command=""
