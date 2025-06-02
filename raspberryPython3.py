@@ -91,12 +91,10 @@ import gc
 
 import math
 import psutil
-import signal
 
 import serial
 import re
-import pymssql
-#import _mssql
+
 try:
     import psycopg2
     import psycopg2.extras
@@ -113,11 +111,6 @@ except ImportError:
     print("multiprocessing module not available")
     mp = None
 
-try:
-    from cefpython3 import cefpython as cef
-except ImportError:
-    print("CEF Python not available - using fallback")
-    cef = None
 
 # Initialize variables that might be undefined
 wx = None
@@ -125,14 +118,13 @@ MyBrowser = None
 struct = None
 QtCore = None
 import os
-import array
 import sys
 import datetime
 import socket
 import threading
-from threading import Timer,Thread,Event
+from threading import Timer,Thread
 import time
-import sys, getopt
+import sys
 
 from sys import stdin
 import configparser as ConfigParser
@@ -141,7 +133,6 @@ from decimal import Decimal
 from uuid import getnode as get_mac
 import platform
 import random
-from binascii import unhexlify
 import subprocess
 
 import hashlib
@@ -221,7 +212,6 @@ except Exception as esql:
 
 G_Online_IsOnlinePlaying=0
 
-G_Last_ScreenClick=datetime.datetime.now()
 G_Device_IsReadyForOnlinePlaying=1
 G_Device_IsForOnlinePlaying=1
 if G_Device_IsForOnlinePlaying==1:
@@ -241,7 +231,6 @@ G_Device_AssetNo=0#Bunu cihaz acildiktan sonra sorguluyoruz.
 G_Machine_GameStartEndNotifications=0
 G_Machine_IsAutoNextVisit=0
 G_Machine_CalcBetByTotalCoinIn=0
-G_CardLastDate=datetime.datetime.now()
 G_NetworkLastDate=datetime.datetime.now()
 G_SASLastDate=datetime.datetime.now() + datetime.timedelta(minutes=1)
 G_Machine_LastCardreaderTime=datetime.datetime.now()+ datetime.timedelta(minutes=1)
@@ -252,7 +241,6 @@ G_Machine_IsBonusCashable=0
 G_LastMeterDate=datetime.datetime.now()
 
 
-G_DebugPoint=0
 LinuxVersion=1
 try:
     import distro
@@ -320,7 +308,7 @@ def ReadAssetToInt(d):
 import os, fnmatch
 def find(pattern, path):
     result = []
-    for root, dirs, files in os.walk(path):
+    for root,  files in os.walk(path):
         for name in files:
             if fnmatch.fnmatch(name, pattern):
                 result.append(os.path.join(root, name))
@@ -334,11 +322,6 @@ def ExecuteLinuxCommand(command):
     output = process.communicate()[0]
     return output
 
-def ExecuteLinuxCommandWithoutPipe(command):
-    process = subprocess.Popen(command)
-    output = process.communicate()[0]
-    return output
-
 
 IsKillWifi=0
 
@@ -347,23 +330,19 @@ try:
         ExecuteLinuxCommand("sudo rfkill block wifi")
         ExecuteLinuxCommand("sudo rfkill block bluetooth")
 except Exception as e:
-    G_DebugPoint=1
+    pass
 
 try:
     #sheder
     ExecuteLinuxCommand("rm licence.hashed")
 except Exception as e:
-    G_DebugPoint=1
-
-#wifi
-#try:
-#    ExecuteLinuxCommand("sudo rm -r /etc/wpa_supplicant/wpa_supplicant.conf")
-#except Exception as e:
-#    G_DebugPoint=1
+    pass
 
 
 IsSystemLocked=0
 IsDeviceLocked=0
+
+
 def Kilitle(sender):
     global IsDeviceLocked
     IsDeviceLocked=1
@@ -451,28 +430,6 @@ def get_lan_ip():
 
 GUI_Static_WelcomeText="Please insert your card "
 
-Screen_Width=480
-Screen_Height=320
-
-#drgt
-Screen_Width=640
-Screen_Height=240
-
-Screen_Width=800
-Screen_Height=480
-
-
-Screen_Fontsize1=15
-Screen_Fontsize2=20
-if Screen_Width==800 and Screen_Height==480:
-    Screen_Fontsize1=25
-    Screen_Fontsize2=35
-
-Screen_FontWeight1=31
-if Screen_Fontsize1==25:
-    Screen_FontWeight1=50
-
-
 G_SAS_LastAFTOperation=""
 
 
@@ -553,21 +510,6 @@ def ExecuteJSFunction2(function, para1, para2):
     para2=DecodeHTML(para2)
     ExecuteJS(function + "('"+str(para1)+"','"+str(para2)+"')")
 
-def ExecuteJSFunction3(function, para1, para2, para3):
-    para1=DecodeHTML(para1)
-    para2=DecodeHTML(para2)
-    para3=DecodeHTML(para3)
-    ExecuteJS(function + "('"+str(para1)+"','"+str(para2)+"','"+str(para3)+"')")
-    #main_window.cef_widget.browser.ExecuteFunction(first,second,third)
-
-def ExecuteJSFunction4(function, para1, para2, para3, para4):
-    para1=DecodeHTML(para1)
-    para2=DecodeHTML(para2)
-    para3=DecodeHTML(para3)
-    para4=DecodeHTML(para4)
-    ExecuteJS(function + "('"+para1+"','"+para2+"','"+para3+"','"+para4+"')")
-    #wx.CallAfter(WXBrowser.RunScript,function + "('"+para1+"','"+para2+"','"+para3+"','"+para4+"')")
-
 def ExecuteJSFunction5(function, para1, para2, para3, para4, para5):
     para1=DecodeHTML(para1)
     para2=DecodeHTML(para2)
@@ -576,15 +518,6 @@ def ExecuteJSFunction5(function, para1, para2, para3, para4, para5):
     para5=DecodeHTML(para5)
     ExecuteJS(function + "('"+para1+"','"+para2+"','"+para3+"','"+para4+"','"+para5+"')")
 
-def ExecuteJSFunction7(function, para1, para2, para3, para4, para5, para6, para7):
-    para1=DecodeHTML(para1)
-    para2=DecodeHTML(para2)
-    para3=DecodeHTML(para3)
-    para4=DecodeHTML(para4)
-    para5=DecodeHTML(para5)
-    para6=DecodeHTML(para6)
-    para7=DecodeHTML(para7)
-    ExecuteJS(function + "('"+para1+"','"+para2+"','"+para3+"','"+para4+"','"+para5+"','"+para6+"','"+para7+"')")
 
 def ExecuteJSFunction12(function, para1, para2, para3, para4, para5, para6, para7, para8, para9, para10, para11, para12):
     para1=DecodeHTML(para1)
@@ -608,11 +541,8 @@ def ExecuteJSFunction12(function, para1, para2, para3, para4, para5, para6, para
 ########################################################################
 # <HTML GUI START>-----------------------------------------------------------
 # GLOBALS
-PYQT4 = False
-PYQT5 = False
 
 
-PYQT4 = True
 
 # Fix for PyCharm hints warnings when using static methods
 #WindowUtils = cef.WindowUtils()
@@ -622,84 +552,7 @@ WINDOWS = (platform.system() == "Windows")
 LINUX = (platform.system() == "Linux")
 MAC = (platform.system() == "Darwin")
 
-# Configuration
-WIDTH = 800
-HEIGHT = 480
 
-
-def HTMLGUI():
-    #check_versions()
-    sys.excepthook = cef.ExceptHook  # To shutdown all CEF processes on error
-    settings = {}
-    if MAC:
-        # Issue #442 requires enabling message pump on Mac
-        # in Qt example. Calling cef.DoMessageLoopWork in a timer
-        # doesn't work anymore.
-        settings["external_message_pump"] = True
-
-    cef.Initialize(settings)
-    app = CefApplication(sys.argv)
-    main_window = MainWindow()
-    if WINDOWS==True:
-        main_window.show()
-    else:
-        main_window.showFullScreen()#FullScreen
-    main_window.activateWindow()
-    main_window.raise_()
-    app.exec_()
-
-
-
-    if not cef.GetAppSetting("external_message_pump"):
-        app.stopTimer()
-    del main_window  # Just to be safe, similarly to "del app"
-    del app  # Must destroy app object before calling Shutdown
-    cef.Shutdown()
-
-
-def check_versions():
-
-    # CEF Python version requirement
-    assert cef.__version__ >= "55.4", "CEF Python v55.4+ required to run this"
-
-
-
-
-
-
-class LoadHandler(object):
-    def __init__(self, navigation_bar):
-        self.initial_app_loading = True
-        self.navigation_bar = navigation_bar
-
-    def OnLoadingStateChange(self, **_):
-        self.navigation_bar.updateState()
-
-    def OnLoadStart(self, browser, **_):
-        self.navigation_bar.url.setText(browser.GetUrl())
-        if self.initial_app_loading:
-            self.navigation_bar.cef_widget.setFocus()
-            # Temporary fix no. 2 for focus issue on Linux (Issue #284)
-            if LINUX:
-                print("[qt.py] LoadHandler.OnLoadStart:"
-                      " keyboard focus fix no. 2 (Issue #284)")
-                browser.SetFocus(True)
-            self.initial_app_loading = False
-
-
-class FocusHandler(object):
-    def __init__(self, cef_widget):
-        self.cef_widget = cef_widget
-
-    def OnSetFocus(self, **_):
-        pass
-
-    def OnGotFocus(self, browser, **_):
-        # Temporary fix no. 1 for focus issues on Linux (Issue #284)
-        if LINUX:
-            print("[qt.py] FocusHandler.OnGotFocus:"
-                  " keyboard focus fix no. 1 (Issue #284)")
-            browser.SetFocus(True)
 
 
 # </HTML GUI START>-----------------------------------------------------------
@@ -733,63 +586,12 @@ def Decode2Hex(input):
 
 
 
-
-
-
-def CalcLRC(input):
-    input=Decode2Hex(input)
-    lrc = 0
-    i = 0
-    message = bytearray(input)
-    for b in message:
-        if(i == 0):
-            pass
-        else:
-            lrc ^= b
-        i+=1;
-    return lrc
-
-def CalcLRCByte(message):
-    lrc = 0
-    i = 0
-
-    for b in message:
-        if(i == 0):
-            pass
-        else:
-            lrc ^= b
-        i+=1;
-    return lrc
-
-
-
 def AddLeftString(text, eklenecek,kacadet):
     while (kacadet>0):
         text=eklenecek+text
         kacadet=kacadet-1
 
     return text
-
-
-def FillLeftZeroIfSingular(str):
-    retdata=str
-
-    if len(retdata)%2==1:
-        retdata="%s%s" % ("0", retdata)
-
-    return retdata
-
-
-def StrLengthCeiling(str):
-    
-    retdata=len(str)
-
-    if retdata%2==1:
-        retdata=retdata+1
-
-    retdata=retdata/2
-
-    return retdata
 
 
 def HEXNumberToInt(test1):
@@ -819,9 +621,6 @@ def AddLeftBCD(numbers, leng):
 IsGUIFullScreen=0
 GUI_CurrentPage=""
 
-IsRealTimeReportingEnabled=1
-
-
 IsSASPortOpened=0
 IsCardReaderOpened=0
 
@@ -842,7 +641,6 @@ G_Machine_ReservationOK=""
 
 
 G_Machine_WagerBonusFactors=[]
-G_Machine_WagerName=""
 G_Machine_WagerIndex=0
 
 
@@ -957,8 +755,6 @@ G_Machine_IsPromoAccepts=0
 G_Machine_DeviceTypeGroupId=0
 
 
-G_AutoCashoutTime=10
-
 
 G_Machine_NoActivityTimeOutForBillAcceptor=0
 
@@ -969,11 +765,8 @@ G_Machine_TicketPrinterTypeId=0
 G_Machine_BillAcceptorTypeId=0
 G_Casino_IsAssetNoAlwaysOne=0
 G_Machine_NewGamingDay=0
-G_Machine_IsLockedByAdmin=0
 G_Machine_ScreenTypeId=8
 G_Machine_ScreenRotate=0
-G_Machine_CashInLimit=0
-G_Machine_IsPartialTransfer=0
 G_Machine_IsRecordAllSAS=0
 G_Machine_IsCanPlayWithoutCard=0
 G_Machine_IsCashless=1
@@ -1166,16 +959,12 @@ def GetMeiACK():
     return Mei_LastAckNack
 
 
-G_LastBillAcceptor_AcKapaCommand=datetime.datetime.now()
 IsBillacceptorOpen=0
 def BillAcceptor_Inhibit_Open():
-    global G_LastBillAcceptor_AcKapaCommand
     global IsBillacceptorOpen
     IsBillacceptorOpen=1
 
-    LastBillAcDiff=(datetime.datetime.now()-G_LastBillAcceptor_AcKapaCommand).total_seconds()
 
-    G_LastBillAcceptor_AcKapaCommand=datetime.datetime.now()
     if G_Machine_BillAcceptorTypeId==1:
         SendBillAcceptorCommand("FC06C30004D6")
     if G_Machine_BillAcceptorTypeId==2:
@@ -1183,13 +972,10 @@ def BillAcceptor_Inhibit_Open():
 
 
 def BillAcceptor_Inhibit_Close():
-    global G_LastBillAcceptor_AcKapaCommand
     global IsBillacceptorOpen
     IsBillacceptorOpen=0
 
-    LastBillAcDiff=(datetime.datetime.now()-G_LastBillAcceptor_AcKapaCommand).total_seconds()
 
-    G_LastBillAcceptor_AcKapaCommand=datetime.datetime.now()
     if G_Machine_BillAcceptorTypeId==1:
         #BillAcceptorCommand("FC06C3018DC7")
         SendBillAcceptorCommand("FC06C3018DC7")
@@ -1277,12 +1063,6 @@ def BillAcceptor_Currency_Assign_Req():
         BillAcceptorCommand("FC 05 8A 7D 7C")
     if G_Machine_BillAcceptorTypeId==2:
         print("Bisi yapmaya gerek yok currency assign")
-
-
-
-def BillAcceptor_ACK():
-    if G_Machine_BillAcceptorTypeId==1:
-        BillAcceptorCommand("FC 05 50 AA 05")
 
 
 
@@ -1442,37 +1222,6 @@ def ParseMEICurrency(MoneyString):
     return CurrencyCode, CountryCode, BillValue
     
 
-
-
-
-
-dictCurrencies = []
-
-
-def GetCurrencyDenom(currencyCode):
-    if len(dictCurrencies)==0:
-        return -1
-    for member in dictCurrencies:
-        if str(member['currencyCode'])==str(currencyCode):
-            return member["denom"]
-    return -1
-
-def GetCurrencyCountryCode(currencyCode):
-    if len(dictCurrencies)==0:
-        return "-1"
-    for member in dictCurrencies:
-        if str(member['currencyCode'])==str(currencyCode):
-            return member["countryCode"]
-    return "-1"
-
-def GetCurrencyDenomHex(currencyCode):
-    if len(dictCurrencies)==0:
-        return "-1"
-    for member in dictCurrencies:
-        if str(member['currencyCode'])==str(currencyCode):
-            return member["denomHex"]
-    return "-1"
-#</Dictionary Currencies>--------------------------
 
 
 
@@ -1926,21 +1675,6 @@ G_USE_POSTGRESQL=True  # Force PostgreSQL only - no MSSQL fallback
 
 
 
-# DEPRECATED MSSQL Configuration Loading (migrated to PostgreSQL)
-# Legacy configuration files are kept for backward compatibility but not used
-try:
-    file = open('casinoip.ini', 'r')
-    legacy_db_host = file.read().replace('\n','')
-    print("DEPRECATED: Legacy MSSQL Host found:", legacy_db_host, "- Using PostgreSQL instead")
-except Exception as e:
-    print("No legacy MSSQL configuration found (expected)")
-
-try:
-    file = open('db.ini', 'r') 
-    legacy_db_database = file.read().replace('\n','')
-    print("DEPRECATED: Legacy MSSQL Database found:", legacy_db_database, "- Using PostgreSQL instead")
-except Exception as e:
-    print("No legacy MSSQL database configuration found (expected)")
 
 # PostgreSQL configuration from files
 try:
@@ -2030,79 +1764,6 @@ IsDebugNotControlAfterCardInserted=0
 
 
 
-#<PYQT>--------------------------------------------------------------
-class MainWindow(QWidget):
-    def __init__(self):
-        QWidget.__init__(self)
-        self.setGeometry(100,100,1280,480)
-        
-        oImage = QImage("bg.jpg")
-        sImage = oImage.scaled(QSize(1280,480))
-        palette = QPalette()
-        palette.setBrush(QPalette.Window, QBrush(sImage))                        
-        self.setPalette(palette)
-        
-        
-        #self.label = QLabel('Test aciklamasi', self)
-        #self.label.setGeometry(300,300,200,50)
-
-
-        self.labelM = QLabel(self)
-        self.labelM.setGeometry(1175,20,1280,50)
-        self.labelM.setFont(QFont('SansSerif', 30))
-        self.labelM.setText("<font color='yellow'>"+G_Machine_MachineName+"</font>")
-        
-
-
-        self.labelA = QLabel(self)
-        self.labelA.setGeometry(0,175,1280,50)
-        self.labelA.setFont(QFont('SansSerif', 30))
-
-
-        self.labelB = QLabel(self)
-        self.labelB.setGeometry(0,225,1280,50)
-        self.labelB.setFont(QFont('SansSerif', 35))
-        #self.labelB.setText("<center><font color='white'>Sn. Spark (111111)</font></center>")
-
-        self.labelC = QLabel(self)
-        self.labelC.setGeometry(0,400,1280,50)
-        self.labelC.setFont(QFont('SansSerif', 25))
-        #self.labelC.setText("<center><font color='yellow'>Please insert your card</font></center>")
-
-        #labelA.setStyleSheet("{color: #C0BBFE}");
-        #labelA.move(100, 40)
-
-        if WINDOWS==True:
-            self.show()
-        else:
-            self.showFullScreen()
-
-    def ShowCustomerPage(self, text1, text2):
-        print("text1", text1, "text2", text2)
-        self.labelA.setText("<center><font color='white'>"+text1+"</font></center>")
-        self.labelB.setText("<center><font color='white'>"+text2+"</font></center>")
-
-    def HideCustomerPage(self):
-        self.labelA.setText("")
-        self.labelB.setText("")
-
-    def ChangeStatu(self, text1):
-        self.labelC.setText("<center><font color='yellow'>"+text1+"</font></center>")
-
-    def ChangeMachineName(self, text1):
-        self.labelM.setText("<center><font color='yellow'>"+text1+"</font></center>")
-
-print("Start")
-oMainwindow=None
-def CreateGUI():
-    global oMainwindow
-    app = QApplication(sys.argv)
-    oMainwindow = MainWindow()
-    #oMainwindow.ChangeMachineName(G_Machine_MachineName)
-    sys.exit(app.exec_())
-
-#</PYQT>-------------------------------------------------------------
-
 
 G_IsDeviceTestPurpose=0
 # MIGRATED: Use PostgreSQL host for test environment detection
@@ -2142,7 +1803,7 @@ if WINDOWS==True or G_IsDeviceTestPurpose==1 or G_PG_Host=="admiral.gopizza.fi" 
 
 
 # MIGRATED: Use PostgreSQL host for debug configuration
-if G_PG_Host=="95.158.189.2":
+if G_PG_Host=="10.0.0.59":
     IsDebugMachineNotExist=0
 
 
@@ -2436,7 +2097,6 @@ class DatabaseHelper:
         pg_procedure_name = self.normalize_procedure_name(procedure_name)
         
         result = None
-        execution_success = False
         error_message = None
         
         # PostgreSQL ONLY - no MSSQL fallback
@@ -2489,7 +2149,6 @@ class DatabaseHelper:
                     result = []
                     print(f"Called PROCEDURE: {pg_procedure_name} (no params)")
             
-            execution_success = True
             
             # Log the sync procedure call to message queue
             self.log_sync_procedure_call(original_name, parameters, result, "postgresql", None, sas_message)
@@ -2618,117 +2277,10 @@ class DatabaseHelper:
         except Exception as e:
             print(f"SQLite sync call logging failed: {e}")
 
-    def sync_pending_sqlite_messages(self):
-        """Sync pending messages from SQLite to PostgreSQL when connection is restored"""
-        pg_conn = self.get_postgresql_connection()
-        if not pg_conn:
-            return False
-        
-        try:
-            sqlite_cursor = conn.cursor()  # Using global SQLite connection
-            sqlite_cursor.execute("""
-                SELECT id, procedure_name, parameters, created_at 
-                FROM pending_messages 
-                ORDER BY created_at
-            """)
-            
-            pending_messages = sqlite_cursor.fetchall()
-            if not pending_messages:
-                return True
-            
-            print(f"Syncing {len(pending_messages)} pending messages to PostgreSQL")
-            
-            pg_cursor = pg_conn.cursor()
-            synced_ids = []
-            
-            for row in pending_messages:
-                msg_id, procedure_name, parameters_json, created_at = row
-                try:
-                    parameters = json.loads(parameters_json)
-                    
-                    payload = {
-                        'procedure_name': procedure_name,
-                        'parameters': parameters,
-                        'device_id': G_Machine_Mac,
-                        'timestamp': created_at,
-                        'synced_from_sqlite': True
-                    }
-                    
-                    pg_cursor.execute("""
-                        INSERT INTO public.device_messages_queue (id, slot_machine_id, procedure_name, payload, status, created_at)
-                        VALUES (%s, %s, %s, %s, 'pending', %s)
-                    """, (
-                        str(uuid.uuid4()),
-                        G_Machine_Mac,
-                        procedure_name,
-                        json.dumps(payload, cls=DecimalEncoder),
-                        created_at
-                    ))
-                    
-                    synced_ids.append(msg_id)
-                    
-                except Exception as e:
-                    print(f"Failed to sync message {msg_id}: {e}")
-            
-            # Remove synced messages from SQLite
-            if synced_ids:
-                placeholders = ','.join('?' * len(synced_ids))
-                sqlite_cursor.execute(f"""
-                    DELETE FROM pending_messages WHERE id IN ({placeholders})
-                """, synced_ids)
-                conn.commit()
-                print(f"Synced and removed {len(synced_ids)} messages from SQLite")
-            
-            return True
-            
-        except Exception as e:
-            print(f"Failed to sync pending SQLite messages: {e}")
-            return False
 
 # Initialize database helper
 db_helper = DatabaseHelper()
 
-def verify_postgresql_migration():
-    """Verify that all critical procedures exist in PostgreSQL after migration"""
-    print("=== VERIFYING POSTGRESQL MIGRATION ===")
-    
-    # Critical procedures that MUST exist for app functionality
-    critical_procedures = [
-        'tsp_GetBalanceInfoOnGM',    # Balance checking
-        'tsp_CardRead',              # Card reading
-        'tsp_CardReadPartial',       # Partial card read
-        'tsp_CheckBillacceptorIn',   # Bill acceptor validation
-        'tsp_DeviceStatu',           # Device status updates
-        'tsp_InsGameStart',          # Game start logging
-        'tsp_InsGameEnd',            # Game end logging
-        'tsp_InsBillAcceptorMoney',  # Bill acceptor money insert
-        'tsp_CardExit',              # Card exit handling
-    ]
-    
-    missing_procedures = []
-    verified_procedures = []
-    
-    for mssql_proc in critical_procedures:
-        pg_proc = db_helper.normalize_procedure_name(mssql_proc)
-        if db_helper.validate_procedure_exists(pg_proc):
-            verified_procedures.append(f"{mssql_proc} -> {pg_proc}")
-        else:
-            missing_procedures.append(f"{mssql_proc} -> {pg_proc}")
-    
-    print(f"\n✓ VERIFIED PROCEDURES ({len(verified_procedures)}):")
-    for proc in verified_procedures:
-        print(f"  {proc}")
-    
-    if missing_procedures:
-        print(f"\n❌ MISSING PROCEDURES ({len(missing_procedures)}):")
-        for proc in missing_procedures:
-            print(f"  {proc}")
-        print("\n⚠️  WARNING: Some critical procedures are missing from PostgreSQL!")
-        print("   Please check postgres-routines-in-sas.sql for these procedures.")
-        return False
-    else:
-        print(f"\n🎉 ALL CRITICAL PROCEDURES VERIFIED! PostgreSQL migration ready.")
-        return True
 
 # Helper function to extract SAS message information
 def get_current_sas_context():
@@ -2748,12 +2300,7 @@ def get_current_sas_context():
     except:
         pass
     
-    try:
-        # Add any current SAS command being processed
-        if 'G_LastSASCommand' in globals():
-            sas_context['last_sas_command'] = G_LastSASCommand
-    except:
-        pass
+   
     
     try:
         # Add SAS version info
@@ -2899,11 +2446,6 @@ except Exception as e:
     G_Machine_NewGamingDay=0
 
 try:
-    G_Machine_IsLockedByAdmin=Config.getint('machine','islockedbyadmin')
-except Exception as e:
-    G_Machine_IsLockedByAdmin=0
-
-try:
     G_Machine_AdminCards=Config.get('machine','admincards')
 except Exception as e:
     G_Machine_AdminCards=""
@@ -2940,39 +2482,7 @@ if G_Machine_ScreenTypeId==9:
 
 #<CEFPYTHON>--------------------------------------------------------------------------
 main_window=None
-def CreateCEFPython():
-    global main_window
 
-    if IsGUI_Type==3:#HTML
-        #check_versions()
-        sys.excepthook = cef.ExceptHook  # To shutdown all CEF processes on error
-        settings = {}
-        if MAC:
-            # Issue #442 requires enabling message pump on Mac
-            # in Qt example. Calling cef.DoMessageLoopWork in a timer
-            # doesn't work anymore.
-            settings["external_message_pump"] = True
-
-        cef.Initialize(settings)
-        app = CefApplication(sys.argv)
-        main_window = MainWindow()
-        main_window.show()
-
-        main_window.activateWindow()
-
-        main_window.raise_()
-
-
-
-        app.exec_()
-
-
-
-        if not cef.GetAppSetting("external_message_pump"):
-            app.stopTimer()
-        del main_window  # Just to be safe, similarly to "del app"
-        del app  # Must destroy app object before calling Shutdown
-        cef.Shutdown()
 #<CEFPYTHON>--------------------------------------------------------------------------
 
 
@@ -3586,14 +3096,6 @@ class HtmlApi:
         }
         return response
 
-    def DoSomethingFromJavascript(self, parametre):
-        print("DoSomethingFromJavascript params", parametre)
-        HandleJSEvent(parametre)
-
-        response = {
-            'message': 'Hello {0}!'.format(parametre)
-        }
-        return response
 
     def error(self):
         raise Exception('This is a Python exception')
@@ -3684,19 +3186,6 @@ def CheckNextVisit():
         say=0
         for i in range(1, 13):
             say=say+1
-    
-            renk=random.randint(1, 5)
-            Bg = "blue";
-            #if renk == 2:
-            #    Bg = "purple"
-            #if renk == 3:
-            #    Bg = "blue"
-    
-            #if renk == 4:
-            #    Bg = "green"
-    
-            #if renk == 5:
-            #    Bg = "#FB00FF"
     
     
             BoxesHtml += "<td>"
@@ -3855,11 +3344,9 @@ def Wait_ParaYukle(transfertype):
         while (IsWaitingForParaYukle==1):
             time.sleep(0.003)
             LastCommandDate_ParaYukle_Diff=(datetime.datetime.now()-LastCommandDate_ParaYukle).total_seconds()
-            FirstCommandDate_ParaYukle_Diff=(datetime.datetime.now()-WaitParaYukle_Date).total_seconds()
 
             SayKomutBekliyor=SayKomutBekliyor+1
 
-            LastCommandDiff=(datetime.datetime.now()-Last_ParaYukleDate).total_seconds()
 
             if IsDebugAutoParaYukleYanit==1:
                 IsWaitingForParaYukle=0
@@ -3990,7 +3477,6 @@ G_Cashout_SOS=0
 Step_Parasifirla="0"
 Global_ParaSilme_TransferStatus=""
 WaitingParaSifirla_PendingCount=0
-FaultCount_WaitingParasifirla=0
 IsWaitingForBakiyeSifirla=0
 def Wait_ParaSifirla():
     try:
@@ -4021,8 +3507,6 @@ def Wait_ParaSifirla():
         global WaitingParaSifirla_PendingCount
         WaitingParaSifirla_PendingCount=0
 
-        global FaultCount_WaitingParasifirla
-        FaultCount_WaitingParasifirla=0
 
         global Sifirla_FirstTransaction
         Sifirla_FirstTransaction=0
@@ -4067,7 +3551,6 @@ def Wait_ParaSifirla():
                 time.sleep(0.05)
                 SayKomutBekliyor=SayKomutBekliyor+1
 
-                LastCommandDiff=(datetime.datetime.now()-Last_ParaSifirlaDate).total_seconds()
 
                 Step_Parasifirla="5." + str(Count_SentSifirlaCommand)
                 if SayKomutBekliyor%16==0:
@@ -4283,11 +3766,9 @@ def NextionCommandThread(data):
     global nextionport
     global NextionCommandStr
     global G_Last_NextionCommand
-    global Nextion_Busy
     global GUI_Static_WelcomeText
     GUI_Static_WelcomeText="Insert card"
 
-    Nextion_Busy=1
 
 
     #G_Last_NextionCommand_Diff=(datetime.datetime.now()-G_Last_NextionCommand).total_seconds()
@@ -4340,55 +3821,13 @@ def NextionCommandThread(data):
             
 
         NextionCommandStr = []
-        Nextion_Busy=0
+        
     except Exception as esql:
-        Nextion_Busy=0
+        
         print("Nextion command sent error")
         ExceptionHandler("Nextion Err",esql,0)
 
 Nextion_Count_Cmd=0
-def SendNextionCommandIfExist():
-    return
-
-    global Nextion_Count_Cmd
-    Nextion_Count_Cmd=Nextion_Count_Cmd+1
-    
-    LocalVar=Nextion_Count_Cmd
-    print("<Start Nextion>---------------------------------------------", LocalVar)
-    global NextionCommandStr
-    try:
-
-        for cmd in NextionCommandStr:
-
-            print("Nextion TX", cmd, nextionport.port)
-
-            if nextionport.isOpen()==False:
-                print("Error! not opened!" , NextionCommandStr)
-                return
-
-            #nextionport.flushInput
-
-            #nextionport.flushInput()
-
-            #cmd="page 1"
-            EndCom = "\xff\xff\xff"
-            RealCommand=(cmd.encode())
-            RealCommand=bytearray(RealCommand)
-            RealCommand.append(255)
-            RealCommand.append(255)
-            RealCommand.append(255)
-            nextionport.write(RealCommand)
-            time.sleep(0.2)
-            
-
-    
-    except Exception as esql:
-        print("Nextion command sent error")
-        ExceptionHandler("Nextion Err",esql,0)
-
-    NextionCommandStr = []
-    print("</Start Nextion>---------------------------------------------", LocalVar)
-
 
 
 def CloseCustomerInfo():
@@ -4396,14 +3835,14 @@ def CloseCustomerInfo():
 
         if IsGUIEnabled==0:
             return
-        debugpoint=0
+     
 
         if IsGUI_Type==1:
             try:
                 ui.emit(QtCore.SIGNAL('CloseCustomerWindow()'))
             except Exception as e:
                 print("Close Customer Info failed")
-                debugpoint=1
+         
 
 
         if IsGUI_Type==2:
@@ -5161,7 +4600,6 @@ def SQL_ReadCustomerInfo_Test(KartNo,CardRawData):
         global G_LastCardExit
         global G_User_PrevCardNo
         global G_LastCardEnter
-        global IsWaitAtLeastCardExistDbSaved
         global BillAcceptor_Amount
         global Global_ParaYuklemeFail_SQL
         global G_SAS_Transfer_Warning_DoorIsLocked
@@ -5260,7 +4698,7 @@ def SQL_ReadCustomerInfo_Test(KartNo,CardRawData):
                 G_SessionStarted=datetime.datetime.now()
                 G_Session_CardExitStatus=0
                 Global_ParaYuklemeFail_SQL=0
-                IsWaitAtLeastCardExistDbSaved=0
+                
                 
                 print("************************** TEST CARD INSIDE **************************")
                 print("Result: %s, Message: %s, Kart No: %s Adi:%s, Bakiye:%s" % (
@@ -5425,7 +4863,6 @@ def SQL_ReadCustomerInfo(KartNo,CardRawData):
         global G_LastCardExit
         global G_User_PrevCardNo
         global G_LastCardEnter
-        global IsWaitAtLeastCardExistDbSaved
         global BillAcceptor_Amount
         global Global_ParaYuklemeFail_SQL
         global G_SAS_Transfer_Warning_DoorIsLocked
@@ -5600,7 +5037,7 @@ def SQL_ReadCustomerInfo(KartNo,CardRawData):
                 G_Session_CardExitStatus=0
 
                 Global_ParaYuklemeFail_SQL=0
-                IsWaitAtLeastCardExistDbSaved=0
+                
                 
                 print("************************** CARD INSIDE **************************")
                 print("Result: %s, Message: %s, Kart No: %s Adi:%s, Bakiye:%s" % (row['Result'],row['ErrorMessage'], G_User_CardNo, row['Fullname'], row['Balance']))
@@ -5814,7 +5251,7 @@ def SQL_ReadCustomerInfo(KartNo,CardRawData):
 
 def ExceptionHandler(name, e, Insert2DB):
     try:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
+        exc_type,  exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
         print("Exception On ", name, exc_type, fname, exc_tb.tb_lineno)
         if Insert2DB==1:
@@ -5887,22 +5324,6 @@ def SQL_InsKioskBonusWon():
 
 
 
-#def SQL_test():
-#    result = []
-#    try:
-#        conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
-#        conn.autocommit(True)
-#        cursor = conn.cursor(as_dict=True)
-#        cursor.callproc('tsp_test', (1, 1))
-#        conn.close()
-#    except Exception as e:
-#        ExceptionHandler("SQL_test",e,1)
-
-
-#    return result
-
-
-#SQL_test()
 
 
 
@@ -6766,8 +6187,6 @@ def SQL_DeviceStatu(MessageType):
         global G_Machine_Failed_DeviceId_Zero
         global G_Machine_ScreenTypeId
         global G_Machine_BillAcceptorTypeId
-        global G_Machine_CashInLimit
-        global G_Machine_IsPartialTransfer
         global G_Machine_IsRecordAllSAS
         global G_Machine_IsCanPlayWithoutCard
         global G_Machine_IsCashless
@@ -6919,8 +6338,6 @@ def SQL_DeviceStatu(MessageType):
 
                 G_Machine_ScreenTypeId=int(row["ScreenTypeId"])
                 G_Machine_BillAcceptorTypeId=int(row["BillAcceptorTypeId"])
-                G_Machine_CashInLimit=Decimal(row["CashInLimit"])
-                G_Machine_IsPartialTransfer=int(row["IsPartialTransfer"])
                 Config.set('machine','screentypeid', str(int(row["ScreenTypeId"])))
                 Config.set('machine','billacceptorid', str(int(row["BillAcceptorTypeId"])))
                 SaveConfigFile()
@@ -7133,32 +6550,12 @@ def SQL_DeviceStatu(MessageType):
                         print("<Streaming>---------------------------------------------------")
                         result = SQL_GetDeviceAdditionalInfo(G_Machine_DeviceId)
                         for rowOnline in result:
-                            G_Online_StreamId=rowOnline["StreamId"]
-                            G_Online_CamStreamId=rowOnline["CamStreamId"]
-                            G_Online_IPCameraURL=rowOnline["IPCameraURL"]
-
-                            #1: EGT Tek Screen
-                            G_Online_ButtonConfigId=int(rowOnline["ButtonConfigId"])
-
-                            G_Online_ResolutionX=rowOnline["ResolutionX"]
-                            G_Online_ResolutionY=rowOnline["ResolutionY"]
                             G_Online_IsOnlinePlaying=int(rowOnline["IsOnlinePlaying"])
                             try:
                                 if G_Online_IsOnlinePlaying==1 and G_IsStreamingInit==0:
                                     G_IsStreamingInit=1
                                     print("<CreateStreamingScript>---------------------------------------------------")
                                     
-                                    #threadStreaming = Thread(target = CreateStreamingScriptHDMI, args = (G_CasinoId,G_Machine_DeviceId,G_Online_ButtonConfigId, ))
-                                    #threadStreaming.name="StreamingHDMI"
-                                    #threadStreaming.start()
-
-                                    #threadStreaming = Thread(target = CreateStreamingScriptHDMIAudio, args = (G_CasinoId,G_Machine_DeviceId,G_Online_ButtonConfigId, ))
-                                    #threadStreaming.name="StreamingAudio"
-                                    #threadStreaming.start()
-                                    
-                                    #threadStreaming = Thread(target = CreateStreamingScriptCamera, args = (G_CasinoId,G_Machine_DeviceId,G_Online_IPCameraURL, G_Online_ButtonConfigId, ))
-                                    #threadStreaming.name="StreamingCamera"
-                                    #threadStreaming.start()
                                     
 
                                     print("</CreateStreamingScript>---------------------------------------------------")
@@ -7288,7 +6685,6 @@ def SQL_DeviceStatu(MessageType):
         GUI_ShowIfPossibleMainStatu(ErrorMessage_NoNetwork)
         print("NoNetwork_Count", NoNetwork_Count)
         if NoNetwork_Count>30:
-            NoNetworkDiff=(datetime.datetime.now()-G_NetworkLastDate).total_seconds()
 
             GUI_ShowIfPossibleMainStatu("No network restart!")
             ExecuteCommand("restart")
@@ -7337,24 +6733,6 @@ def SQL_InsDeviceMoneyQuery(CashableAmount,RestrictedAmount,NonrestrictedAmount,
         ExceptionHandler("SQL_InsDeviceMoneyQuery", e, 1)
 
 
-
-def SQL_InsDeviceDebug(message):
-    # Original MSSQL procedure: tsp_InsDeviceDebug
-    cardmachinelogid = 0
-    cardmachinelogid = Config.getint('customer', 'cardmachinelogid')
-
-    try:
-        cardmachinelogid = G_CardMachineLogId
-    except Exception as eCardLogId:
-        ExceptionHandler("cardmachinelogid", eCardLogId, 0)
-
-    try:
-        db_helper.execute_database_operation(
-            'tsp_insdevicedebug',  # PostgreSQL lowercase name
-            [cardmachinelogid, G_Machine_DeviceId, message]
-        )
-    except Exception as e:
-        ExceptionHandler("SQL_InsDeviceDebug", e, 1)
 
 def SQL_InsDeviceMeter(GameNumber, TotalCoinIn, TotalCoinOut,TotalJackpot ,GamesPlayed, TotalHandPaidCredit, TotalCreditsBillsAccepted, CurrentCredits_0C,TurnOver, TurnOut, NonCashableIn, NonCashableOut, TotalBonus, GamesWon, GamesLost):
     cardmachinelogid=0
@@ -7431,7 +6809,7 @@ def SQL_InsException(MethodName, ErrorMessage):
             [G_Machine_Mac, MethodName, ErrorMessage]
         )
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
+        exc_type,  exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
         print("Yapilacak birsey yok.", MethodName, exc_type, fname, exc_tb.tb_lineno)
 
@@ -7449,6 +6827,7 @@ GameStart_TotalCoinInMeter=Decimal(0)
 
 JackpotWonAmount=0
 GameStartId=0
+
 def SQL_InsGameStart(Wagered, WonAmount, TotalCoinIn,WagerType,ProgressiveGroup,GamePromo, TotalPlayCount, TotalCoinInMeter):
     try:
         global IsCardReaderBusy
@@ -7874,11 +7253,6 @@ def Komut_EnableBillAcceptor():
         BillAcceptor_Inhibit_Open()
     #GUI_ShowIfPossibleMainStatu("Enable bill acceptor")
 
-def EnableDisableAutoPlay(isenabled):
-    if isenabled==1:
-        SAS_SendCommand("EnableAutoPlay",GetCRC("01AA01"),0)
-    else:
-        SAS_SendCommand("DisableAutoPlay",GetCRC("01AA00"),0)
 
 def DelayPlay():
     #SAS_SendCommand("DelayPlay","012E9000C616",0)
@@ -7968,15 +7342,12 @@ def Komut_ParaSilEFT(doincreasetransactionid, amount):
     SAS_SendCommand("ParaSil",GenelKomut,1)
 
 Last_ParaYukle_TransferType=0
-Last_ParaYukleDate=datetime.datetime.now()
 def Komut_ParaYukle(doincreasetransactionid, transfertype):
     global G_Config_IsCashoutSoft
     global IsWaitingForParaYukle
     global Yukle_FirstTransaction
     global Yukle_LastTransaction
     global CashIn_CompletedBy
-    global Last_ParaYukleDate
-    Last_ParaYukleDate=datetime.datetime.now()
 
     #SQL_DeviceStatu(2)
 
@@ -9045,7 +8416,6 @@ IsWaitingForBakiyeSorgulama=0
 
 
 BakiyeSorgulama_Count=0
-BakiyeSorgulama_Sender=0
 IsBalanceQueryForInfo=1
 #isForInfo-> 0: Needed, 1: Bilgi icin,
 def Komut_BakiyeSorgulama(sender, isforinfo, sendertext='UndefinedBakiyeSorgulama'):
@@ -9054,12 +8424,10 @@ def Komut_BakiyeSorgulama(sender, isforinfo, sendertext='UndefinedBakiyeSorgulam
     #print("Bakiye sorgula command is executed.")
     global IsWaitingForBakiyeSorgulama
     global IsBalanceQueryForInfo
-    global BakiyeSorgulama_Sender
     global BakiyeSorgulama_Count
 
 
     IsBalanceQueryForInfo=isforinfo
-    BakiyeSorgulama_Sender=sender
     IsLockNeed=False
     if isforinfo==0:
         IsLockNeed=True
@@ -11457,7 +10825,7 @@ def CardRead_CRT288B():
         global IsInstantCardInside
         global IsCardRead
         global IsCardReaderBusy
-        global IsWaitAtLeastCardExistDbSaved
+        
         global IsWaitingAdminScreen
 
         if G_Machine_Ready==0:
@@ -11586,7 +10954,6 @@ def CardRead_rCloud(sender=0):
     global IsCardReaderBusy
     global G_User_CardNo
     global CardReaderCommandStr
-    global G_CardLastDate
     global IsCardReaderOpened
     global G_Machine_LastCardreaderTime
     global G_LastCardRead
@@ -11715,12 +11082,10 @@ def CardRead_rCloud(sender=0):
 
                             if tdata.startswith("020007") == True:
 
-                                G_CardLastDate=datetime.datetime.now()
                                 CardIndexLength = tdata.find("353159")+6
                                 CardNo = tdata[CardIndexLength: CardIndexLength+8]
 
                                 
-                                LastCardReadDiff=(datetime.datetime.now()-G_LastCardRead).total_seconds()
 
                                 #print("debug card", CardNo, "IsCardInside", IsCardInside, "IsCardReaderBusy", IsCardReaderBusy, "LastCardReadDiff", LastCardReadDiff)
 
@@ -11761,7 +11126,6 @@ def CardRead_rCloud(sender=0):
                                         DoCardExitProcess = 1
 
                             if DoCardExitProcess == 1:
-                                G_CardLastDate=datetime.datetime.now()
 
                                 if G_Session_IsByOnline==1:
                                     return
@@ -12232,7 +11596,6 @@ def DoSASPoolingMsg(isInit):
         #if G_Machine_DeviceTypeId==10:
         #    IsSendByThread=0
 
-        LastStep_DoSASPoolingMsg="0"
 
         global WakeUpCount
         WakeUpCount=WakeUpCount+1
@@ -12285,7 +11648,6 @@ def DoSASPoolingMsg(isInit):
 
 
 
-        LastStep_DoSASPoolingMsg="0.1"
 
 
 
@@ -12307,7 +11669,7 @@ def DoSASPoolingMsg(isInit):
 
 
         if (SendWakeUp==1 and len(GENEL_GonderilecekKomut)==0 and (WakeUpCount%WakeUpCountDivider==0)) or DoPoolingInAnyCase==1:
-            LastStep_DoSASPoolingMsg="0.2"
+
 
             #if WakeUpCount%5==0:
             #    Send81=0
@@ -12337,7 +11699,6 @@ def DoSASPoolingMsg(isInit):
 
 
 
-        LastStep_DoSASPoolingMsg="0.3"
         IsMessageSent=0
         if IsSendByThread==1 and len(GENEL_GonderilecekKomut)>0:
             SendCommandIsExist()
@@ -12354,22 +11715,18 @@ def DoSASPoolingMsg(isInit):
             #    time.sleep(0.019)
 
 
-        LastStep_DoSASPoolingMsg="0.4"
         SasReadingVersion=1
 
         #print("SAS", isInit, "G_Machine_SasPoolingVersion", G_Machine_SasPoolingVersion)
         if isInit==0 and SasReadingVersion==1:
             tFoundMessages = []
-            LastStep_DoSASPoolingMsg="0.5"
             #SendWakeUp=1
 
             IsACKMessage=0
 
             while 1:
                 data_left = sasport.inWaiting()
-                LastStep_DoSASPoolingMsg="0.6"
                 if data_left==0:
-                    LastStep_DoSASPoolingMsg="0.7"
                     break
 
                 tdata = GetDataFromSasPort(IsMessageSent)
@@ -12393,9 +11750,7 @@ def DoSASPoolingMsg(isInit):
                 LastStep_DoSASPoolingMsg="3-" + tdata
                 messageFound=""
                 messageFoundCRC=""
-                messageRestOfMessage=""
-                messageImportant=0
-                messageFound, messageFoundCRC, messageRestOfMessage , messageImportant= ParseMessage(tdata)
+                messageFound, messageFoundCRC = ParseMessage(tdata)
                 LastStep_DoSASPoolingMsg="4-" + tdata
 
 
@@ -12858,7 +12213,6 @@ def HandleReceivedSASCommand(tdata):
         global G_Machine_SASVersion
         global G_TrustBalance
         global G_Machine_NewGamingDay
-        global G_Machine_WagerName
         global G_Machine_WagerIndex
         global G_Machine_CalcBetByTotalCoinIn
         
@@ -13539,11 +12893,8 @@ def HandleReceivedSASCommand(tdata):
                     
 
                     try:
-                        WagerBonusFactor=1
                         for member in G_Machine_WagerBonusFactors:
                             if Wagered>=Decimal(member['wager']):
-                                WagerBonusFactor=Decimal(member['bonusfactor'])
-                                G_Machine_WagerName=member['wagername']
                                 G_Machine_WagerIndex=member['index']
 
                         #print("New Bonus Type!! "+G_Machine_WagerName+" Old:" , bonuspercentage, "Wagered", Wagered, "JackpotFactor", G_Machine_JackpotFactor, "WagerBonusFactor", WagerBonusFactor)
@@ -14125,7 +13476,6 @@ def DoTestCardReader():
 Nextion_LastReceivedDate=datetime.datetime.now()
 Nextion_CurrentStep=""
 Nextion_MachineName=""
-Nextion_Busy=0
 def DoNextionPooling(isForceRead=0):
     try:
         global nextionport
@@ -14134,7 +13484,6 @@ def DoNextionPooling(isForceRead=0):
         global IsWaitingAdminScreen
         global Nextion_LastReceivedDate
         global G_Machine_IsNextionPortFound
-        global Nextion_Busy
 
         global NextionCommandStr
 
@@ -14145,8 +13494,6 @@ def DoNextionPooling(isForceRead=0):
             else:
                 time.sleep(0.2)
 
-        #if Nextion_Busy==1:
-        #    return
 
         tdata=""
     
@@ -14781,7 +14128,6 @@ def DoHandUserInput(command):
         return
 
     global IsAvailableForCashoutButton
-    global G_Machine_IsLockedByAdmin
 
     print("Command to process", command)
     command=command.replace("\n","")
@@ -14889,7 +14235,6 @@ def DoHandUserInput(command):
         isprocessed=1
         Kilitle("Command Line")
 
-        G_Machine_IsLockedByAdmin=1
         Config.set('machine','islockedbyadmin', "1")
         SaveConfigFile()
 
@@ -15814,7 +15159,6 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
 
     class ScreenClick(Resource):
         global arduinoPort
-        global G_Last_ScreenClick
         def get(self, x, y):
 
             print("Screen click", x, y)
