@@ -11259,7 +11259,8 @@ def SendSASCommand(Command):
         #print("SAS GIDEN", Command, "G_Machine_DeviceTypeId", G_Machine_DeviceTypeId, "port", sasport.port, "acik:", sasport.isOpen(),  datetime.datetime.now())
         print("TX: ", G_Machine_DeviceTypeId, Command, sasport.port, datetime.datetime.now())
 
-
+    print ("G_Machine_DeviceTypeId", G_Machine_DeviceTypeId)
+    print ("Command", Command)
     if G_Machine_DeviceTypeId==1 or G_Machine_DeviceTypeId==4:
         SendSASPORT(Command)
     else:
@@ -11382,7 +11383,7 @@ def SAS_SendCommand(CommandName, Command, DoSaveDB):
             GENEL_GonderilecekKomut=""
 
         print ("IsSendByThread", IsSendByThread)
-        if IsSendByThread==0 or 1: ## mehmet or 1
+        if IsSendByThread==0 :
             try:
                 SendCommandIsExist()
             except Exception as e:
