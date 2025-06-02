@@ -6279,8 +6279,8 @@ def SQL_DeviceStatu(MessageType):
             AssetNoLearnCount=0
             while AssetNoLearnCount<10:
                 if G_Device_AssetNo>0:
-                    print (G_Device_AssetNo)
-                    print(" Asset No Ogrendik!")
+                    print ("G_Device_AssetNo", G_Device_AssetNo)
+                    print("Asset No Ogrendik!")
                     break
 
                 AssetNoLearnCount=AssetNoLearnCount+1
@@ -11065,7 +11065,8 @@ def CardRead_rCloud(sender=0):
                     # check frame BCC
                     if tdata.startswith("02") != True: # check frame start
                          #print("+++++++Response frame error+++++++", tdata)
-                        
+                         #teststr="1"
+                         pass
                     else:
                         G_Machine_LastCardreaderTime=datetime.datetime.now()
 
