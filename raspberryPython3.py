@@ -11380,7 +11380,7 @@ def SAS_SendCommand(CommandName, Command, DoSaveDB):
         if IsDebugMachineNotExist==1:
             GENEL_GonderilecekKomut=""
 
-
+        print ("IsSendByThread", IsSendByThread)
         if IsSendByThread==0:
             try:
                 SendCommandIsExist()
@@ -12193,6 +12193,7 @@ G_Wagered=0
 Last_SAS_AcceptedBillAcceptorMessage=""
 IsHandpayOK=0
 Prev_Wagered=Decimal(0)
+
 def HandleReceivedSASCommand(tdata):
     try:
         global G_Count_AFT_YanitHandle
@@ -12240,7 +12241,7 @@ def HandleReceivedSASCommand(tdata):
 
         EventId=0
         EventName=""
-
+        print ("tdata mehmet", tdata)
 
         if G_Machine_IsRecordAllSAS==1:
             SQL_InsReceivedMessage(tdata,0,"")
