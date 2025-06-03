@@ -244,6 +244,4031 @@ G_LastMeterDate=datetime.datetime.now()
 LinuxVersion=1
 try:
     import distro
+    if str(distro.id()) == "ubuntu":
+        LinuxVersion=2
+    print("Linux", distro.id(), distro.version(), distro.name(), LinuxVersion)
+except Exception as esql:
+    LinuxVersion=1
+
+
+
+if platform.system().startswith("Window")==False and LinuxVersion!=2:
+    import RPi.GPIO as GPIO
+
+
+FilePathSO="/home/soi/crt_288B_UR.so"
+if LinuxVersion==3:
+    FilePathSO="/home/soi/dev/spark-sas2/crt_288B_UR.so"
+
+
+
+if platform.system().startswith("Window")==False:
+    import termios
+
+
+G_Session_IsByOnline=0
+
+
+def GetAssetBinary(d):
+    HexaString=hex(int(d)).split('x')[-1].upper()
+    if len(HexaString)%2!=0:
+        HexaString="0" + HexaString
+        
+    ReversedHexaString=""
+    i=len(HexaString)-2
+    while i>=0:
+        ReversedHexaString=ReversedHexaString+HexaString[i:i+2]
+        i=i-2
+
+    while len(ReversedHexaString)<8:
+        ReversedHexaString=ReversedHexaString+"0"
+
+    #print("HexaString", HexaString)
+    #print("ReversedHexaString", ReversedHexaString)
+    return ReversedHexaString
+
+def ReadAssetToInt(d):
+    HexaString=d
+    if len(HexaString)%2!=0:
+        HexaString="0" + HexaString
+        
+    ReversedHexaString=""
+    i=len(HexaString)-2
+    while i>=0:
+        #print("lan")
+        ReversedHexaString=ReversedHexaString+HexaString[i:i+2]
+        i=i-2
+
+    print("Read: HexaString", HexaString)
+    print("Read: ReversedHexaString", ReversedHexaString)
+    print("Int Read:" , int(ReversedHexaString, 16))
+    return int(ReversedHexaString, 16)
+
+
+import os, fnmatch
+def find(pattern, path):
+    result = []
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            if fnmatch.fnmatch(name, pattern):
+                result.append(os.path.join(root, name))
+    return result
+
+
+
+def ExecuteLinuxCommand(command):
+    #print("Linux command", command)
+    process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
+    output = process.communicate()[0]
+    return output
+
+
+IsKillWifi=0
+
+try:
+    if IsKillWifi==1:
+        ExecuteLinuxCommand("sudo rfkill block wifi")
+        ExecuteLinuxCommand("sudo rfkill block bluetooth")
+except Exception as e:
+    pass
+
+
+
+IsSystemLocked=0
+IsDeviceLocked=0
+
+
+def Kilitle(sender):
+    global IsDeviceLocked
+    IsDeviceLocked=1
+    print("Kilitlenecek!" , sender)
+    PrintAndSetAsStatuText("Locked")
+    Command="01 01 51 08"
+    Command=Command.replace(" ","")
+    SAS_SendCommand("kilitle",Command,0)
+
+    SQL_Safe_InsImportantMessage("EGM is locked by Cashless System " + sender,68)
+
+    thread1 = Thread(target = SQL_UpdDeviceIsLocked, args = (1, ))
+    thread1.name="Lock"
+    thread1.start()
+
+def Ac(sender):
+    print("Kilit acilacak", sender)
+    global IsDeviceLocked
+    IsDeviceLocked=0
+
+    if sender!="Ready for game":
+        SQL_Safe_InsImportantMessage("EGM is unlocked by Cashless System ("+sender+")",68)
+
+    #PrintAndSetAsStatuText("UnLocked")
+    
+    Command="01 02 CA 3A"
+    Command=Command.replace(" ","")
+    
+    SAS_SendCommand("ac",Command,0)
+    time.sleep(0.1)
+    SAS_SendCommand("ac",Command,0)
+
+    thread1 = Thread(target = SQL_UpdDeviceIsLocked, args = (0, ))
+    thread1.name="Ac"
+    thread1.start()
+
+
+
+if os.name != "nt":
+    import fcntl
+    import struct
+
+    def get_interface_ip(ifname):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s',
+                                ifname[:15]))[20:24])
+
+def get_lan_ip():
+
+
+
+    ip="1.1.1.1"
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip=s.getsockname()[0]
+
+        if 2==1:
+            ip = socket.gethostbyname(socket.gethostname())
+            if ip.startswith("127.") and os.name != "nt":
+                interfaces = [
+                    "eth0",
+                    "eth1",
+                    "eth2",
+                    "wlan0",
+                    "wlan1",
+                    "wifi0",
+                    "ath0",
+                    "ath1",
+                    "ppp0",
+                    ]
+                for ifname in interfaces:
+                    try:
+                        ip = get_interface_ip(ifname)
+                        break
+                    except IOError:
+                        pass
+    except Exception as esql:
+        ip="1.1.1.1"
+    return ip
+
+
+########################################################################
+# <GUI START>-----------------------------------------------------------
+
+GUI_Static_WelcomeText="Please insert your card "
+
+G_SAS_LastAFTOperation=""
+
+
+
+########################################################################
+# <HTML GENEL START>-----------------------------------------------------------
+
+LastJS_Commands = []
+def DoExecuteJS(textcmd=""):
+    global G_Machine_ScreenTypeId
+    global LastJS_Commands
+
+    if G_Online_IsOnlinePlaying==1:
+        return
+
+    if G_Machine_ScreenTypeId==0:
+        return
+
+    try:
+        #print("*********************JS textcmd", textcmd)
+        if len(LastJS_Commands)>30:
+            while len(LastJS_Commands)>20:
+                del LastJS_Commands[0]
+                #print("Silindi")
+
+        #LastJS_Commands.append(textcmd[0:40])
+    except Exception as esql:
+        print("Execute JS Del Err", textcmd)
+
+    try:
+        window.evaluate_js(textcmd)
+    except Exception as esql:
+        print("Execute JS Command error", textcmd)
+
+
+def timeout(func, args = (), kwds = {}, timeout = 1, default = None):
+    pool = mp.Pool(processes = 1)
+    result = pool.apply_async(func, args = args, kwds = kwds)
+    try:
+        val = result.get(timeout = timeout)
+    except mp.TimeoutError:
+        pool.terminate()
+        return default
+    else:
+        pool.close()
+        pool.join()
+        return val
+
+def ExecuteJS(textcmd):
+    #print(timeout(DoExecuteJS, args = (textcmd,), timeout = 2, default = 'Sayonara'))
+    ThreadName="ExJS"
+    try:
+        ThreadName=ThreadName + textcmd[0:22]
+    except Exception as esql:
+        print("SQLite Err Init!")
+
+    thread1 = Thread(target = DoExecuteJS, args = (textcmd, ))
+    thread1.name=ThreadName
+    thread1.start()
+
+def DecodeHTMLChars(para):
+    para=para.replace("'","&rsquo;")
+    para=para.replace("\"","&rdquo;")
+    return para
+
+def DecodeHTML(para):
+    para=para.replace("'","\\'")
+    para=para.replace("\"","\\\"")
+    return para
+
+def ExecuteJSFunction(function, para1):
+    para1=DecodeHTML(para1)
+    ExecuteJS(function + "('"+para1+"')")
+    #main_window.cef_widget.browser.ExecuteFunction(first,second)
+
+def ExecuteJSFunction2(function, para1, para2):
+    para1=DecodeHTML(para1)
+    para2=DecodeHTML(para2)
+    ExecuteJS(function + "('"+str(para1)+"','"+str(para2)+"')")
+
+def ExecuteJSFunction5(function, para1, para2, para3, para4, para5):
+    para1=DecodeHTML(para1)
+    para2=DecodeHTML(para2)
+    para3=DecodeHTML(para3)
+    para4=DecodeHTML(para4)
+    para5=DecodeHTML(para5)
+    ExecuteJS(function + "('"+para1+"','"+para2+"','"+para3+"','"+para4+"','"+para5+"')")
+
+
+def ExecuteJSFunction12(function, para1, para2, para3, para4, para5, para6, para7, para8, para9, para10, para11, para12):
+    para1=DecodeHTML(para1)
+    para2=DecodeHTML(para2)
+    para3=DecodeHTML(para3)
+    para4=DecodeHTML(para4)
+    para5=DecodeHTML(para5)
+    para6=DecodeHTML(para6)
+    para7=DecodeHTML(para7)
+    para8=DecodeHTML(para8)
+    para9=DecodeHTML(para9)
+    para10=DecodeHTML(para10)
+    para11=DecodeHTML(para11)
+    para12=DecodeHTML(para12)
+    ExecuteJS(function + "('"+para1+"','"+para2+"','"+para3+"','"+para4+"','"+para5+"','"+para6+"','"+para7+"','"+para8+"','"+para9+"','"+para10+"','"+para11+"','"+para12+"')")
+# </HTML GENEL START>-----------------------------------------------------------
+########################################################################
+
+
+
+########################################################################
+# <HTML GUI START>-----------------------------------------------------------
+# GLOBALS
+
+
+
+# Fix for PyCharm hints warnings when using static methods
+#WindowUtils = cef.WindowUtils()
+
+# Platforms
+WINDOWS = (platform.system() == "Windows")
+LINUX = (platform.system() == "Linux")
+MAC = (platform.system() == "Darwin")
+
+
+
+
+# </HTML GUI START>-----------------------------------------------------------
+########################################################################
+
+#<GUI START>----------------------------------------
+
+
+        
+
+
+#</MAIN SCREEN BUTTONS>########################################################################################################
+
+
+
+
+
+
+
+
+
+
+# </GUI START>-----------------------------------------------------------        
+########################################################################
+
+
+
+def Decode2Hex(input):
+    return bytearray.fromhex(input)
+
+
+
+
+def AddLeftString(text, eklenecek,kacadet):
+    while (kacadet>0):
+        text=eklenecek+text
+        kacadet=kacadet-1
+
+    return text
+
+
+def HEXNumberToInt(test1):
+    return bytes.fromhex(test1).decode('utf-8')
+
+
+def AddLeftBCD(numbers, leng):
+    
+    numbers=int(numbers)
+
+    retdata=str(numbers)
+
+    if len(retdata)%2==1:
+        retdata="%s%s" % ("0", retdata)
+
+
+    countNumber=len(retdata)/2 #1250 4
+    kalan=(leng-countNumber)        #5-4 = 1
+
+    retdata=AddLeftString(retdata, "00",kalan)
+
+    return retdata
+
+
+
+
+IsGUIFullScreen=0
+GUI_CurrentPage=""
+
+IsSASPortOpened=0
+IsCardReaderOpened=0
+
+
+IsAvailableForCashoutButton=1
+G_TrustBalance=datetime.datetime.now()
+G_LastGameEnded=datetime.datetime.now()
+G_LastGameStarted=datetime.datetime.now()
+G_LastCardExit=datetime.datetime.now()
+G_LastCardEnter=datetime.datetime.now()
+G_LastGame_Action=datetime.datetime.now()
+G_SessionStarted=datetime.datetime.now()
+G_LastGame_IsFinished=1
+G_Machine_ReservationDate=datetime.datetime.now() - datetime.timedelta(minutes=30)
+G_Machine_ReservationCard=""
+G_Machine_ReservationCustomername=""
+G_Machine_ReservationOK=""
+
+
+G_Machine_WagerBonusFactors=[]
+G_Machine_WagerIndex=0
+
+
+IsGUIEnabled=0
+
+#1: Normal, 2: Nextion, 3: HTML - 4: 800 HTML, 5: TEK SAYFA 
+IsGUI_Type=0
+
+
+
+IsWaitingAdminScreen=0
+
+#1: Inturist
+#2: Salamis
+#3: Cashoutsuz
+#4: Ambassador
+#5: Savoy
+#6: Malpas
+#7: Corona
+#8: Golden Palace
+#9: Lords Palace
+#10 Senator
+#11: Golden Atlantik
+#12: Viva
+G_CasinoId=1
+
+G_Machine_DeviceId=0
+G_Machine_AssetNo=0
+
+G_Machine_CurrencyId=0
+G_Casino_CurrencyId=0
+G_Machine_CurrencyRate=1
+
+G_Machine_IsBonusGives=0
+
+G_Machine_SASVersion="0"
+G_Machine_PayBackPerc=Decimal(0)
+
+G_Machine_Balance=Decimal(0)
+G_Machine_Promo=Decimal(0)
+
+#1: promo yaridan gitsin
+G_Machine_CasinoPromoType=0
+
+
+G_Machine_CardReaderType=1
+G_Machine_CardReaderModel=""#Eject
+if len(find('crt*.so', '/home/soi/dev/spark-sas2'))==0:
+    G_Machine_CardReaderType=2
+    print("CHINA CARD READER!!!!")
+
+
+
+
+G_Machine_Currency="TRY"
+G_Casino_Name="TEST"
+
+def getMAC(interface='eth0'):
+    # Return the MAC address of the specified interface
+    try:
+        if LinuxVersion==1:
+            str = open('/sys/class/net/%s/address' %interface).read().upper()
+        if LinuxVersion==2:
+            from uuid import getnode as get_mac
+            str = get_mac()
+            str= ':'.join(("%012X" % str)[i:i+2] for i in range(0, 12, 2))
+    except:
+        str = "00:00:00:00:00:00"
+    return str[0:17]
+
+
+
+G_Machine_Mac=getMAC("eth0")
+if platform.system().startswith("Window")==True:
+    G_Machine_Mac=':'.join(("%012X" % get_mac())[i:i+2] for i in range(0, 12, 2))
+G_Machine_MacAddress=G_Machine_Mac
+try:
+    assetNo=ReadAssetToInt(Config.get('sas','assetnumber'))
+    G_Machine_Mac=str(assetNo)
+    if G_Machine_Mac=="1" or len(G_Machine_Mac)==0:
+        G_Machine_Mac=G_Machine_MacAddress
+    print("G_Machine_Mac", G_Machine_Mac)
+except:
+    print("Exception G_Machine_Mac")
+
+
+
+
+G_Machine_Ready=1
+
+G_Machine_GameStartEndBalance=0
+
+
+
+G_Machine_IsRulet=0
+
+#1: AFT: Traditional, 2: AFT Fast  3: Online 4: EFT
+G_Machine_ProtocolType=1
+
+#0: Manuel, 1: Novomatic, 2: EGT, 3: IGT, 4: Octovian, 5:Inturist Alphastreet/Zuum roulette, 
+#6: Megajack Casino Tech, 7: Gambee, 8: Bally, 9: Zoom 10: Apex (GameLocked problemliler), 11: Interblock
+G_Machine_DeviceTypeId=2
+try:
+    G_Machine_DeviceTypeId=int(Config.get("machine","devicetypeid"))
+except Exception as esql:
+    print("---------")
+
+print("G_Machine_DeviceTypeId", G_Machine_DeviceTypeId)
+
+G_Machine_IsPromoAccepts=0
+
+G_Machine_DeviceTypeGroupId=0
+
+
+
+G_Machine_NoActivityTimeOutForBillAcceptor=0
+
+G_Machine_NoActivityTimeForCashoutMoney=0
+G_Machine_NoActivityTimeForCashoutSeconds=0
+
+G_Machine_TicketPrinterTypeId=0
+G_Machine_BillAcceptorTypeId=0
+G_Casino_IsAssetNoAlwaysOne=0
+G_Machine_NewGamingDay=0
+G_Machine_ScreenTypeId=8
+G_Machine_ScreenRotate=0
+G_Machine_IsRecordAllSAS=0
+G_Machine_IsCanPlayWithoutCard=0
+G_Machine_IsCashless=1
+
+G_Machine_NotifyWonLimit=999999
+G_Machine_JackpotId=0
+G_Machine_JackpotFactor=Decimal(1)
+
+#Lock only on roulette
+G_Machine_LockBeforeAFT=0
+
+
+
+G_SelectedGameId=0
+Log_TotalCoinInMeter=Decimal(0)
+G_SelectedGameName=""
+
+
+
+G_Machine_AdminCards=""
+
+G_Machine_Statu="Started! Ready!!"
+
+
+
+G_Machine_CardReaderPort='/dev/ttyUSB'
+
+
+G_Machine_IsSASPortFound=0
+G_Machine_IsNextionPortFound=0
+G_Machine_IsBillacceptorPortFound=0
+
+G_Machine_SASPort='/dev/ttyUSB0'#usb 1-1.3: FTDI USB Serial Device converter now attached to ttyUSB1
+G_Machine_SASPort="COM2"
+G_Machine_NextionPort='/dev/ttyUSB1'#usb 1-1.1.3: pl2303 converter now attached to ttyUSB2
+G_Machine_BillacceptorPort="/dev/ttyUSB2"#usb 1-1.1.2: pl2303 converter now attached to ttyUSB3
+G_Machine_USB_Ports=[]
+
+def FindPorts(sender):
+#<Find ports>--------------------------------------------------------------
+    global G_Machine_USB_Ports
+    try:
+        G_Machine_USB_Ports=[]
+        
+        if platform.system().startswith("Window")==True:
+            portDict =	{
+                "portNo": "COM4",
+                "isUsed": 0,
+                "deviceName": ""
+                }
+            G_Machine_USB_Ports.append(portDict)
+
+        if LinuxVersion>0 and LINUX==True:
+            #output = subprocess.check_output("dmesg | grep ttyUSB", shell=True)
+            output = str(subprocess.check_output("ls /dev/ttyUSB*", shell=True))
+
+            output=output.replace("b'","").replace("'","").replace("\\n","|")
+
+            print("output", output, type(output))
+            for row in output.split('|'):
+                if len(row)==0:
+                    break
+
+                deviceName=""
+                isUsed=0
+                PortNo=row#'/dev/' + row.split(" ")[len(row.split(" "))-1]
+
+
+                try:
+                    if sender!="sas" and sasport.port==PortNo and sasport.isOpen()==True:
+                        isUsed=1
+                        deviceName="sas"
+
+                except Exception as e:
+                    print("Is Used SAS")
+
+
+                try:
+                    if sender!="card" and cardreader.port==PortNo and cardreader.isOpen()==True:
+                        isUsed=1
+                        deviceName="cardreader"
+                except Exception as e:
+                    print("Is Used cardreader")
+
+                try:
+                    if G_Machine_BillAcceptorTypeId>0:
+                        if sender!="bill" and billacceptorport.port==PortNo and billacceptorport.isOpen()==True:
+                            isUsed=1
+                            deviceName="billacceptorport"
+                except Exception as e:
+                    print("Is Used billacceptorport")
+
+
+                if sender=="all":
+                    isUsed=0
+
+
+                if len(PortNo)>0:# and PortNo not in G_Machine_USB_Ports:
+                    portDict =	{
+                        "portNo": PortNo,
+                        "isUsed": isUsed,
+                        "deviceName": deviceName
+                        }
+                    G_Machine_USB_Ports.append(portDict)
+
+        print("G_Machine_USB_Ports", G_Machine_USB_Ports, len(G_Machine_USB_Ports))
+    except Exception as e:
+        print("Port bulma error...")
+        time.sleep(1)
+#</Find ports>--------------------------------------------------------------
+FindPorts("all")
+
+
+if platform.system().startswith("Window")==True:
+    portDict =	{
+        "portNo": "COM4",
+        "isUsed": 0,
+        "deviceName": ""
+        }
+    G_Machine_USB_Ports.append(portDict)
+
+
+#</Find ports>--------------------------------------------------------------
+
+
+#<CARD READER RENKLI>---------------------------------
+
+
+def CardReader_ColorCommand(cmd):
+    try:
+        if G_Machine_CardReaderModel=="Eject" or G_Machine_CardReaderType==1:
+            return
+
+        thread1 = Thread(target = CardReaderCommand, args = (cmd, ))
+        thread1.name="CardR1"
+        thread1.start()
+    except Exception as e:
+        print("Card reader error")
+
+def CardReader_CardExitStart():
+    # white LED always blink
+    #CardReader_ColorCommand("02000580313702050385")
+    #cok hizli CardReader_ColorCommand("02000580313701FF037C")
+    CardReader_ColorCommand("020005803137026403E4")
+
+def CardReader_CardProblem():
+    # red LED always blink
+    CardReader_ColorCommand("020005803131020A038C")
+
+def CardReader_WaitingNewDay():
+    # red Cyan always blink
+    CardReader_ColorCommand("020005803136056403E2")
+
+
+def CardReader_CardExitEnd():
+    # enable gradient
+    CardReader_ColorCommand("020005803200000003B6")
+
+
+def CardReader_CardInsertStart():
+    #255 Yesil
+    CardReader_ColorCommand("020005803132023203B7")
+
+def CardReader_CardInsertEnd():
+    #Renksiz yap
+    CardReader_ColorCommand("020005803300000003B7")
+
+def CardReader_EjectCard():
+    SQL_Safe_InsImportantMessage("Card ejected",68)
+    thread1 = Thread(target = CardReaderCommand, args = ("02000232300301", ))
+    thread1.name="EjCard"
+    thread1.start()
+    #CardReader_ColorCommand("02000232300301")
+#</CARD READER RENKLI>---------------------------------
+
+#<BILL ACCEPTOR HELPER>------------------------------------------------------------------------
+billacceptorport = serial.Serial()
+
+
+
+Mei_LastAckNack=""
+def GetMeiACK():
+    global Mei_LastAckNack
+    if Mei_LastAckNack=="10" or len(Mei_LastAckNack)<2:
+        Mei_LastAckNack="11"
+    else:
+        Mei_LastAckNack="10"
+    
+
+    return Mei_LastAckNack
+
+
+IsBillacceptorOpen=0
+def BillAcceptor_Inhibit_Open():
+    global IsBillacceptorOpen
+    IsBillacceptorOpen=1
+
+
+    if G_Machine_BillAcceptorTypeId==1:
+        SendBillAcceptorCommand("FC06C30004D6")
+    if G_Machine_BillAcceptorTypeId==2:
+        SendBillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 7F 1C 10 03 6A"))
+
+
+def BillAcceptor_Inhibit_Close():
+    global IsBillacceptorOpen
+    IsBillacceptorOpen=0
+
+
+    if G_Machine_BillAcceptorTypeId==1:
+        #BillAcceptorCommand("FC06C3018DC7")
+        SendBillAcceptorCommand("FC06C3018DC7")
+    if G_Machine_BillAcceptorTypeId==2:
+        SendBillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 00 1C 10 03 14"))
+
+    print("Disable bill acceptor")
+
+def BillAcceptor_Reset():
+    if G_Machine_BillAcceptorTypeId==1:
+        BillAcceptorCommand("FC 05 40 2B 15")
+    if G_Machine_BillAcceptorTypeId==2:
+        #BillAcceptorCommand("02 08 60 7F 7F 7F 03 17")
+        #Eskisi BillAcceptorCommand("02 08 60 7F 7F 7F 03 17 02 08 10 7F 1C 12 03 69")
+        BillAcceptorCommand("02 08 60 7F 7F 7F 03 17")
+
+
+
+
+def BillAcceptor_Reject(sender):
+    SQL_Safe_InsImportantMessage("Bill is rejected " + sender,80)
+    print("****** REJECT YAP ******")
+    if G_Machine_BillAcceptorTypeId==1:
+        BillAcceptorCommand("FC 05 43 B0 27")
+    if G_Machine_BillAcceptorTypeId==2:
+        BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK() +" 7F 5C 10 03 00"))
+
+
+Count_StatusCheck=0
+def BillAcceptor_Status_Check():
+    global Count_StatusCheck
+    Count_StatusCheck=Count_StatusCheck+1
+
+    if G_Machine_BillAcceptorTypeId==1:
+        BillAcceptorCommand("FC 05 11 27 56")
+
+    if G_Machine_BillAcceptorTypeId==2:
+        
+        if IsBillacceptorOpen==1:
+
+            BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 7F 1C 10 03 00"))
+
+
+            #Sondan ucuncuyu 10. Ama barkod icin 12 yapicaz.
+            #if Count_StatusCheck%2==0:
+            #    BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 7F 1C 12 03 6B"))
+            #else:
+            #    BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 7F 1C 12 03 6A"))
+
+
+            
+
+            #ACK=GetMeiACK()
+            #LASTCRC="6B"
+            #if ACK=="11":
+            #    LASTCRC="6A"
+            #if Count_StatusCheck%2==0:
+            #    BillAcceptorCommand(GetMEIMsgCRC("02 08 "+ACK+" 7F 1C 10 03 " + LASTCRC))
+            #else:
+            #    BillAcceptorCommand(GetMEIMsgCRC("02 08 "+ACK+" 7F 1C 10 03" + LASTCRC))
+            
+
+            #Auto Stack:                                    02 08 10 7F 1C 10 03 6B 
+        if IsBillacceptorOpen==0:
+            BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 00 1C 10 03 00"))
+
+            #if Count_StatusCheck%2==0:
+            #    BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 00 1C 10 03 14"))
+            #else:
+            #    BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 00 1C 10 03 15"))
+
+        
+
+
+def BillAcceptor_Stack1():
+    SQL_Safe_InsImportantMessage("Bill Stack Cmd",100)
+    if G_Machine_BillAcceptorTypeId==1:
+        BillAcceptorCommand("FC 05 41 A2 04")
+    if G_Machine_BillAcceptorTypeId==2:
+        BillAcceptorCommand(GetMEIMsgCRC("02 08 "+GetMeiACK()+" 7F 3C 10 03 00"))
+        
+
+def BillAcceptor_Currency_Assign_Req():
+    if G_Machine_BillAcceptorTypeId==1:
+        BillAcceptorCommand("FC 05 8A 7D 7C")
+    if G_Machine_BillAcceptorTypeId==2:
+        print("Bisi yapmaya gerek yok currency assign")
+
+
+
+
+IsBillAcceptorPoolingStarted=0
+BillAcceptorCommandStr=""
+def BillAcceptorCommand(data):
+    if IsBillAcceptorPoolingStarted==0:
+        return
+
+    if G_Online_IsOnlinePlaying==1:
+        return
+
+
+    data=data.replace(" ","")
+    if "ACK" in data:
+        data=data.replace("ACK",GetMeiACK())
+    if "CRC" in data:
+        data=data.replace("CRC","")
+        data=GetMEIMsgCRC(data)
+        print("senddata", data)
+
+
+    global BillAcceptorCommandStr
+
+    CountryTry=0
+    while len(BillAcceptorCommandStr)>0:
+
+        CountryTry=CountryTry+1
+        
+        if CountryTry%10==0:
+            print("Please wait.. Another command is being sent to bill acceptor Old", BillAcceptorCommandStr, "Current" , data)
+        
+        time.sleep(0.1)
+
+
+        if CountryTry>5000:
+            print("break bill acceptor while commandstr")
+            break
+
+
+    BillAcceptorCommandStr=data
+
+
+
+
+def SendBillAcceptorCommand(senddata):
+
+    try:
+        try:
+            senddata=senddata.replace(" ","")
+            if "ACK" in senddata:
+                senddata=senddata.replace("ACK",GetMeiACK())
+            if "CRC" in senddata:
+                senddata=senddata.replace("CRC","")
+                senddata=GetMEIMsgCRC(senddata)
+                print("senddata", senddata)
+        except Exception as esql1:
+            print("Err")
+
+
+        IsShowDebugSent=0
+        if IsShowDebugSent==1:
+            print("Gonderilen mesaj", senddata)
+
+
+        hex_data = Decode2Hex(senddata)
+        billacceptorport.write(hex_data)
+        #print("Sent data", hex_data)
+    except Exception as esql:
+        senddata=""
+
+def SendBillAcceptorCommandIsExist():
+    global BillAcceptorCommandStr
+    if len(BillAcceptorCommandStr)==0:
+        return
+    try:
+        senddata=BillAcceptorCommandStr.replace(" ","")
+        
+        
+        IsShowDebugSent=1
+        if senddata=="020811001C100315":
+            IsShowDebugSent=0
+        if senddata=="020810001C100314":
+            IsShowDebugSent=0
+        if senddata=="0208107F1C10036B":
+            IsShowDebugSent=0
+        if senddata=="0208117F1C10036A":
+            IsShowDebugSent=0
+
+        IsShowDebugSent=0
+        if IsShowDebugSent==1:
+            print("Gonderilen mesaj", senddata)
+
+
+        hex_data = Decode2Hex(senddata)
+        billacceptorport.write(hex_data)
+        #if G_Machine_BillAcceptorTypeId==2:
+        #    billacceptorport.flush()
+    except Exception as esql:
+        BillAcceptorCommandStr=""
+        #print("BillAcceptorCommand command sent error")
+    BillAcceptorCommandStr=""
+
+#<Dictionary Currencies>--------------------------
+
+
+
+
+def GetMEIMsgCRC(Orji):
+    Orji=Orji.replace(" ","")
+    Orji=Orji[0:len(Orji)-2] + "00"
+    hex_data=Decode2Hex(Orji)
+
+    for byte in range(1, len(hex_data)-2):
+        hex_data[len(hex_data)-1] ^= hex_data[byte]
+
+    tdata=hex_data.hex().upper()
+    return tdata
+
+
+def ParseMEICurrency(MoneyString):
+    extDataIndex=20
+    CurrencyCode=MoneyString[extDataIndex:extDataIndex+2]
+
+    CountryCode=MoneyString[extDataIndex+2:extDataIndex+2+6]
+    CountryCodeHex=MoneyString[extDataIndex+2:extDataIndex+2+6]
+    CountryCode=bytearray.fromhex(CountryCode).decode()
+
+
+    if CountryCodeHex=="000000":
+        return "","", 0
+    
+    BillValue=MoneyString[extDataIndex+8:extDataIndex+8+6]
+    BillValue=int(bytearray.fromhex(BillValue).decode())
+    
+    
+    num3 = MoneyString[extDataIndex + 16:  extDataIndex + 16+4]
+    num3=int(bytearray.fromhex(num3).decode())
+    
+    carpan= MoneyString[extDataIndex + 14:extDataIndex + 14+ 2]
+    if carpan=="2B":
+        num4=1
+        while 1==1:
+            if num4 > num3:
+                break
+            BillValue=BillValue*10
+            num4=num4+1
+    else:
+        num5=1
+        while 1==1:
+            if num5>num3:
+                break
+            BillValue=BillValue/10
+    
+    
+    return CurrencyCode, CountryCode, BillValue
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Billacceptor_LastCredit=0
+Billacceptor_LastDenom=0
+Billacceptor_LastDenomHex=""
+Billacceptor_LastCountryCode=""
+
+Billacceptor_TotalAmount=0
+Billacceptor_TotalCount=0
+IsBillacceptorBusy_Stacking=0
+IsBillacceptorBusy_Stacked=0
+
+state_dict = {1:"Idling", 2:"Accepting", 4:"Escrowed", 8:"Stacking",16:"Stacked", 32:"Returning", 64:"Returned",17:"Stacked Idling ", 65:"Returned Idling"}
+event_dict = {0:"", 1:"Cheated", 2:"Rejected", 4:"Jammed", 8:"Full"}
+#16:"Casette Installed"
+
+
+Last_Billacceptor_Message=""
+Last_Billacceptor_Message_Handle=""
+Last_Billacceptor_Meaning=""
+IsBillacceptorBusy_Accepting=0
+Prev_IsCashboxInstalled=1
+IsBillAcceptorBusy=0
+def DoBillAcceptorPooling():
+    global Last_Billacceptor_Message
+    global Last_Billacceptor_Message_Handle
+    global G_Machine_LastBillAcceptorTime
+    global Prev_IsCashboxInstalled
+    global IsBillAcceptorBusy
+    global IsCardReaderBusy
+    global Last_Billacceptor_Meaning
+    global IsBillAcceptorPoolingStarted
+    IsBillAcceptorPoolingStarted=1
+
+    global Billacceptor_TotalCount
+    global Billacceptor_TotalAmount
+    global sasport
+    global IsBillacceptorBusy_Stacking
+    global IsBillacceptorBusy_Stacked
+    global Billacceptor_LastCredit
+    global Billacceptor_LastDenom
+    global Billacceptor_LastDenomHex
+    global Billacceptor_LastCountryCode
+    global IsBillacceptorBusy_Accepting
+    global G_Machine_IsBillacceptorPortFound
+
+    if len(BillAcceptorCommandStr)==0:
+        BillAcceptor_Status_Check()
+        SendBillAcceptorCommandIsExist()
+    else:
+        SendBillAcceptorCommandIsExist()
+
+
+    time.sleep(0.2)
+
+    tdata=""
+    try:
+        while 1:
+            if billacceptorport.is_open==False:
+                #print("BILLACCEPTOR PORT ACIK DEGIL KI!!!!")
+                return
+
+
+
+            #<Get message from port>-----------------------
+            data_left = billacceptorport.inWaiting()
+            if data_left==0:
+                break
+            while data_left>0:
+                tdata+=billacceptorport.read_all().hex()
+                #time.sleep(0.001)
+                data_left = billacceptorport.inWaiting()
+
+        out=Decode2Hex(tdata)
+        if len(tdata)>0:
+            tdata=tdata.upper()
+
+            if G_Machine_IsBillacceptorPortFound==0:
+                print("Billacceptor tdata", tdata)
+            IsHandled=0
+            Meaning=""
+
+
+
+
+            #<MEI>------------------------------------------------
+            if G_Machine_BillAcceptorTypeId==2:
+
+
+                status=""
+                # With the exception of Stacked and Returned, only we can
+                # only be in one state at once
+                try:
+                    Meaning = state_dict[out[3]]
+                except:
+                    status = ''
+                    #print("unknown state dic key", tdata)
+
+
+                if len(Meaning)>0:
+                    IsHandled=1
+
+                if len(Meaning)==0:
+                    print("Bill Acceptor Received Data", tdata)
+
+                if Meaning=="Returned" or Meaning=="Returned Idling":
+                    print("*** RETURNED!! **** ")
+
+
+                IsEscrowed= out[3] & 4
+
+                if tdata[0:2]=="02"  and tdata[0:4]!="021E" and IsBillAcceptorBusy==0 and IsEscrowed==0:
+                    IsCashboxInstalled=out[4] & 16
+                    if IsCashboxInstalled>0:
+                        IsCashboxInstalled=1
+                    else:
+                        IsCashboxInstalled=0
+
+                    if IsCashboxInstalled==1 and Prev_IsCashboxInstalled==0:
+                        print("Cashbox is installed!", tdata)
+                        HandleReceivedSASCommand("01FF1CF17F")
+                
+                    if IsCashboxInstalled==0 and Prev_IsCashboxInstalled==1:
+                        print("Cashbox is removed!", tdata)
+                        HandleReceivedSASCommand("01FF1B4E0B")
+
+                    Prev_IsCashboxInstalled=IsCashboxInstalled
+
+                # If there is no match, we get an empty string
+                try:
+                    status += event_dict[out[4] & 1]
+                    status += event_dict[out[4] & 2]
+                    status += event_dict[out[4] & 4]
+                    status += event_dict[out[4] & 8]
+                    status += event_dict[out[4] & 16]
+                except KeyError:
+                    status+=""
+                    #print("unknown state dic key", tdata)
+
+                if len(Meaning)>0 or tdata[0:4]=="020B":
+                    G_Machine_IsBillacceptorPortFound=1
+
+
+                if Last_Billacceptor_Meaning!=Meaning:
+                    Last_Billacceptor_Meaning=Meaning
+                    print("Last_Billacceptor_State", Last_Billacceptor_Meaning, "status", status)
+
+                if Meaning=="Idling":
+                    IsBillacceptorBusy_Accepting=0
+                    G_Machine_IsBillacceptorPortFound=1
+                    G_Machine_LastBillAcceptorTime=datetime.datetime.now()
+
+
+                if Meaning=="Idling" and len(status)>0:
+                    print("Bill Acceptor Meanin", Meaning, "status",status, "data", tdata)
+
+                if Meaning!="Idling":
+                    print("Bill Acceptor Meanin", Meaning, "status",status, "data", tdata)
+
+
+
+
+                if Meaning=="Idling" and status=="Jammed":
+                    extDataIndex=20
+                    MoneyString=tdata
+
+                    print("ValidationCode", ValidationCode)
+
+                    ValidationCode=MoneyString[extDataIndex:extDataIndex+36]
+                    ValidationCode=Decode2Hex(ValidationCode)
+                    MoneyStr=Decimal(ValidationCode[len(ValidationCode)-4:len(ValidationCode)])/100
+                    
+                    Billacceptor_LastCredit=MoneyStr
+                    Billacceptor_LastDenom=MoneyStr
+                    Billacceptor_LastDenomHex=""
+                    Billacceptor_LastCountryCode=""
+
+                    print("GELEN PARA!", Billacceptor_LastCredit)
+
+                if len(Meaning)>0:
+                    G_Machine_IsBillacceptorPortFound=1
+                
+                if Meaning!="Idling":
+                    G_Machine_IsBillacceptorPortFound=1
+                    print("Bill Status",Meaning , status)
+
+
+
+
+                if Meaning=="Stacked":
+                    if IsBillacceptorBusy_Stacked==1:
+                        SQL_Safe_InsImportantMessage("Bill is stacked! ",100)
+
+
+                if Meaning=="Stacking" or (Meaning=="Accepting" and status=="Cheated"):
+
+                    print("DB'ye KAYIT AT ")
+                    if IsBillacceptorBusy_Stacking==1:
+                        SQL_InsException("Bill-Stack",tdata)
+
+                        print("RECEIVED STRING STACKING", tdata)
+
+                        print("<MEI PARA YUKLE STARTED!>-------------------------------------------------")
+                        IsCardReaderBusy=1
+                        IsBillAcceptorBusy=1
+                        
+                        try:
+                            #PARCAKomut_DisableBillAcceptor("MEI")
+
+                            IsBillacceptorBusy_Stacking=0
+                            Billacceptor_TotalCount=Billacceptor_TotalCount+1
+                            Billacceptor_TotalAmount=Billacceptor_TotalAmount+Billacceptor_LastCredit
+                            print("Atilan para", Billacceptor_LastCredit, Billacceptor_LastDenom, Billacceptor_LastDenomHex, Billacceptor_LastCountryCode, tdata)
+                            print("Billacceptor_TotalAmount", Billacceptor_TotalAmount, "Billacceptor_TotalCount", Billacceptor_TotalCount)
+
+
+
+                
+
+                            cardmachinelogid=0
+                            cardmachinelogid=Config.getint('customer','cardmachinelogid')
+                            try:
+                                cardmachinelogid=G_CardMachineLogId
+                            except Exception as eCardLogId:
+                                ExceptionHandler("cardmachinelogid",eCardLogId,0)
+                            print("Billacceptor_LastCredit", Billacceptor_LastCredit)
+                            print("Billacceptor_LastDenomHex", Billacceptor_LastDenomHex)
+                            print("Billacceptor_LastCountryCode", Billacceptor_LastCountryCode)
+
+                            BillAcceptorId=SQL_InsBillAcceptorMoneyEFT(cardmachinelogid, G_User_CardNo, Billacceptor_LastCredit, Billacceptor_LastDenomHex,Billacceptor_LastCountryCode,1,0,0,Billacceptor_LastDenom)
+
+                            if IsCardInside==1:
+                                ParaYukleSonuc=1
+                                ParaYukleSonuc=Wait_ParaYukle(1)
+                                if ParaYukleSonuc!=1:
+                                    SQL_InsImportantMessageByWarningType("Can't upload bill acceptor money: " + str(Billacceptor_LastCredit),1,1)
+                                else:
+                                    SQL_UpdBillAcceptorMoney(BillAcceptorId,1)
+                                    Wait_Bakiye(11,1,"para")
+                                    SQL_Safe_InsImportantMessage("Bill is cashed in! ",100)
+
+
+                            Komut_CancelBalanceLock()
+                            #GetMeter(0,"bill")
+
+                            #Bir daha yirtma olursa bunu ac.
+                            if IsBillacceptorBusy_Accepting==1:
+                                IsBillacceptorBusy_Accepting=0
+
+                            #PARCAKomut_EnableBillAcceptor()
+                        except Exception as eMEI:
+                            ExceptionHandler("MEIParaYukle",eMEI,1)
+
+
+
+                        IsCardReaderBusy=0#MEI PARA YUKLE
+                        IsBillAcceptorBusy=0
+                        print("</MEI PARA YUKLE FINISHED!>-------------------------------------------------")
+
+
+                #</if IsBillacceptorBusy_Stacking==1:>----------------------------------
+
+
+                if Meaning=="Accepting":
+                    print("RECEIVED STRING ACCEPTING", tdata)
+
+                if Meaning=="Escrowed":
+                    IsBillacceptorBusy_Stacked=0
+                    try:
+                        print("ESCROWED!", tdata)
+                    except Exception as esql:
+                        print("Escrowed Read Err!")
+
+                #if Meaning=="Accepting":
+                #    SQL_Safe_InsImportantMessage("BE Meaning:" + Meaning + " status:" + status + " Stacking:" + str(IsBillacceptorBusy_Stacking) + " Accepting:" + str(IsBillacceptorBusy_Accepting), 101)
+
+
+                if Meaning=="Accepting" and status=="Jammed" and IsBillacceptorBusy_Accepting==0:#2021-05-09 kaldirdim and IsBillacceptorBusy_Accepting==0:
+                    IsBillacceptorBusy_Accepting=1
+                    print("Gelen mesaj", tdata)
+
+                    CurrencyCode, CountryCode, BillValue= ParseMEICurrency(tdata)
+                    print("CurrencyCode", CurrencyCode, "CountryCode", CountryCode, "BillValue", BillValue)
+
+                    if IsBillAcceptorBusy==1:
+                        ShowNotifyScreen("BUSY", "Bill acceptor is busy",5)
+                        SQL_Safe_InsImportantMessage("Billacceptor is busy",80)
+                        BillAcceptor_Reject("busy")
+                        return
+
+
+                    if BillValue==0:
+                        SQL_Safe_InsImportantMessage("Bill value is 0",80)
+                        BillAcceptor_Reject("Val: 0")
+                    
+                    if BillValue>0:
+                        Billacceptor_LastDenom=BillValue
+                        Billacceptor_LastDenomHex=CurrencyCode
+                        Billacceptor_LastCountryCode=CountryCode
+            
+                        Billacceptor_LastCredit=Billacceptor_LastDenom
+                        
+                        BankNoteCode=CurrencyCode
+
+                        SQL_InsException("Bill-Accepting",tdata)
+
+
+
+                        if 2==2:
+                            print("SQL'DEN CEK BAKALIM MEI")
+                            #<Here check billacceptor>#############################################
+                            try:
+                                cardmachinelogid=0
+                                try:
+                                    cardmachinelogid=Config.getint('customer','cardmachinelogid')
+                                except Exception as eMachine:
+                                    cardmachinelogid=0
+
+                                try:
+                                    cardmachinelogid=G_CardMachineLogId
+                                except Exception as eCardLogId:
+                                    ExceptionHandler("cardmachinelogid",eCardLogId,0)
+
+                                # Use new database helper for bill acceptor validation (synchronous)
+                                # Include SAS context for bill acceptor operations
+                                sas_context = get_current_sas_context()
+                                results = db_helper.execute_database_operation('tsp_CheckBillacceptorIn', 
+                                    (G_Machine_Mac, G_Machine_BillAcceptorTypeId, cardmachinelogid, G_User_CardNo, BankNoteCode, Billacceptor_LastCountryCode,Billacceptor_LastDenom, Billacceptor_LastDenomHex),
+                                    sas_context)
+
+                                for row in results:
+                                    Result=int(row["Result"])
+                                    ErrorMessage=row['ErrorMessage']
+                                    print("ErrorMessage", ErrorMessage)
+
+                                    Billacceptor_LastCredit=Decimal(row["CreditAmount"])
+
+                                    if Result==0:
+                                        ShowNotifyScreen("BILL-IN ERROR!",ErrorMessage, 4)
+                                        SQL_Safe_InsImportantMessage("Bill-In error " + ErrorMessage ,80)
+                                        BillAcceptor_Reject(ErrorMessage)
+                                        return
+
+                                    if Result==1:
+                                        ShowNotifyScreen("CASHLESS BILL-IN!",ErrorMessage, 4)
+                                        print("Atilan para", Billacceptor_LastDenom, Billacceptor_LastDenomHex, Billacceptor_LastCountryCode, tdata)
+                                        
+                                        
+                                        
+                                        #Kilitle
+                                        IsBalanceProblem=0
+                                        DoStack=1
+                                        if Wait_Bakiye(2,0,"BillAcceptor")==0:
+                                           IsBalanceProblem=1
+
+                                        if BalanceQuery_GameLockStatus=="FF":
+                                            IsBalanceProblem=1
+
+                                        if IsBalanceProblem==1:
+                                            BillAcceptor_Reject("Transfer")
+                                            ShowNotifyScreen("BILL ERROR!","System can't transfer money at the moment. Please try again later.",10)
+                                            DoStack=0
+                                            Komut_CancelBalanceLock()
+
+                                        if DoStack==1:
+                                            SQL_Safe_InsImportantMessage("Stack Bill " + str(Billacceptor_LastDenom) + "-" + str(Billacceptor_LastCountryCode),100)
+                                            BillAcceptor_Stack1()
+                                            SendBillAcceptorCommandIsExist()
+
+                                            
+                                            if IsBillacceptorBusy_Stacking==0:
+                                                IsBillacceptorBusy_Stacking=1
+
+
+                                # Connection handled by database helper
+                            except Exception as ecardtype:
+                                BillAcceptor_Reject("server connection")
+                                SQL_Safe_InsImportantMessage("Bill is rejected because of no connection",80)
+                                ExceptionHandler("tsp_CheckBillacceptorIn",ecardtype,0)
+                            #</Here check billacceptor>#############################################
+
+
+                    #if BillValue>0: bitti
+
+
+
+            
+
+
+
+
+
+
+            #    print("MEI", tdata)
+            #</MEI>------------------------------------------------
+
+
+
+            #if Meaning!="Idling" and G_Machine_IsBillacceptorPortFound==1:
+            #    print(Meaning, tdata)
+
+            Last_Billacceptor_Message=tdata
+            if IsHandled==0:
+                print("Meaning Data", Meaning, tdata)
+                print("Bill acceptor handle edemedik!!" , tdata)
+                Last_Billacceptor_Message_Handle=tdata
+            if IsHandled==0 and G_Machine_IsBillacceptorPortFound==1:
+                G_Machine_LastBillAcceptorTime=datetime.datetime.now()
+    except Exception as e:
+        ExceptionHandler("DoBillAcceptorPooling",e,0)
+
+
+
+
+#</BILL ACCEPTOR HELPER>------------------------------------------------------------------------
+
+
+
+G_Static_VersionId=41
+G_Static_SasWait=0.2
+
+IsShowEveryMessage=0
+IsDebugAutoBakiyeYanit=0
+
+# DEPRECATED MSSQL Configuration (migrated to PostgreSQL)
+# G_DB_Host="172.16.23.1"
+# G_DB_User="cashlessdevice" 
+# G_DB_Password="Mevlut12!"
+# G_DB_Database="TCASINO"
+
+# PostgreSQL Configuration (Primary Database)
+G_PG_Host="localhost"
+G_PG_User="postgres"
+G_PG_Password="password"
+G_PG_Database="casino_db"
+G_PG_Port=5432
+G_PG_Schema="tcasino"
+G_USE_POSTGRESQL=True  # Force PostgreSQL only - no MSSQL fallback
+
+
+
+
+# PostgreSQL configuration from files
+try:
+    file = open('pg_host.ini', 'r')
+    G_PG_Host=file.read().replace('\n','')
+    print("PostgreSQL Host:", G_PG_Host)
+except Exception as e:
+    print("Using default PostgreSQL host")
+
+try:
+    file = open('pg_database.ini', 'r')
+    G_PG_Database=file.read().replace('\n','')
+    print("PostgreSQL Database:", G_PG_Database)
+except Exception as e:
+    print("Using default PostgreSQL database")
+
+try:
+    file = open('pg_user.ini', 'r')
+    G_PG_User=file.read().replace('\n','')
+except Exception as e:
+    print("Using default PostgreSQL user")
+
+try:
+    file = open('pg_password.ini', 'r')
+    G_PG_Password=file.read().replace('\n','')
+except Exception as e:
+    print("Using default PostgreSQL password")
+
+try:
+    file = open('pg_port.ini', 'r')
+    G_PG_Port=int(file.read().replace('\n',''))
+except Exception as e:
+    print("Using default PostgreSQL port")
+
+try:
+    file = open('pg_schema.ini', 'r')
+    G_PG_Schema=file.read().replace('\n','')
+    print("PostgreSQL Schema:", G_PG_Schema)
+except Exception as e:
+    print("Using default PostgreSQL schema")
+
+try:
+    file = open('use_postgresql.ini', 'r')
+    G_USE_POSTGRESQL=file.read().replace('\n','').lower() in ['1', 'true', 'yes']
+    print("Use PostgreSQL:", G_USE_POSTGRESQL)
+except Exception as e:
+    print("Using default PostgreSQL setting")
+
+
+
+try:
+    # Network check now uses PostgreSQL host instead of legacy MSSQL host
+    if (G_PG_Host.split('.')[0]+"." + G_PG_Host.split('.')[1])!=(get_lan_ip().split('.')[0]+"." + get_lan_ip().split('.')[1]):
+        print("*******************************************************")
+        print("Device is in the not same network.")
+        NotSameIPCount=0
+        while NotSameIPCount<10:
+            NotSameIPCount=NotSameIPCount+1
+            print("Device is in the not same network. Restart!", (G_PG_Host.split('.')[0]+"." + G_PG_Host.split('.')[1]), (get_lan_ip().split('.')[0]+"." + get_lan_ip().split('.')[1]), "-----")
+        print("Device is in the not same network.")
+        print("*******************************************************")
+except Exception as e:
+    print("IP ERR!!!")
+
+
+
+IsCardRead=1
+IsSasPooling=1
+
+#Spark; Hizli
+G_Machine_SasPoolingVersion=0
+
+IsCardInside=0
+
+
+
+G_User_CardNo=""
+G_User_PrevCardNo=""
+G_CardMachineLogId=0
+
+IsDebugMachineNotExist=0
+IsDebugAutoBakiyeYanit=0
+IsDebugAutoBakiyeSifirlaYanit=0
+IsDebugAutoParaYukleYanit=0
+IsDebugNotControlAfterCardInserted=0
+
+
+
+
+
+G_IsDeviceTestPurpose=0
+# MIGRATED: Use PostgreSQL host for test environment detection
+if G_PG_Host=="admiral.gopizza.fi":
+    G_IsDeviceTestPurpose=1
+
+if G_PG_Host=="asist.sanaloyun.net":
+    G_IsDeviceTestPurpose=1
+
+
+
+
+
+#if WINDOWS==True:
+# MIGRATED: Use PostgreSQL host for debug mode detection
+if WINDOWS==True or G_IsDeviceTestPurpose==1 or G_PG_Host=="admiral.gopizza.fi" or G_PG_Host=="www.angora.fi" or G_PG_Host.startswith("192.168.1.3")==True or G_PG_Host.startswith("192.168.1.33")==True  or G_PG_Host.startswith("localhost")==True or G_PG_Host.startswith("127.0.0.1")==True or G_PG_Host.startswith("192.162.137.5")==True:
+    #IsGUIEnabled=1
+
+    print("*************************************************************************")
+    print("DEBUG MODE IS ACTIVATED *************************************************")
+    print("*************************************************************************")
+
+    
+    
+    IsDebugAutoBakiyeYanit=1
+    IsDebugMachineNotExist=1
+    IsDebugAutoBakiyeYanit=1
+    IsDebugAutoBakiyeSifirlaYanit=1
+    IsDebugNotControlAfterCardInserted=1
+    IsDebugAutoParaYukleYanit=1
+    IsCardRead=1
+    IsSasPooling=1
+    #IsSasPooling=0
+
+
+#eskiden config buradaydi.
+
+
+# MIGRATED: Use PostgreSQL host for debug configuration
+if G_PG_Host=="10.0.0.59":
+    IsDebugMachineNotExist=0
+
+
+#<DATABASE HELPER>--------------------------------------------------------------
+class DatabaseHelper:
+    """
+    PostgreSQL-only database helper class.
+    Migrated from MSSQL to PostgreSQL - all MSSQL dependencies removed.
+    """
+    def __init__(self):
+        self.pg_conn = None
+        self.last_pg_connect_attempt = None
+        
+        # Define operations that require immediate response (synchronous)
+        # These procedures need immediate results for app functionality
+        self.SYNC_OPERATIONS = {
+            'tsp_getbalanceinfoongm',      # MSSQL: tsp_GetBalanceInfoOnGM (PROCEDURE)
+            'tsp_cardread',                # MSSQL: tsp_CardRead (FUNCTION)
+            'tsp_cardreadpartial',         # MSSQL: tsp_CardReadPartial (FUNCTION)
+            'tsp_checkbillacceptorin',     # MSSQL: tsp_CheckBillacceptorIn (PROCEDURE)
+            'tsp_devicestatu',             # MSSQL: tsp_DeviceStatu (PROCEDURE) - Device configuration data
+            'tsp_checknetwork',            # MSSQL: tsp_CheckNetwork (needs verification)
+            'tsp_getcustomeradditional',   # MSSQL: tsp_GetCustomerAdditional (needs verification)
+            'tsp_getdevicegameinfo',       # MSSQL: tsp_GetDeviceGameInfo (needs verification)
+            'tsp_getcustomercurrentmessages', # MSSQL: tsp_GetCustomerCurrentMessages (needs verification)
+            'tsp_getcustomermessage',      # MSSQL: tsp_GetCustomerMessage (needs verification)
+            'tsp_bonusrequestlist'         # MSSQL: tsp_BonusRequestList (needs verification)
+        }
+        
+        # Procedure name mapping from MSSQL to PostgreSQL (verified from postgres-routines-in-sas.sql)
+        self.PROCEDURE_NAME_MAP = {
+            # ✓ VERIFIED PROCEDURES (CREATE OR REPLACE PROCEDURE)
+            'tsp_CheckBillacceptorIn': 'tsp_checkbillacceptorin',
+            'tsp_GetBalanceInfoOnGM': 'tsp_getbalanceinfoongm', 
+            'tsp_DeviceStatu': 'tsp_devicestatu',
+            'tsp_GetDeviceAdditionalInfo': 'tsp_getdeviceadditionalinfo',
+            
+            # ✓ VERIFIED FUNCTIONS (CREATE OR REPLACE FUNCTION)  
+            'tsp_CardRead': 'tsp_cardread',
+            'tsp_CardReadPartial': 'tsp_cardreadpartial', 
+            'tsp_CardReadAddMoney': 'tsp_cardreadaddmoney',
+            'tsp_UpdBillAcceptorMoney': 'tsp_updbillacceptormoney',
+            'tsp_InsGameStart': 'tsp_insgamestart',
+            'tsp_InsGameEnd': 'tsp_insgameend',
+            'tsp_UpdDeviceAdditionalInfo': 'tsp_upddeviceadditionalinfo',
+            'tsp_InsException': 'tsp_insexception',
+            'tsp_InsDeviceDebug': 'tsp_insdevicedebug',
+            'tsp_InsTraceLog': 'tsp_instracelog',
+            'tsp_InsReceivedMessage': 'tsp_insreceivedmessage',
+            'tsp_InsSentCommands': 'tsp_inssentcommands',
+            'tsp_GetNextVisit': 'tsp_getnextvisit',
+            'tsp_InsProductOrderBySlot': 'tsp_insproductorderbyslot',
+            'tsp_GetProductCategories': 'tsp_getproductcategories',
+            'tsp_GetSlotCustomerDiscountCalc': 'tsp_getslotcustomerdiscountcalc',
+            'tsp_GetProductsAndSubCategoriesSlot': 'tsp_getproductsandsubcategoriesslot',
+            
+            # ⚠️ NEED VERIFICATION - Not found in postgres-routines-in-sas.sql yet
+            # 'tsp_CheckNetwork': 'tsp_checknetwork',
+            # 'tsp_GetCustomerAdditional': 'tsp_getcustomeradditional', 
+            # 'tsp_GetDeviceGameInfo': 'tsp_getdevicegameinfo',
+            # 'tsp_GetCustomerCurrentMessages': 'tsp_getcustomercurrentmessages',
+            # 'tsp_GetCustomerMessage': 'tsp_getcustomermessage',
+            # 'tsp_BonusRequestList': 'tsp_bonusrequestlist',
+        }
+    
+    def validate_payload(self, payload):
+        """Validate that payload contains all three mandatory elements:
+        1. Procedure Parameters
+        2. Device ID/MAC Address  
+        3. SAS Message Information
+        """
+        required_fields = ['parameters', 'device_id']
+        missing_fields = []
+        
+        for field in required_fields:
+            if field not in payload:
+                missing_fields.append(field)
+        
+        # SAS message should be attempted - if not present, try to get it
+        if 'sas_message' not in payload:
+            sas_context = get_current_sas_context()
+            if sas_context:
+                payload['sas_message'] = sas_context
+                print("Auto-added SAS context to payload")
+        
+        if missing_fields:
+            print(f"WARNING: Payload missing required fields: {missing_fields}")
+            return False
+        
+        print(f"✓ Payload validated - contains all 3 mandatory elements")
+        return True
+    
+    def get_postgresql_connection(self):
+        """Get PostgreSQL connection with retry logic - PostgreSQL ONLY"""
+        if not POSTGRESQL_AVAILABLE:
+            print("ERROR: PostgreSQL dependencies not available!")
+            return None
+            
+        # Don't retry too frequently
+        if (self.last_pg_connect_attempt and 
+            datetime.datetime.now() - self.last_pg_connect_attempt < datetime.timedelta(seconds=30)):
+            return None
+            
+        try:
+            if self.pg_conn is None or self.pg_conn.closed:
+                self.pg_conn = psycopg2.connect(
+                    host=G_PG_Host,
+                    database=G_PG_Database,
+                    user=G_PG_User,
+                    password=G_PG_Password,
+                    port=G_PG_Port,
+                    connect_timeout=10
+                )
+                self.pg_conn.autocommit = True
+                print("PostgreSQL connected successfully")
+            return self.pg_conn
+        except Exception as e:
+            self.last_pg_connect_attempt = datetime.datetime.now()
+            print(f"PostgreSQL connection failed: {e}")
+            return None
+    
+    def normalize_procedure_name(self, procedure_name):
+        """Convert MSSQL procedure names to PostgreSQL format"""
+        # Check if we have a specific mapping
+        if procedure_name in self.PROCEDURE_NAME_MAP:
+            pg_name = self.PROCEDURE_NAME_MAP[procedure_name]
+            print(f"MIGRATED: {procedure_name} -> {pg_name}")
+            return pg_name
+        
+        # Default: convert to lowercase (PostgreSQL convention)
+        pg_name = procedure_name.lower()
+        print(f"AUTO-CONVERTED: {procedure_name} -> {pg_name}")
+        return pg_name
+    
+    def is_postgresql_function(self, pg_procedure_name):
+        """Determine if a PostgreSQL routine is a FUNCTION (vs PROCEDURE)"""
+        # Based on verified postgres-routines-in-sas.sql analysis
+        POSTGRESQL_FUNCTIONS = {
+            'tsp_cardread', 'tsp_cardreadpartial', 'tsp_cardreadaddmoney',
+            'tsp_updbillacceptormoney', 'tsp_insgamestart', 'tsp_insgameend',
+            'tsp_upddeviceadditionalinfo', 'tsp_insexception', 'tsp_insdevicedebug',
+            'tsp_instracelog', 'tsp_insreceivedmessage', 'tsp_inssentcommands',
+            'tsp_getnextvisit', 'tsp_insproductorderbyslot', 'tsp_getproductcategories',
+            'tsp_getslotcustomerdiscountcalc', 'tsp_getproductsandsubcategoriesslot',
+            'tsp_devicestatu'  # Changed from PROCEDURE to FUNCTION since it returns data
+        }
+        
+        POSTGRESQL_PROCEDURES = {
+            'tsp_checkbillacceptorin', 'tsp_getbalanceinfoongm', 
+            'tsp_getdeviceadditionalinfo'
+        }
+        
+        if pg_procedure_name in POSTGRESQL_FUNCTIONS:
+            return True
+        elif pg_procedure_name in POSTGRESQL_PROCEDURES:
+            return False
+        else:
+            # Default guess: most routines are functions in PostgreSQL
+            print(f"WARNING: Unknown routine type for {pg_procedure_name}, assuming FUNCTION")
+            return True
+    
+    def validate_procedure_exists(self, pg_procedure_name):
+        """Check if procedure/function exists in PostgreSQL"""
+        pg_conn = self.get_postgresql_connection()
+        if not pg_conn:
+            print(f"Cannot validate {pg_procedure_name} - no PostgreSQL connection")
+            return False
+            
+        try:
+            cursor = pg_conn.cursor()
+            
+            # Check both functions and procedures
+            cursor.execute("""
+                SELECT routine_name, routine_type 
+                FROM information_schema.routines 
+                WHERE routine_schema = %s AND routine_name = %s
+            """, (G_PG_Schema, pg_procedure_name))
+            
+            result = cursor.fetchone()
+            if result:
+                routine_name, routine_type = result
+                print(f"✓ VERIFIED: {pg_procedure_name} exists as {routine_type}")
+                return True
+            else:
+                print(f"❌ MISSING: {pg_procedure_name} not found in {G_PG_Schema} schema")
+                return False
+                
+        except Exception as e:
+            print(f"Error validating {pg_procedure_name}: {e}")
+            return False
+    
+    def queue_async_message(self, procedure_name, parameters, sas_message=None):
+        """Queue asynchronous message to PostgreSQL - PostgreSQL ONLY"""
+        # Normalize procedure name for PostgreSQL
+        original_name = procedure_name
+        pg_procedure_name = self.normalize_procedure_name(procedure_name)
+        
+        pg_conn = self.get_postgresql_connection()
+        if not pg_conn:
+            # Fallback to SQLite for offline storage
+            self.queue_to_sqlite(original_name, parameters, sas_message)
+            return False
+        
+        try:
+            cursor = pg_conn.cursor()
+            
+            # MANDATORY PAYLOAD ELEMENTS:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload = {
+                'procedure_name': pg_procedure_name,                         # Use PostgreSQL name
+                'original_mssql_name': original_name,                        # Keep original for reference
+                'parameters': parameters,                                    # ✓ REQUIRED: Procedure Parameters
+                'device_id': getattr(self, 'device_id', G_Machine_Mac),     # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload['sas_message'] = sas_message
+            
+            # Validate payload has all required elements
+            self.validate_payload(payload)
+            
+            cursor.execute("""
+                INSERT INTO public.device_messages_queue (id, slot_machine_id, procedure_name, payload, status, created_at)
+                VALUES (%s, %s, %s, %s, 'pending', NOW())
+            """, (
+                str(uuid.uuid4()),
+                G_Machine_Mac,
+                pg_procedure_name,
+                json.dumps(payload, cls=DecimalEncoder)
+            ))
+            
+            print(f"Queued async message: {original_name} -> {pg_procedure_name}")
+            return True
+            
+        except Exception as e:
+            print(f"Failed to queue async message: {e}")
+            # Fallback to SQLite
+            self.queue_to_sqlite(original_name, parameters, sas_message)
+            return False
+    
+    def queue_to_sqlite(self, procedure_name, parameters, sas_message=None):
+        """Fallback: store message in SQLite for later sync"""
+        try:
+            cursor = conn.cursor()  # Using global SQLite connection
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pending_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    procedure_name TEXT,
+                    parameters TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # MANDATORY PAYLOAD ELEMENTS for SQLite fallback:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload_data = {
+                'parameters': parameters,                            # ✓ REQUIRED: Procedure Parameters
+                'device_id': G_Machine_Mac,                         # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload_data['sas_message'] = sas_message
+            
+            cursor.execute("""
+                INSERT INTO pending_messages (procedure_name, parameters)
+                VALUES (?, ?)
+            """, (procedure_name, json.dumps(payload_data, cls=DecimalEncoder)))
+            
+            conn.commit()
+            print(f"Stored in SQLite fallback: {procedure_name}")
+            
+        except Exception as e:
+            print(f"SQLite fallback failed: {e}")
+    
+    def execute_sync_operation(self, procedure_name, parameters, sas_message=None):
+        """Execute synchronous operation (immediate response needed) - PostgreSQL ONLY"""
+        # Normalize procedure name for PostgreSQL
+        original_name = procedure_name
+        pg_procedure_name = self.normalize_procedure_name(procedure_name)
+        
+        result = None
+        error_message = None
+        
+        # PostgreSQL ONLY - no MSSQL fallback
+        pg_conn = self.get_postgresql_connection()
+        if not pg_conn:
+            error_message = "PostgreSQL connection not available"
+            self.log_sync_procedure_call(original_name, parameters, None, "postgresql", error_message, sas_message)
+            raise Exception(error_message)
+        
+        # Check if procedure is marked as synchronous
+        if pg_procedure_name not in self.SYNC_OPERATIONS:
+            print(f"WARNING: {original_name} ({pg_procedure_name}) not in SYNC_OPERATIONS - should this be async?")
+        
+        # Validate procedure exists in PostgreSQL
+        if not self.validate_procedure_exists(pg_procedure_name):
+            error_message = f"Procedure {pg_procedure_name} does not exist in PostgreSQL"
+            self.log_sync_procedure_call(original_name, parameters, None, "postgresql", error_message, sas_message)
+            raise Exception(error_message)
+        
+        try:
+            cursor = pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Set search path to include tcasino schema for existing procedures
+            cursor.execute(f"SET search_path TO {G_PG_Schema}, public;")
+            
+            # Call the procedure/function in tcasino schema using correct PostgreSQL syntax
+            is_function = self.is_postgresql_function(pg_procedure_name)
+            
+            if len(parameters) > 0:
+                placeholders = ','.join(['%s'] * len(parameters))
+                
+                if is_function:
+                    # PostgreSQL FUNCTION: SELECT * FROM schema.function_name(params)
+                    cursor.execute(f"SELECT * FROM {G_PG_Schema}.{pg_procedure_name}({placeholders})", parameters)
+                    result = cursor.fetchall()
+                    print(f"Called FUNCTION: {pg_procedure_name}")
+                else:
+                    # PostgreSQL PROCEDURE: CALL schema.procedure_name(params)
+                    cursor.execute(f"CALL {G_PG_Schema}.{pg_procedure_name}({placeholders})", parameters)
+                    result = []  # Procedures may not return data directly
+                    print(f"Called PROCEDURE: {pg_procedure_name}")
+            else:
+                # No parameters
+                if is_function:
+                    cursor.execute(f"SELECT * FROM {G_PG_Schema}.{pg_procedure_name}()")
+                    result = cursor.fetchall()
+                    print(f"Called FUNCTION: {pg_procedure_name} (no params)")
+                else:
+                    cursor.execute(f"CALL {G_PG_Schema}.{pg_procedure_name}()")
+                    result = []
+                    print(f"Called PROCEDURE: {pg_procedure_name} (no params)")
+            
+            
+            # Log the sync procedure call to message queue
+            self.log_sync_procedure_call(original_name, parameters, result, "postgresql", None, sas_message)
+            
+            print(f"SUCCESS: {original_name} -> {pg_procedure_name} returned {len(result) if result else 0} rows")
+            return result
+            
+        except Exception as e:
+            error_message = str(e)
+            print(f"PostgreSQL sync operation failed: {original_name} -> {pg_procedure_name}: {e}")
+            
+            # Log the failed sync procedure call
+            self.log_sync_procedure_call(original_name, parameters, None, "postgresql", error_message, sas_message)
+            raise Exception(f"PostgreSQL procedure call failed: {error_message}")
+    
+    def execute_database_operation(self, procedure_name, parameters, sas_message=None):
+        """Main method to execute database operations - PostgreSQL ONLY"""
+        # Normalize procedure name for PostgreSQL
+        pg_procedure_name = self.normalize_procedure_name(procedure_name)
+        
+        # Check if this is a synchronous operation
+        if pg_procedure_name in self.SYNC_OPERATIONS:
+            return self.execute_sync_operation(procedure_name, parameters, sas_message)
+        else:
+            # Async operation - queue it
+            self.queue_async_message(procedure_name, parameters, sas_message)
+            return []  # No immediate result for async operations
+    
+    def log_sync_procedure_call(self, procedure_name, parameters, result, database_used, error_message=None, sas_message=None):
+        """Log synchronous procedure calls to message queue for auditing"""
+        try:
+            pg_conn = self.get_postgresql_connection()
+            if not pg_conn:
+                # If can't log to PostgreSQL, store in SQLite for later sync
+                self.log_sync_call_to_sqlite(procedure_name, parameters, result, database_used, error_message)
+                return
+            
+            cursor = pg_conn.cursor()
+            
+            # Determine status based on success/failure
+            if error_message:
+                status = 'proc_failed'
+            else:
+                status = 'proc_called'
+            
+            # MANDATORY PAYLOAD ELEMENTS:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload = {
+                'procedure_name': procedure_name,
+                'parameters': parameters,                            # ✓ REQUIRED: Procedure Parameters
+                'device_id': G_Machine_Mac,                         # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat(),
+                'database_used': database_used,
+                'execution_type': 'synchronous',
+                'result_count': len(result) if result else 0,
+                'error_message': error_message
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload['sas_message'] = sas_message
+            
+            # If result is small enough, include it in payload for debugging
+            if result and len(str(result)) < 1000:  # Limit result size to avoid huge payloads
+                payload['result_sample'] = result[:5]  # First 5 rows max
+            
+            cursor.execute("""
+                INSERT INTO public.device_messages_queue (id, slot_machine_id, procedure_name, payload, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+            """, (
+                str(uuid.uuid4()),
+                G_Machine_Mac,
+                procedure_name,
+                json.dumps(payload, cls=DecimalEncoder),
+                status
+            ))
+            
+            print(f"Logged sync procedure call: {procedure_name} -> {status}")
+            
+        except Exception as e:
+            print(f"Failed to log sync procedure call: {e}")
+            # Fallback to SQLite
+            self.log_sync_call_to_sqlite(procedure_name, parameters, result, database_used, error_message, sas_message)
+    
+    def log_sync_call_to_sqlite(self, procedure_name, parameters, result, database_used, error_message=None, sas_message=None):
+        """Fallback: log sync calls to SQLite when PostgreSQL unavailable"""
+        try:
+            cursor = conn.cursor()  # Using global SQLite connection
+            
+            status = 'proc_failed' if error_message else 'proc_called'
+            
+            # MANDATORY PAYLOAD ELEMENTS for SQLite sync logging:
+            # 1. Procedure Parameters
+            # 2. Device ID/MAC Address  
+            # 3. SAS Message Information
+            payload = {
+                'procedure_name': procedure_name,
+                'parameters': parameters,                            # ✓ REQUIRED: Procedure Parameters
+                'device_id': G_Machine_Mac,                         # ✓ REQUIRED: Device ID/MAC
+                'timestamp': datetime.datetime.now().isoformat(),
+                'database_used': database_used,
+                'execution_type': 'synchronous',
+                'result_count': len(result) if result else 0,
+                'error_message': error_message,
+                'status': status
+            }
+            
+            # ✓ REQUIRED: SAS Message Context - always attempt to capture
+            if not sas_message:
+                sas_message = get_current_sas_context()
+            if sas_message:
+                payload['sas_message'] = sas_message
+            
+            cursor.execute("""
+                INSERT INTO pending_messages (procedure_name, parameters)
+                VALUES (?, ?)
+            """, (f"{procedure_name}_sync_log", json.dumps(payload, cls=DecimalEncoder)))
+            
+            conn.commit()
+            print(f"Stored sync call log in SQLite: {procedure_name}")
+            
+        except Exception as e:
+            print(f"SQLite sync call logging failed: {e}")
+
+
+# Initialize database helper
+db_helper = DatabaseHelper()
+
+
+# Helper function to extract SAS message information
+def get_current_sas_context():
+    """Extract current SAS message context for logging"""
+    sas_context = {}
+    
+    # Add common SAS-related variables that exist in your application
+    try:
+        if 'Last_Billacceptor_Message' in globals():
+            sas_context['last_billacceptor_message'] = Last_Billacceptor_Message
+    except:
+        pass
+    
+    try:
+        if 'Last_Billacceptor_Message_Handle' in globals():
+            sas_context['last_billacceptor_message_handle'] = Last_Billacceptor_Message_Handle
+    except:
+        pass
+    
+   
+    
+    try:
+        # Add SAS version info
+        if 'G_Static_VersionId' in globals():
+            sas_context['sas_version_id'] = G_Static_VersionId
+    except:
+        pass
+    
+    return sas_context if sas_context else None
+
+#</DATABASE HELPER>-------------------------------------------------------------
+
+
+
+
+if 'pi' not in Config.sections():
+    Config.add_section('pi')    
+    Config.set('pi','mac', str(G_Machine_Mac))
+
+
+if 'machine' not in Config.sections():
+    #print("machine eklendi")
+    Config.add_section('machine')    
+    Config.set('machine','tableno', '0')
+    Config.set('machine','machineid', '')
+    Config.set('machine','paytableid', '')
+    Config.set('machine','screentypeid', "8")
+    Config.set('machine','billacceptortypeid', "0")
+    Config.set('machine','newgamingday', "0")
+    Config.set('machine','islockedbyadmin', "0")
+    Config.set('machine','admincards', '')
+
+if 'payment' not in Config.sections():
+    #print("payment eklendi")
+    Config.add_section('payment')    
+    Config.set('payment','transactionid', "0")
+
+if 'sas' not in Config.sections():
+    #print("sas eklendi")
+    Config.add_section('sas')
+    Config.set('sas','versionid', '')
+    Config.set('sas','serialnumber', '0000000000')#eskiden bostu. igtlerden sonra 10 tane 0 yaptik.
+    Config.set('sas','registrationkey', '0000000000000000000000000000000000000000')
+    Config.set('sas','assetnumber', '00000000')#Config.set('sas','assetnumber', '01000000')
+    Config.set('sas','address', '01')
+
+if 'customer' not in Config.sections():
+    #print("customer eklendi")
+    Config.add_section('customer')    
+    Config.set('customer','cardnumber', '')
+    Config.set('customer','customerid', "0")
+    Config.set('customer','gender', "0")
+    Config.set('customer','customername', '')
+    Config.set('customer','nickname', '')
+    Config.set('customer','bonuspercentage', "0")
+    Config.set('customer','currentbonus', "0")
+    Config.set('customer','inserteddate', str(datetime.datetime.now()))
+    Config.set('customer','iscardinside', "0")
+    Config.set('customer','cardmachinelogid', "0")
+    Config.set('customer','ismoneytransfered', "0")
+    Config.set('customer','playcount', "0")
+    Config.set('customer','totalbet', "0")
+    Config.set('customer','totalwin', "0")
+    Config.set('customer','selectedgameid', "0")
+
+    Config.set('customer','customerbalance', "0")
+    Config.set('customer','currentbalance', "0")
+    
+    Config.set('customer','customerpromo', "0")
+    Config.set('customer','currentpromo', "0")
+    Config.set('customer','isrestartedsafely', "0")
+
+if 'collecting' not in Config.sections():
+    print("collecting eklendi")
+    Config.add_section('collecting')    
+    Config.set('collecting','cashableamount', "0")
+    Config.set('collecting','restrictedamount', "0")
+    Config.set('collecting','nonrestrictedamount', "0")
+
+if 'collectcmd' not in Config.sections():
+    print("collectcmd eklendi")
+    Config.add_section('collectcmd')    
+    Config.set('collectcmd','transactionid', "0")
+
+if 'game' not in Config.sections():
+    #print("customer eklendi")
+    Config.add_section('game')
+    Config.set('game','wagered', "0")
+    Config.set('game','gamepromo', "0")
+    Config.set('game','totalcoinin', "0")
+    Config.set('game','wagertype', '')
+    Config.set('game','progressivegroup', "0")
+    Config.set('game','starteddate', str(datetime.datetime.now()))
+
+
+if 'casino' not in Config.sections():
+    Config.add_section('casino')
+    Config.set('casino','casinoid', "1")
+    Config.set('casino','casinoname', "")
+    Config.set('casino','minstorebootnonetwork', "0")
+SaveConfigFile()
+
+
+
+
+
+try:
+    G_CasinoId=Config.getint('casino','casinoid')
+    if G_CasinoId==3:#Ambassador
+        G_Machine_CardReaderModel="Eject"
+
+except Exception as e:
+    G_CasinoId=1
+
+IsGuiReady=1
+try:
+    G_Machine_ScreenTypeId=Config.getint('machine','screentypeid')
+except Exception as e:
+    G_Machine_ScreenTypeId=0
+
+
+
+try:
+    G_Machine_TicketPrinterTypeId=Config.getint('machine','ticketprintertypeid')
+except Exception as e:
+    G_Machine_TicketPrinterTypeId=0
+
+try:
+    G_Machine_BillAcceptorTypeId=Config.getint('machine','billacceptortypeid')
+except Exception as e:
+    G_Machine_BillAcceptorTypeId=0
+
+
+try:
+    G_Casino_IsAssetNoAlwaysOne=Config.getint('machine','IsAssetNoAlwaysOne')
+except Exception as e:
+    G_Casino_IsAssetNoAlwaysOne=0
+
+
+try:
+    G_Machine_NewGamingDay=Config.getint('machine','newgamingday')
+except Exception as e:
+    G_Machine_NewGamingDay=0
+
+try:
+    G_Machine_AdminCards=Config.get('machine','admincards')
+except Exception as e:
+    G_Machine_AdminCards=""
+
+
+
+
+if G_Machine_ScreenTypeId>0:
+    IsGUIEnabled=1
+    IsGUI_Type=1    # Qt GUI (PyQt5) - Default and most reliable
+
+
+
+
+
+#G_Machine_ScreenTypeId: 7: 480 8:1280
+if G_Machine_ScreenTypeId==7 or G_Machine_ScreenTypeId==8:
+    IsGUI_Type=3#WXPYTHON
+    IsGUI_Type=4#PYWEBVIEW
+    IsGuiReady=0
+
+if G_Machine_ScreenTypeId==9:
+    IsGUI_Type=5
+    IsGUIFullScreen=0
+    try:
+        threadQT = Thread(target = CreateGUI)
+        threadQT.name="ThreadQT"
+        threadQT.start()
+    except Exception as e11:
+        print("Exception threadQT")
+
+#print("IsGUI_Type", IsGUI_Type, "G_Machine_ScreenTypeId", G_Machine_ScreenTypeId, "G_Machine_DeviceTypeId", G_Machine_DeviceTypeId)
+
+
+#<CEFPYTHON>--------------------------------------------------------------------------
+main_window=None
+
+#<CEFPYTHON>--------------------------------------------------------------------------
+
+
+
+
+G_Machine_BonusId=0
+G_Machine_BonusAmount=0
+G_NextVisit_WonAmount=Decimal(0)
+G_NextVisit_KioskBonusId=0
+#<JAVASCRIPT EVENTS>--------------------------------------------------------------------------
+def HandleJSEvent(title):
+    if 2==2:
+        if len(title)>0:
+            value=title
+
+            print("HTML BUTTON TIKLANDI" + value)
+            global GUI_CurrentPage
+            global CurrentHTML_CurrentStep
+            global HTML_MachineNo
+            global HTML_MachineType
+            global IsWaitingAdminScreen
+
+            global G_Machine_ReservationDate
+            global G_Machine_ReservationCard
+            global G_Machine_ReservationCustomername
+            global IsGuiReady
+            global JackpotWonAmount
+            global IsCardReaderBusy
+
+            global G_Machine_BonusId
+            global G_Machine_BonusAmount
+
+            global G_NextVisit_WonAmount
+            global G_NextVisit_KioskBonusId
+
+
+            if value=="divAdmin":
+                IPAddress=get_lan_ip()
+                ExecuteJSFunction2("ChangeText", "divAdminIPAddress",str(IPAddress))
+
+            if value=="HTMLStarted":
+                IsGuiReady=1
+                ExecuteJSFunction("ResponseHelloPython", "Python")
+                print("******************HTML STARTED!***********************")
+
+                IPAddress=get_lan_ip()
+                PrintAndSetAsStatuText("Started! " + IPAddress)
+
+                if G_Machine_ScreenRotate>0:
+                    ExecuteJS("document.body.style.setProperty('-webkit-transform', 'rotate("+str(G_Machine_ScreenRotate)+"deg)', null);")
+
+            if value=="divBonusRequest":
+                #ShowNotifyScreen("NOT READY","OK",5)
+                print("Request Bonus")
+
+                LastGameDiff=(datetime.datetime.now()-G_LastGame_Action).total_seconds()
+
+                IsShowBonusRequest=1
+                #if G_LastGame_IsFinished==1 and LastGameDiff<10:
+                #    ShowNotifyScreen("BONUS ERROR","You can't request bonus while you play. Last game was " + str(int(LastGameDiff)) + " seconds ago",10)
+
+
+                if IsShowBonusRequest==1:
+                    AvailableBonusHTML=""
+                    result = SQL_BonusRequestList()
+                    Adet=0
+                    Result=0
+                    ErrorMessage=""
+                    for row in result:
+                        Result=int(row["Result"])
+                        ErrorMessage=row["ErrorMessage"]
+                        if Result>0:
+                            Adet=Adet+1
+                            Amount=int(row["Amount"])
+                            AvailableBonusHTML=AvailableBonusHTML+"<input type=\"button\" value=\""+str(Amount)+" "+G_Machine_Currency+"\" class=\"BonusButtons\" onclick=\"BonusSelected("+str(Amount)+")\" />"
+                            if Adet==3:
+                                AvailableBonusHTML=AvailableBonusHTML+"<br>"
+                
+                    if Result>0:
+                        ExecuteJSFunction("ShowBonusOptions", AvailableBonusHTML)
+                    else:
+                        ShowNotifyScreen("BONUS ERROR!",ErrorMessage,10)
+
+
+            if value.startswith("divBonusAmount:")==True:
+                GUI_ShowCustomerWindow()
+                if G_Machine_BonusId>0:
+                    IsShowBonusWindow=0
+                    SQL_Safe_InsImportantMessage("Please wait until previous bonus transfer is completed!",68)
+                    ShowNotifyScreen("PLEASE WAIT","Please wait until previous bonus transfer is completed!",3)
+                    return
+                Amount=value.replace("divBonusAmount:","")
+                SQL_Safe_InsImportantMessage("Bonus request: " + str(Amount),68)
+
+                GetMeter(0,"bonus")
+                ShowNotifyScreen("PLEASE WAIT!","Bonus Transfer is pending!",40000)
+                if Wait_Bakiye(2,0,"BillAcceptor")==0:
+                    ShowNotifyScreen("BONUS ERROR!","System can't transfer bonus at the moment. Please try again later.",10)
+                    SQL_Safe_InsImportantMessage("System can't transfer bonus at the moment. Please try again later.",68)
+                    Komut_CancelBalanceLock()
+                    return
+
+                IsCardReaderBusy=1
+                print("Yuklenecek bonus", Amount)
+                ShowNotifyScreen("PLEASE WAIT!","Bonus Transfer is pending! ",10)
+
+                GetMeter(0,"bonus2")
+
+                SQL_Safe_InsImportantMessage("Bonus amount: " + str(Amount),69)
+
+                #Once Yukleme SP'si, sonra Yuklemeye calis. Sonuca gore de Yukleme Finish SP'si
+                G_Machine_BonusId=0
+                ErrorMessage=""
+                result = SQL_InsBonusRequest(Amount)
+                for row in result:
+                    G_Machine_BonusId=int(row["Result"])
+                    ErrorMessage=row["ErrorMessage"]
+                    Amount=int(row["RequestedBonus"])
+                    G_Machine_BonusAmount=Amount
+
+                if G_Machine_BonusId<=0:
+                    ShowNotifyScreen("BONUS ERROR",ErrorMessage,10)
+                    SQL_Safe_InsImportantMessage("BONUS ERROR: " + ErrorMessage,68)
+                    Komut_CancelBalanceLock()
+                    G_Machine_BonusId=0
+                    IsCardReaderBusy=0
+
+                if G_Machine_BonusId>0:
+                    GUI_ShowCustomerWindow()#2021-07-08
+
+                    JackpotWonAmount=Decimal(Amount)
+                    ParaYukleSonuc=1
+                    SQL_UpdBonusAsUsed(G_Machine_BonusId)
+                    ParaYukleSonuc=Wait_ParaYukle(13)
+                    Wait_Bakiye(11,1,"bonus")
+                    if ParaYukleSonuc==1:
+                        #2020-02-10: Savoy Bonus icin actik
+                        if G_Machine_BonusId>0:
+                            GetMeter(0,"bonus2")
+                            time.sleep(0.5)
+                            currentbonus=Decimal(Config.get("customer","currentbonus"))-G_Machine_BonusAmount;
+                            Config.set('customer','currentbonus', str(currentbonus))
+
+                            ShowNotifyScreen("SUCCESS!","Bonus Transfer is successful. We wish you good luck!",10)
+                            SQL_Safe_InsImportantMessage("Bonus SUCCESS! Amount:  " + str(G_Machine_BonusAmount),92)
+                            #Wait_Bakiye(11,1,"bonus")
+
+
+                            print("Set card reader free-1****************")
+                            IsCardReaderBusy=0#Bonus
+                            print("Set card reader free-2****************")
+                            G_Machine_BonusId=0
+                            GUI_ShowCustomerWindow()
+                        #<endif G_Machine_BonusId>0:
+                        GUI_ShowCustomerWindow()
+                    else:
+                        ShowNotifyScreen("UNABLE TO TRANSFER BONUS","Bonus transfer to GM is not available at the moment. Please try again.",10)
+                        SQL_Safe_InsImportantMessage("Bonus FAIL! Amount:  " + str(Amount),70)
+                        G_Machine_BonusId=0
+                    Komut_CancelBalanceLock()
+                    time.sleep(1)#10 i,mis. 1 yaptim
+                    GetMeter(0,"bonus2")
+
+
+            if value=="divAdminEFTRequest":
+                print("divAdminEFTRequest")
+                Komut_EFT_RequestTransferLog()
+
+            if value=="divAdminEFTBalance":
+                print("divAdminEFTBalance")
+                Komut_EFT_RequestCashoutAmount()
+
+            if value=="divAdminEFTMinus":
+                print("divAdminEFTMinus")
+                Komut_ParaSilEFT(1,1)
+
+            if value=="divAdminEFTPlus":
+                print("divAdminEFTPlus")
+                Komut_ParaYukleEFT(1,1)
+
+            if value=="divBonus":
+                IsShowBonusWindow=1
+                if G_Machine_IsBonusGives==0:
+                    IsShowBonusWindow=0
+                    GUI_ShowCustomerWindow()
+                    ShowNotifyScreen("BONUS IS NOT ACTIVE","This GM doesn't support bonus",3)
+
+                #if IsCardReaderBusy==1:
+                #    print("Card reader is busy!******************************")
+                #    IsShowBonusWindow=0
+                #    GUI_ShowCustomerWindow()
+                #    ShowNotifyScreen("PLEASE WAIT","Please wait until previous transaction is closed!",3)
+
+                if G_Machine_BonusId>0:
+                    IsShowBonusWindow=0
+                    GUI_ShowCustomerWindow()
+                    ShowNotifyScreen("PLEASE WAIT","Please wait until previous bonus transfer is completed!",3)
+
+
+                if IsShowBonusWindow==1:
+                    GUI_CurrentPage="GUI_ShowBonus"
+                    #<Here get customer bonus>#############################################
+                    #ExecuteJSFunction2("ChangeText", "txtBonus","")
+                    GUI_UpdateBonus()
+
+
+
+
+                    if 2==2:
+                        print("*****************************************************************************************")
+                        try:
+                            MaxPercentage=0
+                            BetMaxValue=Decimal(0)
+                            currentIndex=0
+                            StaticZones=""
+                            Labels=""
+                            PercentColors=""
+                            while currentIndex<len(G_Machine_WagerBonusFactors):
+                                Item=G_Machine_WagerBonusFactors[currentIndex]
+                                currentIndex=currentIndex+1
+
+                                if 1==1:
+                                    if Decimal(Item['wager'])>BetMaxValue:
+                                        BetMaxValue=Decimal(Item['wager'])
+
+                                    AddVirgul=""
+                                    if len(StaticZones)>0:
+                                        AddVirgul=","
+
+                                    StaticZones=StaticZones+AddVirgul+"{ strokeStyle: \"" + Item['htmlcolour'] + "\", min: " + str(Item['startpercentage']) + ", max: " + str(Item['nextpercentage']) +" }"
+                                    Labels=Labels + AddVirgul+ str(Item['startpercentage']) + ""
+                                    PercentColors=PercentColors+AddVirgul+"[" + str(Item['startpercentage']) + ", \"" + Item['htmlcolour'] + "\"] "
+
+                                    MaxPercentage=Decimal(Item['nextpercentage'])
+
+                            StaticZones="[" + StaticZones + "]"
+                            Labels="[" + Labels + "]"
+                            PercentColors="[" + PercentColors + "]"
+                    
+                            #print("**********************************************")
+                            #print("StaticZones", StaticZones)
+                            #print("Labels", Labels)
+                            #print("PercentColors", PercentColors)
+                            #print("******************************")
+
+                            ExecuteJSFunction5("InitGadgetValues",StaticZones, Labels, PercentColors, str(BetMaxValue), str(MaxPercentage))
+                        except Exception as eBonusFill:
+                            ExceptionHandler("eBonusFill",eBonusFill,0)
+                        print("*****************************************************************************************")
+
+
+                    if 1==1:
+                        try:
+                            customerid = Config.getint('customer', 'customerid')
+                            # Original MSSQL procedure: tsp_GetCustomerAdditional
+                            # Note: This procedure was not found in postgres-routines-in-sas.sql
+                            # Using hybrid approach - queue operation instead of direct call
+                            result = db_helper.queue_database_operation(
+                                'tsp_GetCustomerAdditional',
+                                [customerid, G_Machine_DeviceId],
+                                'get_customer_additional'
+                            )
+
+                            for row in result:
+                                
+                                
+                                AvailableBonus=Decimal(row["AvailableBonus"])
+                                EarnedBonus=Decimal(Config.get("customer","earnedbonus"))
+                                AvailableBonus=AvailableBonus+EarnedBonus
+                                AvailableBonus=round(AvailableBonus, 4)
+                                AvailableBonusInt=math.floor(AvailableBonus)
+                                BonusDecimalPart=AvailableBonus-AvailableBonusInt
+
+
+                                Config.set('customer','currentbonus', str(AvailableBonus))
+
+                                AvailableBonusText="%s %s" % (AvailableBonus, G_Machine_Currency)
+                                ExecuteJSFunction5("ChangeBonusValue", str(AvailableBonus), str(AvailableBonusInt), str(BonusDecimalPart), G_Machine_Currency, AvailableBonusText)
+                        except Exception as ecardtype:
+                            ExceptionHandler("tsp_GetCustomerAdditional", ecardtype, 0)
+
+
+
+
+
+                    #</Here get customer bonus>#############################################
+
+            if value=="divBalance":
+                GUI_CurrentPage="GUI_ShowBalance"
+                GUI_ShowBalance()
+
+            if value=="divJackpot":
+                GUI_CurrentPage="GUI_ShowJackpot"
+                SQL_DeviceStatu(2)
+
+            if value=="divSettingsCashout":
+                print("*************************************************")
+                print("Cashout")
+                DoHandUserInput("kartcikart:")
+
+
+            if value=="divNextVisitSelectedButton":
+                SQL_InsKioskBonusWon()
+
+            if value=="divNextVisitSelected":
+                print("*************************************************")
+                print("divNextVisitSelected",G_NextVisit_WonAmount,"G_NextVisit_KioskBonusId", G_NextVisit_KioskBonusId)
+                SQL_InsKioskBonusWon()
+                ShowNotifyScreen("Congratulations", "You won " + str(G_NextVisit_WonAmount) + " " + G_Machine_Currency + "! Please re-insert your card to active your promo.",5)
+
+
+            if value=="divNextVisit":
+                CheckNextVisit()
+
+
+
+            if value=="divSettingsReserve":
+                print("*************************************************")
+                print("Cashout and reserve")
+
+                G_Machine_ReservationDate=datetime.datetime.now()
+                G_Machine_ReservationCard=G_User_CardNo
+                G_Machine_ReservationCustomername=str(Config.getint('customer','customerid')) + " " + Config.get('customer','nickname')
+
+                ShowNotifyScreen("Reservation", "Please Reject your card in 30 seconds to reserve GM for 10 minutes",10)
+
+
+            if value=="divMessages":
+                GUI_CurrentPage="divMessages"
+                result = SQL_GetCustomerCurrentMessages()
+                Messages=""
+                for row in result:
+                    EkstraStyle=""
+                    IsRead=int(row["IsRead"])
+                    if IsRead==1:
+                        EkstraStyle="MessageRowReaded"
+                    Messages = Messages + "<div class='MessageRow "+EkstraStyle+"' onclick='ShowMessage("+str(row["MessageId"])+")'>"+ DecodeHTMLChars(str(row["MessageName"]))+"</div>";
+
+                ExecuteJSFunction2("ChangeHTML", "divMessagesContent",Messages)
+
+
+            if value.startswith("divMessagesAward")==True:
+                AwardId=int(value.split('|')[1])
+                MessageId=int(value.split('|')[2])
+                print("AwardId", AwardId,"MessageId",MessageId)
+                result=SQL_UpdMessageAwardAttempt(MessageId)
+                for row in result:
+                    Result=int(row["Result"])
+                    ErrorMessage=row["ErrorMessage"]
+                    if Result<0:
+                        ShowNotifyScreenWithButtons(DecodeHTMLChars("ERROR!"),DecodeHTMLChars(ErrorMessage), 0,1,0)
+                    else:
+                        ShowNotifyScreenWithButtons(DecodeHTMLChars("PLEASE WAIT"),DecodeHTMLChars("Please wait while award is being credited..."), 0,1,0)
+                        
+                        #<Award Yukle>
+                        if Wait_Bakiye(2,0,"oyun kilitlenesiye-1")==0:
+                            ShowNotifyScreen("AWARD ERROR!","System can't transfer award at the moment. Please try again later.",10)
+                            return
+                        GetMeter(0,"award")
+
+                        if 1==1:
+                            JackpotWonAmount=Decimal(row["AwardAmount"])
+                            ParaYukleSonuc=1
+                            ParaYukleSonuc=Wait_ParaYukle(13)
+                            if ParaYukleSonuc==1:
+                                SQL_UpdMessageAwardAsUsed(MessageId)
+                                ShowNotifyScreen("AWARD SUCCESSLY!","Successfully credited " + str(JackpotWonAmount) + ". Good luck!",10)
+                            else:
+                                ShowNotifyScreen("UNABLE TO TRANSFER Award","Award transfer to GM is not available at the moment. Please try again.",10)
+                                SQL_Safe_InsImportantMessage("Award FAIL! Amount:  " + str(JackpotWonAmount),70)
+                        #</Award Yukle>
+
+            if value.startswith("divMessagesShow")==True:
+                MessageId=int(value.split('|')[1])
+                result=SQL_GetCustomerMessage(MessageId)
+
+                MessageId=0
+                AwardId=0
+                AwardAmount=0
+                IsAwardUsed=0
+                IsAwardActive=0
+                for row in result:
+                    MessageName=str(row["MessageName"])
+                    try:
+                        MessageId=int(row["MessageId"])
+                        AwardId=int(row["AwardId"])
+                        AwardAmount=int(row["AwardAmount"])
+                        IsAwardUsed=int(row["IsAwardUsed"])
+                        IsAwardActive=int(row["IsAwardActive"])
+                    except Exception as esql:
+                        print("Exception Parse")
+                    Message=""
+                    if IsAwardUsed==0 and AwardAmount>0 and AwardId>0 and IsAwardActive==1:
+                        Message="<br><div class='borderMessageAward' onclick='ShowMessageAwardClicked("+str(AwardId)+","+str(MessageId)+")'>"+str(AwardAmount)+" " + G_Machine_Currency + " AWARD</div>"
+                    Message=DecodeHTMLChars(str(row["Message"])) + Message
+                    ShowNotifyScreenWithButtons(DecodeHTMLChars(MessageName),Message, 0,1,0)
+
+                
+
+            if value=="divDiscountTake":
+                result = SQL_GetSlotCustomerDiscountCalc(1)
+                for row in result:
+                    Result=int(row["AvailableDiscount"])
+                    if Result>0:
+                        GUI_ShowBonus()
+                        ShowNotifyScreen("DISCOUNT SUCCESSLY!",row["ErrorMessage"],10)
+                    else:
+                        ShowNotifyScreen("DISCOUNT FAIL!",row["ErrorMessage"],10)
+                
+
+            if value=="divDiscount":
+                GUI_CurrentPage="GUI_Discount"
+                DiscountText="<span style='font-size:20px; font-weight:bold;'><br><br>NO DISCOUNT AVAILABLE</span>"
+
+                result = SQL_GetSlotCustomerDiscountCalc(0)
+                for row in result:
+                    AvailableDiscount=Decimal(row["AvailableDiscount"])
+
+                    DiscountText=""
+                    DiscountText=DiscountText + "<table>"
+
+                    DiscountText=DiscountText + "<tr><td><span style='font-size:35px; margin:5px;'>Net Result</span></td>"
+                    DiscountText=DiscountText + "<td><span style='font-size:35px;font-weight:bold; margin:5px;'>"+str(row["NetResult"])+"</span></td></tr>"
+
+                    DiscountText=DiscountText + "<tr><td><span style='font-size:35px; margin:5px;'>Given Discount</span></td>"
+                    DiscountText=DiscountText + "<td><span style='font-size:35px;font-weight:bold';  margin:5px;>"+str(row["Discount"])+"</span></td></tr>"
+                    
+                    if AvailableDiscount>0:
+
+                        DiscountText=DiscountText + "<tr><td><span style='font-size:35px; margin:5px;'>Discount %</span></td>"
+                        DiscountText=DiscountText + "<td><span style='font-size:35px;font-weight:bold';  margin:5px;>"+str(row["DiscountPercentageInt"])+"</span></td></tr>"
+                        
+                        if AvailableDiscount>=5:
+                            DiscountText=DiscountText + "<tr><td><span style='font-size:35px; margin:5px;'>Available</span></td><td>"
+                            DiscountText=DiscountText + "<input type='button' value='"+ str(row["AvailableDiscount"]) +" "+G_Machine_Currency+"' class='BarButtons' style='font-size:35px;  margin:5px;' onclick=\"SendData2Python('divDiscountTake')\" />"
+                            DiscountText=DiscountText + "</td>"
+
+                    DiscountText=DiscountText + "</table>"
+    
+
+
+                ExecuteJSFunction2("ChangeHTML", "divDiscountText",DiscountText)
+
+            if value=="divBar":
+                GUI_CurrentPage="GUI_Bar"
+                result = SQL_GetProductCategories()
+                ProductCategories=""
+                for row in result:
+                    ProductCategories = ProductCategories + "<input type='button' value='"+ row["CategoryName"]+"' class='BarButtons' onclick='CategorySelected(" + str(row["CategoryId"]) + ")' />";
+
+
+
+                ExecuteJSFunction2("ChangeHTML", "divBarCategoriesList",ProductCategories)
+
+            if value.startswith("divBarOrder")==True:
+                Products=value.split('|')[1]
+                print("Products", Products)
+                SQL_InsProductOrderBySlot(Products)
+                GUI_ShowCustomerWindow()
+                ShowNotifyScreen("ORDER IS PLACED","Your order will be ready soon.", 5)
+
+            if value.startswith("divBarClicked")==True:
+                Sender=value.split('|')[1]
+                Id=value.split('|')[2]
+                print("Sender", Sender + " ID", Id)
+
+                if Sender=="Category":
+                    resultProduct=SQL_GetProductsAndSubCategoriesSlot(Id,1)
+                    resultCategory=SQL_GetProductsAndSubCategoriesSlot(Id,2)
+
+                    ProductCategories=""
+                    for row in resultCategory:
+                        ProductCategories = ProductCategories + "<input type='button' value='"+ DecodeHTMLChars(str(row["CategoryName"]))+"' class='BarButtons' onclick='CategorySelected(" + str(row["CategoryId"]) + ")' />";       
+
+                    if len(ProductCategories)>0:
+                        ProductCategories=ProductCategories+ "<br />"
+
+                    for row in resultProduct:
+                        ProductCategories = ProductCategories + "<input type='button' value='"+ DecodeHTMLChars(str(row["ProductName"]))+"'  class='BarButtons'  onclick=\"ProductSelected(" + str(row["ProductId"]) + ",'" + DecodeHTMLChars(str(row["ProductName"])) + "','" + DecodeHTMLChars(str(row["CategoryName"])) + "','" + DecodeHTMLChars(str(row["FullCategoryName"])) + "')\" />";       
+
+
+                    ExecuteJSFunction2("ChangeHTML", "divBarCategoriesList",ProductCategories)
+
+
+            if value=="divSettings":
+                GUI_CurrentPage="GUI_ShowSettings"
+
+            if value=="divCustomer":
+                GUI_CurrentPage="GUI_ShowCustomerWindow"
+
+
+
+
+            if value.startswith("divKeyboard|cancel|")==True:
+                if CurrentHTML_CurrentStep.startswith("adminconfiguration|")==True:
+                    ExecuteJSFunction("CloseDiv", "divKeyboard")
+                    ExecuteJSFunction("ShowDiv", "divAdmin")
+
+
+            if value.startswith("divKeyboard|ok|")==True:
+                enteredvalue=value.split("|")[2]
+                print("enteredvalue:", enteredvalue)
+            
+                if CurrentHTML_CurrentStep=="adminconfiguration|machinename":
+                    HTML_MachineNo=enteredvalue
+                    print("Machine No", HTML_MachineNo)
+
+                    CurrentHTML_CurrentStep="adminconfiguration|machinetype"
+                    ExecuteJSFunction2("AskQuestion", "Please type Machine Type: 1:NOV, 2:EGT, 3: IGT 4:OCT","divAdminConfiguration")
+
+                elif CurrentHTML_CurrentStep=="adminconfiguration|machinetype":
+                    HTML_MachineType=enteredvalue
+                    print("Machine Type", HTML_MachineType)
+                    SQL_ChangeDeviceNameAndType(HTML_MachineNo,HTML_MachineType)
+                    ExecuteJSFunction("CloseDiv", "divKeyboard")
+                    ExecuteJSFunction("ShowDiv", "divAdmin")
+                
+
+
+            if value.startswith("divAdmin"):
+
+                if value=="divAdminJackpot":
+                    HandUserInput("jackpottest:")
+                
+                if value=="divAdminBonus":
+                    HandUserInput("bonustest:")
+
+
+                if value=="divAdminLock":
+                    Kilitle("0")
+
+                if value=="divAdminUnLock":
+                    Ac("divAdminUnlock")
+
+                if value=="divAdminRestart":
+                    print("Reset At")
+                    ExecuteCommand("restart")
+
+                if value=="divAdminHandpay":
+                    GetMeter(0,"handpay")
+                    Komut_BakiyeSorgulama(11,1,"handpayadmin-1")
+                    Wait_RemoteHandpay()
+                    Komut_BakiyeSorgulama(11,1,"handpayadmin-2")
+                    GetMeter(0,"handpay2")
+
+                if value=="divAdminBalance":
+                    Wait_Bakiye(11,1,"balanceadmin")
+
+                if value=="divAdminMeter":
+                    GUI_ShowIfPossibleMainStatu("Meter requested!")
+                    GetMeter(0,"adminmeter")
+
+            
+                if value=="divAdminConfiguration":
+                    ExecuteJSFunction("CloseDiv", "divAdmin")
+                    CurrentHTML_CurrentStep="adminconfiguration|machinename"
+                    ExecuteJSFunction2("AskQuestion", "Please type machine no","divAdminConfiguration")
+
+                if value=="divAdminReadAsset":
+                    Komut_ReadAssetNo()
+
+                if value=="divAdminRegisterSAS":
+                    Komut_RegisterAssetNo()
+
+                if value=="divAdminClearBalance":
+                    DoHandUserInput("sifirla:")
+
+                if value=="divAdminExit":
+                    IsWaitingAdminScreen=0
+                    print("Exit admin card")
+                    if IsCardInside==1:
+                        GUI_ShowCustomerWindow()
+                    else:
+                        GUI_ShowIdleWindow()
+                    
+
+            if value=="divNotifyOk":
+                print("Clicked To OK")
+        
+            if value=="divNotifyCancel":
+                print("Clicked To Cancel")
+
+            if value=="divNextVisitByTurnoverClicked":
+                print("*************************************************")
+                print("CheckNextVisit_ByTurnover")
+    
+                result = SQL_GetNextVisit_ByTurnover(1)
+                ProductCategories=""
+                for row in result:
+                    IsWon=int(row["IsWon"])
+                    if IsWon==1:
+                        G_NextVisit_WonAmount=Decimal(row["Prize"])
+                        G_NextVisit_KioskBonusId=int(row["KioskBonusId"])
+                    IsRightExist=1
+    
+                if IsRightExist==1:
+                    ExecuteJSFunction("ParseRowBonusBoxesJSON",json.dumps(result, cls=DecimalEncoder))
+                    say=0
+                    for i in range(1, 13):
+                        say=say+1
+    
+    
+                        BoxesHtml += "<td>"
+                        BoxesHtml += "<center>"
+    
+    
+                        BoxesHtml += "<input type='button' class='ButtonNextVisit' style='height:85px; background-color:"+Bg+"' id='divBonusText" + str(i) + "'  OnClick=\"BoxSelected(this," + str(i) + ")\" value='" +G_Casino_Name + "' />"
+    
+    
+                        BoxesHtml += "</center>"
+                        BoxesHtml += "</td>"
+    
+    
+                        if say % 4 == 0:
+                            BoxesHtml += "</tr>";
+                #for bitti
+            #end if IsRightExist==1
+    
+            BoxesHtml += "</table>"
+            if IsRightExist==1:
+                ShowNotifyScreen("NEXT VISIT", BoxesHtml,60)
+
+
+
+
+
+def CheckNextVisit():
+    global G_NextVisit_WonAmount
+    global G_NextVisit_KioskBonusId
+    print("*************************************************")
+    print("divNextVisit")
+    
+    BoxesHtml = "";
+    BoxesHtml += "<table style='width:100%'>";
+    
+    IsRightExist=0
+    result = SQL_GetNextVisit()
+    ProductCategories=""
+    for row in result:
+        IsWon=int(row["IsWon"])
+        if IsWon==1:
+            G_NextVisit_WonAmount=Decimal(row["Prize"])
+            G_NextVisit_KioskBonusId=int(row["KioskBonusId"])
+        IsRightExist=1
+    
+    if IsRightExist==1:
+        ExecuteJSFunction("ParseRowBonusBoxesJSON",json.dumps(result, cls=DecimalEncoder))
+        say=0
+        for i in range(1, 13):
+            say=say+1
+    
+    
+            BoxesHtml += "<td>"
+            BoxesHtml += "<center>"
+    
+    
+            BoxesHtml += "<input type='button' class='ButtonNextVisit' style='height:85px; background-color:"+Bg+"' id='divBonusText" + str(i) + "'  OnClick=\"BoxSelected(this," + str(i) + ")\" value='" +G_Casino_Name + "' />"
+    
+    
+            BoxesHtml += "</center>"
+            BoxesHtml += "</td>"
+    
+    
+            if say % 4 == 0:
+                BoxesHtml += "</tr>";
+        #for bitti
+    #end if IsRightExist==1
+    
+    BoxesHtml += "</table>"
+    if IsRightExist==1:
+        ShowNotifyScreen("NEXT VISIT", BoxesHtml,60)
+
+
+
+
+
+def CheckNextVisit_ByTurnover():
+    print("*************************************************")
+    print("CheckNextVisit_ByTurnover")
+    
+    result = SQL_GetNextVisit_ByTurnover(0)
+    ProductCategories=""
+    for row in result:
+        Result=int(row["Result"])
+        MaxPrizeAmount=int(row["MaxPrizeAmount"])
+        TodayWon=int(row["TodayWon"])
+
+        NextVisitMaxText=str(row["NextVisitMaxText"])
+
+        if len(NextVisitMaxText)>0 and MaxPrizeAmount>0 and MaxPrizeAmount!=TodayWon:
+            BoxesHtml =""
+            BoxesHtml += "<center><span style='font-size:24'>"+str(row["NextVisitMaxText"])+"</span></center><br>"
+            BoxesHtml += "<center><span style='font-size:26'>"+str(row["NextVisitCurrentText"])+"</span></center><br>"
+
+            if Result>0:
+                BoxesHtml += "<center><input type='button' class='ButtonNextVisit' style='height:65px; font-size:25px; background-color:green' OnClick=\"PythonCustomerNavIconClicked('divNextVisitByTurnoverClicked')\" value='Redeem " + str(row["AvailablePrize"]) + "' /></center>"
+
+            ShowNotifyScreenWithButtons("NEXT VISIT",BoxesHtml, 60,1,0)
+
+
+
+
+def CreateHTMLGui():
+    # Use wxPython WebView as primary HTML GUI (works on all platforms including ARM)
+    CreateHTMLWX()
+
+    # CEF Python is only available on x86_64, not on ARM/Raspberry Pi
+    #CreateCEFPython()
+
+if IsGUI_Type==3:
+    try:
+        threadGUIHtml = Thread(target = CreateHTMLGui)
+        threadGUIHtml.name="CreateHTMLGui"
+        threadGUIHtml.start()
+    except Exception as e11:
+        print("Exception threadGUIHtml")
+
+
+
+def SetMachineStatu(statumsg):
+    global G_Machine_Statu
+    G_Machine_Statu=statumsg
+
+
+LastMessageImpLevel=0
+def PrintAndSetAsStatuTextWithLevel(statumsg, level):
+    try:
+        global LastMessageImpLevel
+        if LastMessageImpLevel>level:
+            return
+        LastMessageImpLevel=level
+
+        SetMachineStatu(statumsg)
+        #print(statumsg)
+    except Exception as e11:
+        print("Exception on PrintAndSetAsStatuTextWithLevel")
+
+def PrintAndSetAsStatuText(statumsg):
+    SetMachineStatu(statumsg)
+    GUI_ShowIfPossibleMainStatu(statumsg)
+    print(statumsg)
+
+
+Global_ParaSifirla_84=0
+Global_Count_YanitHandle=0
+Yukle_FirstTransaction=0
+Yukle_LastTransaction=0
+Global_ParaYukleme_TransferStatus="0"
+IsWaitingForParaYukle=0
+CashIn_CompletedBy=""
+def Wait_ParaYukle(transfertype):
+    #LE:2020-09-08
+    global IsWaitingForParaYukle
+    IsWaitingForParaYukle=1
+    global CashIn_CompletedBy
+
+    global G_SAS_LastAFTOperation
+    G_SAS_LastAFTOperation="Yukle"
+
+    global Global_ParaYukleme_TransferStatus
+    Global_ParaYukleme_TransferStatus="0";
+
+    global Yukle_FirstTransaction
+    Yukle_FirstTransaction=0
+    
+    global Yukle_LastTransaction
+    Yukle_LastTransaction=0
+
+    global Last_ParaYukle_TransferType
+    Last_ParaYukle_TransferType=transfertype
+
+    global Global_Count_YanitHandle
+    Global_Count_YanitHandle=0
+
+    WaitParaYukle_Date=datetime.datetime.now()
+
+    try:
+        Error_87=0
+        Error_87_Tolerance=10
+
+
+        #<Status'e yazdirmak icin>--------------------------------------------
+        customerbalance=Decimal(Config.get("customer","customerbalance"))
+        customerpromo=Decimal(Config.get("customer","customerpromo"))
+
+        if transfertype==11 or transfertype==10:
+            customerbalance=JackpotWonAmount
+            customerpromo=0
+
+        if transfertype==13:
+            customerbalance=JackpotWonAmount
+
+        if transfertype==1:#bill acceptordan atilan para!
+            customerbalance=Billacceptor_LastCredit
+            customerpromo=0
+        #</Status'e yazdirmak icin>--------------------------------------------
+
+        SQL_Safe_InsImportantMessage("Cashin is started C:" + str(customerbalance) + " P:" + str(customerpromo),71)
+
+        SayKomutSent=0
+        SayKomutBekliyor=0
+        Komut_ParaYukle(1,transfertype)
+        LastCommandDate_ParaYukle=datetime.datetime.now()
+
+        PrintAndSetAsStatuText("%s" % ('Waiting for money upload'))
+        while (IsWaitingForParaYukle==1):
+            time.sleep(0.003)
+            LastCommandDate_ParaYukle_Diff=(datetime.datetime.now()-LastCommandDate_ParaYukle).total_seconds()
+
+            SayKomutBekliyor=SayKomutBekliyor+1
+
+
+            if IsDebugAutoParaYukleYanit==1:
+                IsWaitingForParaYukle=0
+
+            if Global_ParaYukleme_TransferStatus=="MT":
+                #SQL_Safe_InsImportantMessage("Try Cash-In again MT",99)
+                Komut_ParaYukle(0,transfertype)
+                LastCommandDate_ParaYukle=datetime.datetime.now()
+                Global_ParaYukleme_TransferStatus=""
+
+            if Global_ParaYukleme_TransferStatus=="87":
+                PrintAndSetAsStatuText("Money Upload Answer S:87")
+                Error_87=Error_87+1
+                
+                #Igor!
+                if Error_87>Error_87_Tolerance and transfertype!=1:
+                    break;
+                
+
+            if Global_ParaYukleme_TransferStatus=="84":
+                PrintAndSetAsStatuText("Cant transfer big money")
+                time.sleep(1)
+                break;
+
+            if Global_ParaYukleme_TransferStatus=="FF":
+                PrintAndSetAsStatuText("No transfer information available. Code: FF")
+                time.sleep(1)
+                break;
+
+            if Global_ParaYukleme_TransferStatus=="93":
+                PrintAndSetAsStatuText("Asset number zero or does not match.")
+                time.sleep(1)
+                break;
+
+            if Global_ParaYukleme_TransferStatus=="82":
+                PrintAndSetAsStatuText("Not a valid transfer function S:82")
+                time.sleep(1)
+                break;
+
+            if Global_ParaYukleme_TransferStatus=="83":
+                PrintAndSetAsStatuText("Not a valid transfer amount S:83")
+                time.sleep(1)
+                break;
+
+            if Global_ParaYukleme_TransferStatus=="C0":
+                Komut_Interragition("C0")
+                #PrintAndSetAsStatuText("Not compatible with current transfer in progress")
+                #time.sleep(0.5)
+                break;
+
+
+
+
+
+            #if IsWaitingForParaYukle==1 and ((SayKomutBekliyor%40==0 and G_Machine_IsRulet==0) or (G_Machine_IsRulet==1 and SayKomutBekliyor%100==0)):
+            if IsWaitingForParaYukle==1 and LastCommandDate_ParaYukle_Diff>=2.5:
+                print("Para yukle again")
+
+                if IsWaitingForParaYukle==1:
+                    Komut_Interragition("ParaYukle Timeout")
+                    time.sleep(0.3)
+                    Komut_Interragition("ParaYukle Timeout")
+                    time.sleep(0.3)
+
+                #2021-11-12 Apex degil ise and G_Machine_DeviceTypeId!=10
+                if IsWaitingForParaYukle==1:
+                    Komut_ParaYukle(0,transfertype)
+                    LastCommandDate_ParaYukle=datetime.datetime.now()
+                    SayKomutSent=SayKomutSent+1
+                else:
+                    print("*********** NO NEED TO FOR CASHIN 1*******************")
+                    print("*********** NO NEED TO FOR CASHIN 2*******************")
+
+
+
+            if (transfertype==10 or transfertype==11)==True and SayKomutSent>=80:
+            
+                Komut_ParaYukle(0,transfertype)
+                LastCommandDate_ParaYukle=datetime.datetime.now()
+                SayKomutSent=SayKomutSent+1
+
+                Global_ParaYukleme_TransferStatus="-1"
+                PrintAndSetAsStatuText("Jackpot screen check! Maybe Jackpot is not in balance!")
+                SQL_InsImportantMessageByWarningType("Jackpot screen check! Maybe Jackpot is not in balance!",26,22)
+                break;
+
+            if SayKomutSent>30:
+                Global_ParaYukleme_TransferStatus="-1"
+                PrintAndSetAsStatuText("Cant transfer money")
+                SQL_InsImportantMessage("Cant transfer money",26)
+                break;
+
+        # or Global_ParaYukleme_TransferStatus=="C0"'i silelim diye dusundum. 2019-01-30
+        if (Global_ParaYukleme_TransferStatus=="87" and Error_87>Error_87_Tolerance) or Global_ParaYukleme_TransferStatus=="84" or Global_ParaYukleme_TransferStatus=="FF" or Global_ParaYukleme_TransferStatus=="-1" or Global_ParaYukleme_TransferStatus=="83" or Global_ParaYukleme_TransferStatus=="89" or Global_ParaYukleme_TransferStatus=="82" or Global_ParaYukleme_TransferStatus=="93":
+            print("Return 0 yaptik...")
+            SQL_Safe_InsImportantMessage("Cashin is failed S:" + str(Global_ParaYukleme_TransferStatus),72)
+            return 0
+
+        #print("Para yuklendi")
+    
+    
+        PrintAndSetAsStatuText("%s" % ('Good luck!'))
+        SetMachineStatu("OK-Money Upload")
+        Config.set('customer','ismoneytransfered', "1")
+        SaveConfigFile()
+        AddParaYukleInfo=""
+        if Global_ParaYukleme_TransferStatus=="MT":
+            AddParaYukleInfo=" OK by " + CashIn_CompletedBy
+        SQL_Safe_InsImportantMessage("Cashin is finished! " + str(Global_ParaYukleme_TransferStatus) + AddParaYukleInfo,73)
+
+        return 1
+
+    except Exception as eWaitParaYukle:
+        ExceptionHandler("eWaitParaYukle",eWaitParaYukle,1)
+
+    SQL_Safe_InsImportantMessage("Cashin is finished Exception",74)
+    return 0
+
+
+Sifirla_FirstTransaction=0
+Sifirla_LastTransaction=0
+
+
+Sifirla_Bakiye=0
+Sifirla_Promo=0
+
+G_Cashout_SOS=0
+Step_Parasifirla="0"
+Global_ParaSilme_TransferStatus=""
+WaitingParaSifirla_PendingCount=0
+IsWaitingForBakiyeSifirla=0
+def Wait_ParaSifirla():
+    try:
+        global G_Cashout_SOS
+
+        #LE: 2021-07-23
+        global Sifirla_Bakiye
+        Sifirla_Bakiye=0
+
+        global Sifirla_Promo
+        Sifirla_Promo=0
+
+
+        global Step_Parasifirla
+        Step_Parasifirla="0"
+
+        global Global_ParaSilme_TransferStatus
+        Global_ParaSilme_TransferStatus="0"
+        global IsWarnedForTakeWin
+        IsWarnedForTakeWin=0
+        global G_SAS_LastAFTOperation
+        G_SAS_LastAFTOperation="Sifirla"
+        GUI_ShowIfPossibleMainStatu("Waiting for AFT cashout")
+        print("************ Para sifirla ***************** ")
+        global IsWaitingForBakiyeSifirla
+        IsWaitingForBakiyeSifirla=1
+
+        global WaitingParaSifirla_PendingCount
+        WaitingParaSifirla_PendingCount=0
+
+
+        global Sifirla_FirstTransaction
+        Sifirla_FirstTransaction=0
+
+        global Sifirla_LastTransaction
+        Sifirla_LastTransaction=0
+
+        global Global_Count_YanitHandle
+        Global_Count_YanitHandle=0
+
+        #SQL_InsException("ParaSifirla Started","")
+
+        Step_Parasifirla="1"
+        try:
+            SQL_Safe_InsImportantMessage("Cashout is started " + str(Yanit_BakiyeTutar),75)
+        except Exception as eImporotant:
+            print("Cashout is started err")
+
+        AgainDrawCommandTolerance=40
+        if G_Machine_DeviceTypeId==6:
+            AgainDrawCommandTolerance=120
+
+        if Cashout_Source==123:
+            AgainDrawCommandTolerance=30
+
+
+        Step_Parasifirla="2"
+
+        SayKomutBekliyor=0
+        Step_Parasifirla="2.1"
+        Komut_ParaSifirla(1)
+        Step_Parasifirla="2.2"
+        Count_SentSifirlaCommand=1
+        time.sleep(0.05)
+
+        Step_Parasifirla="3"
+        PrintAndSetAsStatuTextWithLevel("%s%s" % ('Waiting for Money Erase:', IsWaitingLoopOnSASPooling),10)
+        Step_Parasifirla="3.1"
+        while (IsWaitingForBakiyeSifirla==1):
+            try:
+                Step_Parasifirla="4." + str(Count_SentSifirlaCommand)
+                time.sleep(0.05)
+                SayKomutBekliyor=SayKomutBekliyor+1
+
+
+                Step_Parasifirla="5." + str(Count_SentSifirlaCommand)
+                if SayKomutBekliyor%16==0:
+                    Step_Parasifirla="6." + str(Count_SentSifirlaCommand)
+                    print('Para sifirlama bekleniyor IsWaitingLoopOnSASPooling:', IsWaitingLoopOnSASPooling, datetime.datetime.now())
+
+                Step_Parasifirla="7." + str(Count_SentSifirlaCommand)
+                if IsDebugAutoBakiyeSifirlaYanit==1:
+                    Step_Parasifirla="8"
+                    IsWaitingForBakiyeSifirla=0
+                    SQL_Safe_InsImportantMessage("Cashout is completed. AutoDebug",88)
+                    #print('Para sifirlamayi beklemeye gerek yok ')
+
+
+                
+
+                if SayKomutBekliyor%AgainDrawCommandTolerance==0 and IsWaitingForBakiyeSifirla==1:
+                    Step_Parasifirla="9." + str(Count_SentSifirlaCommand)
+                    print('Sent sifirlama command again', datetime.datetime.now())
+                    Step_Parasifirla="10." + str(Count_SentSifirlaCommand)
+
+                    if IsWaitingForBakiyeSifirla==1:
+                        Step_Parasifirla="11." + str(Count_SentSifirlaCommand)
+                        Komut_Interragition("50!")
+                        #2021-10-09  time.sleep(0.2)#2 idi
+
+                        #2021-10-18: Tekrar para sifirlama gondersin eger cashout butonuna basilirsa...
+                        if Cashout_Source==123:
+                            Komut_ParaSifirla(0)
+
+                    #2021-10-09 Kaldirdim...
+                    #if IsWaitingForBakiyeSifirla==1 and SayKomutBekliyor%(AgainDrawCommandTolerance*2)==0:
+                    #    Step_Parasifirla="12." + str(Count_SentSifirlaCommand)
+                        
+                    #    #2021-07-23 tekrardan kaldirdim.
+                    #    #Komut_ParaSifirla(0) #20210127 'de kaldirmisim bunu. neden acaba?
+
+                    #    Step_Parasifirla="13." + str(Count_SentSifirlaCommand)
+                    #    Count_SentSifirlaCommand=Count_SentSifirlaCommand+1
+                    #    if IsWaitingForBakiyeSifirla==1:
+                    #        time.sleep(0.2)#2 idi
+                    #        Step_Parasifirla="14." + str(Count_SentSifirlaCommand)
+                    #        Komut_Interragition("50!.")
+                    #        Step_Parasifirla="15." + str(Count_SentSifirlaCommand)
+                    
+
+
+                if SayKomutBekliyor%40==0 and IsWaitingForBakiyeSifirla==1:
+                    Step_Parasifirla="16." + str(Count_SentSifirlaCommand)
+                    if G_Machine_DeviceTypeId==6:
+                        Step_Parasifirla="17." + str(Count_SentSifirlaCommand)
+                        Komut_Interragition("MEGAJACK!")
+                    else:
+                        Step_Parasifirla="18." + str(Count_SentSifirlaCommand)
+                        if SayKomutBekliyor>80:
+                            Step_Parasifirla="19." + str(Count_SentSifirlaCommand)
+                            Komut_Interragition("ENSON!")
+
+
+                #2 dk suruyor burasi 
+                #if (SayKomutBekliyor%400==0 and G_Machine_IsRulet==0):
+                #if (Count_SentSifirlaCommand%25==0 and G_Machine_IsRulet==0) and IsWaitingForBakiyeSifirla==1:
+                if Count_SentSifirlaCommand%25==0 and IsWaitingForBakiyeSifirla==1:
+                    
+                    #2021-10-06 Sadece alttakini ekledim.
+                    OpenCloseSasPort(1,0)
+
+                    Step_Parasifirla="20." + str(Count_SentSifirlaCommand)
+                    SQL_Safe_InsImportantMessage("S.O.S. Money cannot be collected.",75)
+                    Step_Parasifirla="20." + str(Count_SentSifirlaCommand)
+                    PrintAndSetAsStatuTextWithLevel("S.O.S. Money cannot be collected.",11)
+                    Step_Parasifirla="21." + str(Count_SentSifirlaCommand)
+                    G_Cashout_SOS=G_Cashout_SOS+1
+                    if G_Cashout_SOS>8:
+                        SQL_InsImportantMessageByWarningType("Restart S.O.S.",0,0)
+                        ExecuteCommand("restart")
+                    #Komut_Interragition("SasPortIsOpenedAndClosed-x")
+
+            except Exception as eSifirla:
+                print("Exception on Sifirla")
+
+        #SQL_InsException("ParaSifirla finished","")
+        PrintAndSetAsStatuTextWithLevel("OK-Money Erase",11)
+
+    except Exception as e1:
+        ExceptionHandler("Error on Money Collect",e1,1)
+        PrintAndSetAsStatuTextWithLevel("Error on Money Collect..",11)
+        
+    
+    
+def Wait_Safe_Bakiye(sender,isforbilgi,sendertext):
+    processGameoperation = Thread(target=Wait_Bakiye, args=(sender,isforbilgi,sendertext))
+    processGameoperation.name="SafeBakiye";
+    processGameoperation.start()
+
+
+Bakiye_WaitingForGameLockCount=0
+IsWarnedForTakeWin=0
+LastCommand_Bakiye_Sender=0
+#sender: 1:cardin 2: cardout 3:restart 4:jackpot 5:87TS 6:81TS 7:9FTS   8:82TS  9:84TS   10:83TS   11:BakiyeSorgula  12:Restarttan sonra, 13: ekran wallet buton
+def Wait_Bakiye(sender,isforbilgi,sendertext='UndefinedWaitBakiye'):
+    print("***************************************************************")
+    print("<Wait_Bakiye entered:>------------------------------------", isforbilgi, sendertext)
+    global IsWaitingForBakiyeSorgulama
+    global BalanceQuery_GameLockStatus
+    global LastCommand_Bakiye_Sender
+    global Yanit_BakiyeTutar
+    global Yanit_RestrictedAmount
+    global Yanit_NonRestrictedAmount
+    global IsWarnedForTakeWin
+    global Bakiye_WaitingForGameLockCount
+    Bakiye_WaitingForGameLockCount=0
+
+    IsWaitingForBakiyeSorgulama=1
+    BalanceQuery_GameLockStatus=""
+    LastCommand_Bakiye_Sender=sender
+
+
+    WaitBakiye_Date=datetime.datetime.now()
+
+    Yanit_BakiyeTutar=0
+    Yanit_RestrictedAmount=0
+    Yanit_NonRestrictedAmount=0
+
+    Config.set("collecting","cashableamount", "0")
+    Config.set("collecting","restrictedamount", "0")
+    Config.set("collecting","nonrestrictedamount", "0")
+    SaveConfigFile()
+
+    try:
+        Komut_BakiyeSorgulama(sender, isforbilgi,sendertext)
+        LastCommandDate_Bakiye=datetime.datetime.now()
+        #time.sleep(0.05)
+        while (1==1):
+
+            time.sleep(0.003)
+            LastCommandDate_Bakiye_Diff=(datetime.datetime.now()-LastCommandDate_Bakiye).total_seconds()
+            FirstCommandDate_Bakiye_Diff=(datetime.datetime.now()-WaitBakiye_Date).total_seconds()
+
+            #print("LastCommandDate_Bakiye_Diff", LastCommandDate_Bakiye_Diff, "FirstCommandDate_Bakiye_Diff", FirstCommandDate_Bakiye_Diff)
+            if IsWaitingForBakiyeSorgulama==0:
+                print("************Do not wait for bakiye anymore. 0 *********")
+                break
+
+            if IsWaitingForBakiyeSorgulama==1 and LastCommandDate_Bakiye_Diff>=0.5:
+                print("************ SEND COMMAND AGAIN ********************")
+                LastCommandDate_Bakiye=datetime.datetime.now()
+                Komut_BakiyeSorgulama(sender, isforbilgi,sendertext)
+
+        
+            if IsDebugAutoBakiyeYanit==1:
+                HandUserInput("yanitbakiye")
+                time.sleep(0.01)
+
+
+            if sendertext=="BillAcceptor" or sendertext=="AddMoney" or sendertext=="asset":
+                #print("FirstCommandDate_Bakiye_Diff", FirstCommandDate_Bakiye_Diff)
+                if FirstCommandDate_Bakiye_Diff>2:
+                    return 0
+
+            if FirstCommandDate_Bakiye_Diff>60:
+                SetMachineStatu("FAIL-No Answer balance query")
+                print("**********BAKIYE SORGULAMA IS FAILED***********************")
+                return 0;
+
+    except Exception as ex9:
+        ExceptionHandler("Error on Wait_Bakiye",ex9,0)
+    
+    print("</Wait_Bakiye entered:>---------------------------------------- FirstCommandDate_Bakiye_Diff", FirstCommandDate_Bakiye_Diff)
+    print("***************************************************************")
+
+    SetMachineStatu("OK-Answer to balance query")
+    return 1;
+
+
+def ChangeRealTimeReporting(isopened):
+
+
+    #2021-10-06 kapatildi
+    #if isopened==0:
+    #    return
+
+    if isopened==1:
+        print("Real time reporting is on")
+        GenelKomut=GetCRC("010E01")
+        SAS_SendCommand("RTP-1",GenelKomut,0)
+    else:
+        print("Real time reporting is off")
+        GenelKomut=GetCRC("010E00")
+        SAS_SendCommand("RTP-0",GenelKomut,0)
+
+#<GUI HELPER>-----------------------------------------------------------------
+
+G_Last_NextionCommand=datetime.datetime.now()
+NextionCommandStr = []
+NextionCommandCount=0
+def NextionCommand(data):
+    global NextionCommandCount
+    NextionCommandCount=NextionCommandCount+1
+
+    global GUI_Static_WelcomeText
+    GUI_Static_WelcomeText="Insert card"
+    if NextionCommandCount>10000:
+        NextionCommandCount=0
+
+    #NextionCommandThread(data)
+
+    thread1 = Thread(target = NextionCommandThread, args = (data, ))
+    thread1.name="Nextion" + str(NextionCommandCount)
+    thread1.start()
+
+def NextionCommandThread(data):
+    global nextionport
+    global NextionCommandStr
+    global G_Last_NextionCommand
+    global GUI_Static_WelcomeText
+    GUI_Static_WelcomeText="Insert card"
+
+
+
+    #G_Last_NextionCommand_Diff=(datetime.datetime.now()-G_Last_NextionCommand).total_seconds()
+    #while G_Last_NextionCommand_Diff<0.3 and data[0]!="123456":
+    #    #print("Wait nextion***************")
+    #    time.sleep(0.13)
+    #    G_Last_NextionCommand_Diff=(datetime.datetime.now()-G_Last_NextionCommand).total_seconds()
+
+    try:
+
+        
+
+        CountryTry=0
+        while len(NextionCommandStr)>0:
+
+            CountryTry=CountryTry+1
+        
+            if CountryTry%10==0:
+                print("Please wait.. Another command is being sent to nextion")
+        
+            time.sleep(0.05)
+
+            if CountryTry>5000:
+                print("break bill acceptor while commandstr")
+                break
+        if CountryTry>0:
+            time.sleep(0.6)
+
+        NextionCommandStr=data
+
+
+        k=struct.pack('B', 0xff)
+
+
+
+        for cmd in data:
+
+            print("Nextion TX", cmd, nextionport.port)
+
+     
+
+            G_Last_NextionCommand=datetime.datetime.now()
+
+
+            A_END_OF_CMD = [0xff, 0xff, 0xff]
+            S_END_OF_CMD = bytearray(A_END_OF_CMD)
+            CmdAll=bytearray(cmd, encoding="ISO-8859-1") + S_END_OF_CMD
+            nextionport.write(CmdAll)
+            time.sleep(0.1)
+            
+
+        NextionCommandStr = []
+        
+    except Exception as esql:
+        
+        print("Nextion command sent error")
+        ExceptionHandler("Nextion Err",esql,0)
+
+Nextion_Count_Cmd=0
+
+
+def CloseCustomerInfo():
+    try:
+
+        if IsGUIEnabled==0:
+            return
+     
+
+        if IsGUI_Type==1:
+            try:
+                ui.emit(QtCore.SIGNAL('CloseCustomerWindow()'))
+            except Exception as e:
+                print("Close Customer Info failed")
+         
+
+
+        if IsGUI_Type==2:
+            GUI_ShowIdleWindow()
+
+        if IsGUI_Type==3 or IsGUI_Type==4:
+            GUI_ShowIdleWindow()
+
+    except Exception as esql:
+        print("Err on CloseCustomerInfo")
+
+
+
+
+
+
+def ScreenUpdateTextStatu(message, resetsecond):
+    if IsGUIEnabled==0:
+        return
+
+    if IsGUI_Type==1:
+        try:
+            ui.emit(QtCore.SIGNAL('ScreenUpdateTextStatu(QString)'),message)
+        except Exception as e:
+            ExceptionHandler("ScreenUpdateTextStatu Error",e,0)
+
+    if IsGUI_Type==2:
+        NextionCommand(["tMainStatu.txt=\""+message+"\""])
+
+
+    if IsGUI_Type==3 or IsGUI_Type==4:
+        ExecuteJSFunction2("ChangeText", "divMainStatu",message)
+        ExecuteJSFunction2("ChangeText", "divCustomerStatu",message)
+        ExecuteJSFunction2("ChangeText", "divAdminStatu",message)
+        
+
+
+    if resetsecond>0:
+        threadTextStatu = Thread(target = ScreenResetTextStatu)
+        threadTextStatu.name="txtStatu"
+        threadTextStatu.start()
+
+
+def ScreenResetTextStatu():
+    if IsGUIEnabled==0:
+        return
+
+    if IsGUI_Type==1:
+        try:
+            time.sleep(3) 
+            ui.emit(QtCore.SIGNAL('ScreenUpdateTextStatu(QString)'),GUI_Static_WelcomeText)
+        except Exception as e:
+            print("ScreenResetTextStatu Error")
+
+    if IsGUI_Type==2:
+        NextionCommand(["tMainStatu.txt=\""+GUI_Static_WelcomeText+"\""])
+
+    #if IsGUI_Type==3 or IsGUI_Type==4:
+    #    ExecuteJSFunction2("ChangeText", "divMainStatu",GUI_Static_WelcomeText)
+    #    ExecuteJSFunction2("ChangeText", "divCustomerStatu",GUI_Static_WelcomeText)
+    #    ExecuteJSFunction2("ChangeText", "divAdminStatu",GUI_Static_WelcomeText)
+
+
+def ChangeJackpotLevelText(sira, yazi):
+    if IsGUI_Type==1:
+        ui.emit(QtCore.SIGNAL('ChangeJackpotLevelText(int, QString)'),sira,yazi)
+
+    if IsGUI_Type==2:
+        print("gui ok")
+
+    if IsGUI_Type==3 or IsGUI_Type==4:
+        print("gui ok")
+
+
+
+def ChangeJackpotLevelTextValue(sira,yazi):
+    if IsGUIEnabled==0:
+        return
+
+    if IsGUI_Type==2:
+        if sira==1:
+            NextionCommand(["tj0.txt=\""+yazi+"\""])
+        if sira==2:
+            NextionCommand(["tj1.txt=\""+yazi+"\""])
+        if sira==3:
+            NextionCommand(["tj2.txt=\""+yazi+"\""])
+        if sira==4:
+            NextionCommand(["tj3.txt=\""+yazi+"\""])
+
+def ChangeJackpotLevelValue(sira, yazi):
+    if IsGUI_Type==1:
+        ui.emit(QtCore.SIGNAL('ChangeJackpotLevelValue(int, QString)'),sira,yazi)
+    
+    if IsGUI_Type==2:
+        print("guifix ok")
+
+    if IsGUI_Type==3 or IsGUI_Type==4:
+        ExecuteJSFunction2("ChangeText", "divJackpotLine" + str(sira),yazi)
+
+
+def ShowNotifyScreen(header, msg, duration):
+    if IsGUIEnabled==0:
+        return
+
+    if IsGUI_Type==1:
+        try:
+            ui.emit(QtCore.SIGNAL('ShowNotifyScreen(QString,QString,int)'),header, msg, duration)
+        except Exception as e:
+            print("ShowNotifyScreen Error")
+
+    if IsGUI_Type==2:
+        NextionCommand(["page page_timer","tHeader.txt=\""+header+"\"","tText.txt=\""+msg+"\""])
+
+    if IsGUI_Type==3 or IsGUI_Type==4:
+        ExecuteJSFunction5("ShowNotify", "0", "0", header, msg, str(duration))
+
+    try:
+        if duration>0:
+            processThread = Thread(target=CloseNotifyScreen, args=(duration,))
+            processThread.Text="CloseNotifyScreen"
+            processThread.start()
+    except Exception as e:
+        print("OTO KAPAT SORUN VAR")
+
+
+def ShowNotifyScreenWithButtons(header, msg, duration, showOk, showCancel):
+    if IsGUIEnabled==0:
+        return
+
+    if IsGUI_Type==1:
+        try:
+            ui.emit(QtCore.SIGNAL('ShowNotifyScreen(QString,QString,int)'),header, msg, duration)
+        except Exception as e:
+            print("ShowNotifyScreen Error")
+
+    if IsGUI_Type==2:
+        NextionCommand(["page page_timer","tHeader.txt=\""+header+"\"","tText.txt=\""+msg+"\""])
+
+    if IsGUI_Type==3 or IsGUI_Type==4:
+        ExecuteJSFunction5("ShowNotify", str(showOk), str(showCancel), header, msg, str(duration))
+
+    try:
+        if duration>0:
+            processThread = Thread(target=CloseNotifyScreen, args=(duration,))
+            processThread.name="ShowNotify1"
+            processThread.start()
+    except Exception as e:
+        print("OTO KAPAT SORUN VAR")
+    
+
+def CloseNotifyScreen(seconds):
+
+    time.sleep(seconds)
+
+
+    if IsGUI_Type==1:
+        ui.emit(QtCore.SIGNAL('CloseNotifyScreenCmd(int)'), seconds)
+
+    if IsGUI_Type==2:
+        GUI_ShowCurrentPage()
+
+    if IsGUI_Type==3 or IsGUI_Type==4:
+        GUI_ShowCurrentPage()
+
+
+def ChangeCustomerScreenLine(lineNo, yazi):
+    if IsGUIEnabled==0:
+        return
+
+    if IsGUI_Type==1:
+        try:
+            ui.emit(QtCore.SIGNAL('ChangeLineText(int, QString)'),lineNo,yazi)
+        except Exception as e:
+            print("Error : ChangeCustomerScreenLine")
+    
+    if IsGUI_Type==2:
+        if lineNo==1:
+            NextionCommand(["lblLine1.txt=\""+yazi+"\""])
+
+        if lineNo==2:
+            NextionCommand(["lblLine2.txt=\""+yazi+"\""])
+
+        if lineNo==3:
+            NextionCommand(["lblLine3.txt=\""+yazi+"\""])
+
+
+    if IsGUI_Type==3 or IsGUI_Type==4:
+        if lineNo==1:
+            ExecuteJSFunction2("ChangeText", "divCustomerLine1",yazi)
+
+        if lineNo==2:
+            ExecuteJSFunction2("ChangeText", "divCustomerLine2",yazi)
+
+        if lineNo==3:
+            ExecuteJSFunction2("ChangeText", "divCustomerLine3",yazi)
+
+
+def ChangeCustomerLineWithDelay(resetsecond,lineNo,yazi):
+    if IsGUIEnabled==0:
+        return
+    time.sleep(resetsecond)
+
+    ChangeCustomerScreenLine(lineNo,yazi)
+
+
+def ChangeCustomerScreenLineTimed(lineNo, yazi, resetsecond, yazison):
+    if IsGUIEnabled==0:
+        return
+    ChangeCustomerScreenLine(lineNo,yazi,)
+    if resetsecond>0:
+        try:
+            processThread = Thread(target=ChangeCustomerLineWithDelay, args=(resetsecond,lineNo,yazison,));
+            processThread.name="ChangeCustLine"
+            processThread.start();
+        except Exception as e:
+            ExceptionHandler("ResetSecondProblem",e,0)
+
+
+#sender: 1: Please wait until game ends, 2: Normal
+def BlinkCustomerScreenLine(sender, lineno, text, howmanytimes):
+    if IsGUIEnabled==0:
+        return
+    try:
+        processThread = Thread(target=BlinkCustomerScreenLine_Thread, args=(sender, lineno, text, howmanytimes));
+        processThread.name="BlinkCustLine"
+        processThread.start();
+    except Exception as e:
+        ExceptionHandler("BlinkCustomerScreenLine",e,0)
+
+
+
+def BlinkCustomerScreenLine_Thread(sender, lineno, text, howmanytimes):
+    if IsGUIEnabled==0:
+        return
+    
+    ChangeCustomerScreenLine(lineno,text)
+
+
+#011A
+#011A00000000C3FC01
+#011A000014513E4D01
+
+#27: Legacy EFT pool
+#6B: EGT Long Poll
+
+#EFT POLLS
+#22-25, 29, 62,63,64,65,67,69
+
+#EFT'te surekli artirmak gerekiyor ID'yi
+
+#Kredi Yuklemek:
+#TX>= 01 69 04 00 12 34 56 78 5F 13
+#TX>= 01 69 05 00 00 00 01 00 5C 69
+#TX>= 01 69 06 00 00 00 01 00 21 65
+
+#Request for cashout credit amount
+#01 66 00 59 6B
+
+
+
+#sudo pip install --upgrade pip
+#sudo pip install cython
+#sudo pip install pymssql --upgrade
+#Kahverengi: RX    - Onlarin TX'i
+#Kirmizi: TX - Onlarin RX
+#Turuncu: GND
+#01 1A 00 00 00 01 CRC (4AED) 1 Kredi ac.
+
+#nextion: 7179
+#sasport: 7275
+#billacceptor: 7881
+
+
+#yapilacaklar....
+#oyun basladiktan sonra, kart cikartma islemi en azindan 4 sn sonra olsun.
+
+#asagidaki mesaj gelince iyice sapitiyor. sas portu onlarca kez acip kapatsak bile birsey olmuyor
+#01720200800D6DFC
+#01720201026BD6C3.. allright!
+#Raspberry
+
+#sorular
+#Cashout to Host Control: Soft - Hard - Host controlled farklari
+
+#Cihazin destekledigi zimbirtilar. Ornegin Jackpot vs.
+#sas:01A00000CRC
+#Asagidaki sorgu Jackpotu kabul etmeyenleri bulmak icin
+#SELECT MacAddress FROM T_ReceivedMessages where ReceivedMessage like '01A00000_0%'
+#1 Lari Jackpot - Bonus (Kilitleme yok)
+#sas:0172350000100000000100000000000000000000000301000000000000000000000000000000000000000000000002323008182017003000CRC
+
+#1 Lari Jackpot - Bonus (Kilitleme olacak)
+#sas:0172350000110000000100000000000000000000000301000000000000000000000000000000000000000000000002323008182017003000CRC
+
+
+#Kart cikartma prosedurleri
+#-Cashout basilinca
+#	Komut_CollectButtonProcess
+#		Card_RemoveCustomerInfo
+#problemsiz
+#-Kart cikartilinca
+#	CardIsRemoved
+#		Card_RemoveCustomerInfo
+
+
+#from cefpython3 import cefpython as cef
+
+
+#from pycallgraph import PyCallGraph
+#from pycallgraph.output import GraphvizOutput
+
+
+
+try:
+    import wx
+    from wx import html2
+    WX_HTML2_AVAILABLE = True
+    WX_AVAILABLE = True
+except ImportError:
+    print("[WARNING] wxPython not available or incomplete installation")
+    print("[INFO] HTML GUI will be disabled")
+    WX_HTML2_AVAILABLE = False
+    WX_AVAILABLE = False
+    wx = None
+#import codecs
+
+import webview
+import gc
+
+import math
+import psutil
+
+import serial
+import re
+
+try:
+    import psycopg2
+    import psycopg2.extras
+    import uuid
+    POSTGRESQL_AVAILABLE = True
+except ImportError:
+    print("PostgreSQL dependencies not available")
+    POSTGRESQL_AVAILABLE = False
+
+# Missing imports for Raspberry Pi compatibility
+try:
+    import multiprocessing as mp
+except ImportError:
+    print("multiprocessing module not available")
+    mp = None
+
+
+# Initialize variables that might be undefined
+wx = None
+MyBrowser = None
+struct = None
+QtCore = None
+import os
+import sys
+import datetime
+import socket
+import threading
+from threading import Timer,Thread
+import time
+import sys
+
+from sys import stdin
+import configparser as ConfigParser
+from decimal import Decimal
+
+from uuid import getnode as get_mac
+import platform
+import random
+import subprocess
+
+import hashlib
+
+from crccheck.crc import CrcKermit
+
+from PyQt5.QtCore import QSize
+from PyQt5.QtGui import QImage, QPalette, QBrush, QFont
+from PyQt5.QtWidgets import *
+
+# noinspection PyUnresolvedReferences
+#from PyQt4.QtCore import *
+
+QString = str
+
+import sqlite3
+try:
+    conn = sqlite3.connect('asist.db', check_same_thread=False)
+    c = conn.cursor()
+    c.execute('CREATE  TABLE  IF NOT EXISTS billacceptor ("billacceptorid" INTEGER PRIMARY KEY  AUTOINCREMENT  NOT NULL  UNIQUE ,  "machinelogid" INTEGER, "cardno" VARCHAR, "amount" DOUBLE, "amountcode" VARCHAR, "countrycode" VARCHAR, "piece" INTEGER, "issynced" INTEGER, "amountbase" DOUBLE)')
+except Exception as esql:
+    print("SQLite Err Init!")
+
+import ctypes
+
+import json
+
+# Custom JSON encoder to handle Decimal objects
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
+
+
+
+import urllib as urllib2
+os.putenv('DISPLAY', ':0.0')
+
+
+
+
+
+Config = ConfigParser.ConfigParser()
+ConfigFile="settings.ini"
+
+def SaveConfigFile():
+    global ConfigFile
+    global Config
+    cfgfile = open(ConfigFile,'w')
+    Config.write(cfgfile)
+    cfgfile.close()
+
+Config.read(ConfigFile)
+
+G_Program_LogAllSAS=0
+for i in range(1, len(sys.argv)):
+    print(sys.argv[i])
+    if sys.argv[i]=="debugsas":
+        G_Program_LogAllSAS=1
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("DEBUG SAS LOG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+
+G_Machine_MachineName=""
+try:
+    G_Machine_MachineName=Config.get("machine","machinename")
+except Exception as esql:
+    print("---------")
+
+
+G_Online_IsOnlinePlaying=0
+
+G_Device_IsReadyForOnlinePlaying=1
+G_Device_IsForOnlinePlaying=1
+if G_Device_IsForOnlinePlaying==1:
+    try:
+        from flask import Flask, request
+        from flask_restful import Resource, Api
+        from json import dumps
+        from flask import request, jsonify
+    except Exception as esql:
+        print("Not ready for online playing")
+        print("NO Flask")
+        G_Device_IsReadyForOnlinePlaying=0
+
+
+
+G_Device_AssetNo=0#Bunu cihaz acildiktan sonra sorguluyoruz.
+G_Machine_GameStartEndNotifications=0
+G_Machine_IsAutoNextVisit=0
+G_Machine_CalcBetByTotalCoinIn=0
+G_NetworkLastDate=datetime.datetime.now()
+G_SASLastDate=datetime.datetime.now() + datetime.timedelta(minutes=1)
+G_Machine_LastCardreaderTime=datetime.datetime.now()+ datetime.timedelta(minutes=1)
+G_Machine_LastBillAcceptorTime=datetime.datetime.now()+ datetime.timedelta(minutes=1)
+G_LastCashoutPressedDate=datetime.datetime.now()- datetime.timedelta(minutes=30)
+G_LastAFTOperationDate=G_LastCashoutPressedDate
+G_Machine_IsBonusCashable=0
+G_LastMeterDate=datetime.datetime.now()
+
+
+LinuxVersion=1
+try:
+    import distro
     if str(distro.linux_distribution()).find("Ubuntu") != -1:
         LinuxVersion=2
     print("Linux", distro.linux_distribution(), LinuxVersion)
@@ -332,11 +4357,6 @@ try:
 except Exception as e:
     pass
 
-try:
-    #sheder
-    ExecuteLinuxCommand("rm licence.hashed")
-except Exception as e:
-    pass
 
 
 IsSystemLocked=0
