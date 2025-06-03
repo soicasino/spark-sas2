@@ -52,10 +52,10 @@ export DISPLAY=:0.0
 
 # Run the Python application
 echo -e "${GREEN}Starting Python application...${NC}"
-echo -e "${YELLOW}Running: python raspberryPython3.py${NC}"
+echo -e "${YELLOW}Running: python raspberryPython4.py${NC}"
 
 # Run with error handling
-python raspberryPython3.py
+python raspberryPython4.py
 
 # Check exit status
 EXIT_CODE=$?
