@@ -14902,7 +14902,7 @@ if G_Device_IsForOnlinePlaying==1 and G_Device_IsReadyForOnlinePlaying==1:
         #GPIO.setup(38,GPIO.OUT, initial=GPIO.HIGH)
         #GPIO.setup(40,GPIO.OUT, initial=GPIO.HIGH)
 
-
+    print ("platform.system()",platform.system())
     if platform.system().startswith("Window")==False:
         InitPorts()
 
