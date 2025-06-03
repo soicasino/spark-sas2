@@ -688,7 +688,7 @@ G_Machine_CasinoPromoType=0
 
 G_Machine_CardReaderType=1
 G_Machine_CardReaderModel=""#Eject
-if len(find('crt*.so', '/home/pi'))==0:
+if len(find('crt*.so', '/home/soi/dev/spark-sas2'))==0:
     G_Machine_CardReaderType=2
     print("CHINA CARD READER!!!!")
 
