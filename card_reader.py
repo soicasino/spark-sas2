@@ -123,6 +123,7 @@ class CardReader:
                         continue
                     tdata += out.hex().upper()
                 if tdata:
+                    print(f"[CardReaderRead] Raw response: {tdata}")
                     # If ACK (06), send ENQ (05) and wait for next response
                     if tdata == "06":
                         print("[CardReaderRead] Received ACK, sending ENQ...")
@@ -142,6 +143,8 @@ class CardReader:
                             if not out:
                                 continue
                             tdata += out.hex().upper()
+                        if tdata:
+                            print(f"[CardReaderRead] Raw response: {tdata}")
                     # Now check for card data
                     if tdata.startswith("020007"):
                         idx = tdata.find("353159")
