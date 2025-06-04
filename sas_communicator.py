@@ -471,8 +471,8 @@ class SASCommunicator:
                 time.sleep(0.2)
                 response = self.get_data_from_sas_port()
                 if response and response.startswith('0173'):
-                    # Skip address (1 byte), command (1 byte), status (1 byte), then get 4 bytes (8 hex chars) for asset number
-                    asset_hex = response[4:12]
+                    # Correct: skip address (1 byte), command (1 byte), status (1 byte), then get 4 bytes (8 hex chars) for asset number
+                    asset_hex = response[6:14]
                     if len(asset_hex) % 2 != 0:
                         asset_hex = '0' + asset_hex
                     reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
