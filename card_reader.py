@@ -19,12 +19,16 @@ class CardReader:
         Try to find and open the card reader port from a list of candidate port names.
         Sets self.serial_port and self.port_name if successful.
         """
+        print("[CardReaderScan] Starting card reader port scan...")
         self.is_card_reader_opened = False
         for port_info in port_list:
             if port_info.get('is_used', 0) != 0 or self.is_card_reader_opened:
+                print(f"[CardReaderScan] Skipping port (already used): {port_info.get('port_no', port_info.get('port'))}")
                 continue
             port_name = port_info['port_no'] if 'port_no' in port_info else port_info.get('port')
+            print(f"[CardReaderScan] Trying port: {port_name}")
             try:
+                print(f"[CardReaderScan] Setting serial params: baudrate=9600, bytesize=8, parity=NONE, stopbits=1, timeout=0.2")
                 self.serial_port.port = port_name
                 self.serial_port.baudrate = 9600
                 self.serial_port.bytesize = serial.EIGHTBITS
@@ -32,22 +36,26 @@ class CardReader:
                 self.serial_port.stopbits = serial.STOPBITS_ONE
                 self.serial_port.timeout = 0.2
                 self.serial_port.open()
-                print(f"Trying card reader port: {port_name}")
+                print(f"[CardReaderScan] Port opened: {port_name}")
                 time.sleep(self.card_reader_interval)
                 if self._wait_for_card_reader_opened():
                     self.port_name = port_name
                     self.is_card_reader_opened = True
                     port_info['is_used'] = 1
                     port_info['device_name'] = 'cardreader'
-                    print(f"Card reader found and opened on port: {port_name}")
+                    print(f"[CardReaderScan] Card reader found and opened on port: {port_name}")
+                    print(f"[CardReaderScan] Marked port as used: {port_name}")
                     self._send_poll_command()  # Initial poll
                     break
                 else:
                     self.serial_port.close()
+                    print(f"[CardReaderScan] Port closed (not card reader): {port_name}")
             except Exception as e:
-                print(f"Error opening/testing card reader port {port_name}: {e}")
+                print(f"[CardReaderScan] Exception on port {port_name}: {e}")
         if not self.is_card_reader_opened:
-            print("No card reader found.")
+            print("[CardReaderScan] No card reader found after scanning all ports.")
+        else:
+            print(f"[CardReaderScan] Card reader scan complete. Found on port: {self.port_name}")
         return self.is_card_reader_opened
 
     def _send_poll_command(self):
