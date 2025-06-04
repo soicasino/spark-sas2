@@ -3,6 +3,7 @@ import time
 from config_manager import ConfigManager
 from port_manager import PortManager
 from sas_communicator import SASCommunicator
+from card_reader_manager import CardReaderManager
 
 class SlotMachineApplication:
     """Main application - simplified for SAS communication testing"""
@@ -13,6 +14,7 @@ class SlotMachineApplication:
         self.sas_comm = None
         self.running = False
         self.sas_poll_timer = None
+        self.card_reader_mgr = None
 
     def check_system_info(self):
         """Check system and available ports"""
@@ -77,20 +79,18 @@ class SlotMachineApplication:
             self.sas_comm = SASCommunicator(sas_port, self.config)
             if self.sas_comm.open_port():
                 print("SAS communication initialized successfully!")
-                # --- Card reader integration in a separate thread ---
+                # --- Card reader manager integration ---
                 if hasattr(self.port_mgr, 'get_all_ports'):
                     port_list = self.port_mgr.get_all_ports()
                 else:
-                    port_list = []  # TODO: Implement get_all_ports in PortManager to return port info dicts
-                # Ensure /dev/ttyUSB0 is included BEFORE starting the thread
+                    port_list = []
                 if not any(p.get('port_no') == '/dev/ttyUSB0' or p.get('port') == '/dev/ttyUSB0' for p in port_list):
                     port_list.append({'port_no': '/dev/ttyUSB0', 'is_used': 0, 'device_name': ''})
                 print(f"[DEBUG] Port list for card reader: {port_list}")
-                self.card_reader_thread = threading.Thread(
-                    target=self.card_reader_thread_main, args=(port_list,), daemon=True)
-                print("[Main] Starting card reader thread...")
-                self.card_reader_thread.start()
-                # --- End card reader integration ---
+                self.card_reader_mgr = CardReaderManager(port_list)
+                print("[Main] Starting card reader manager thread...")
+                self.card_reader_mgr.start()
+                # --- End card reader manager integration ---
                 return True
             else:
                 print("Failed to open SAS port")
@@ -98,11 +98,6 @@ class SlotMachineApplication:
         else:
             print("No SAS port found")
             return False
-
-    def card_reader_thread_main(self, port_list):
-        print("[CardReaderThread] Card reader thread started.")
-        self.sas_comm.find_ports_and_read_card_if_present(port_list)
-        print("[CardReaderThread] Card reader thread finished.")
 
     def sas_polling_loop(self):
         """SAS polling loop"""
@@ -185,5 +180,9 @@ class SlotMachineApplication:
         
         if self.sas_comm:
             self.sas_comm.close_port()
+        
+        if self.card_reader_mgr:
+            print("[Main] Stopping card reader manager thread...")
+            self.card_reader_mgr.stop()
         
         print("Shutdown complete.") 
