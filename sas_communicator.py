@@ -5,6 +5,7 @@ import platform
 import termios  # For Linux parity control
 from crccheck.crc import CrcKermit
 from decimal import Decimal
+from card_reader import CardReader  # Import the CardReader class
 
 # Helper functions
 
@@ -70,6 +71,8 @@ class SASCommunicator:
             self.is_communication_by_windows = 1
         else:
             self.is_communication_by_windows = 0
+
+        self.card_reader = None  # Will hold CardReader instance
 
     def open_port(self):
         """Opens SAS port - EXACTLY matching working code's OpenCloseSasPort logic"""
@@ -536,4 +539,35 @@ class SASCommunicator:
                     return
             print("[ASSET NO] Could not read asset number from SAS.")
         except Exception as e:
-            print(f"[ASSET NO] Error reading from SAS: {e}") 
+            print(f"[ASSET NO] Error reading from SAS: {e}")
+
+    def find_ports_with_card_reader(self, port_list):
+        """
+        Example integration: Find and open card reader port from a list of ports.
+        """
+        self.card_reader = CardReader()
+        found = self.card_reader.find_port(port_list)
+        if found:
+            print(f"Card reader integrated on port: {self.card_reader.port_name}")
+            # You can now call self.card_reader.read_card() to read a card
+            # Example: card_no = self.card_reader.read_card()
+        else:
+            print("No card reader found during port scan.")
+
+    def find_ports_and_read_card_if_present(self, port_list):
+        """
+        Find SAS port (assume already handled), then find card reader port.
+        If card reader is found and a card is present, read and print the card id.
+        """
+        print("[SAS] SAS port finding assumed handled (open_port or similar).")
+        print("[SAS] Now searching for card reader port...")
+        self.find_ports_with_card_reader(port_list)
+        if self.card_reader and self.card_reader.is_card_reader_found:
+            print("[SAS] Card reader found. Checking for card...")
+            card_id = self.card_reader.read_card()
+            if card_id:
+                print(f"[SAS] Card detected! Card ID: {card_id}")
+            else:
+                print("[SAS] No card detected in reader.")
+        else:
+            print("[SAS] No card reader found.") 
