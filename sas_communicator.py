@@ -102,6 +102,8 @@ class SASCommunicator:
                 time.sleep(0.05)
             
             print(f"SAS port {self.port_name} opened successfully.")
+            # Read and print asset number after port is opened
+            self.read_and_print_asset_number()
             return True
             
         except serial.SerialException as e:
@@ -457,4 +459,26 @@ class SASCommunicator:
                     print("AFT request for host cashout")
                     
         except Exception as e:
-            print(f"Error parsing exception message: {e}") 
+            print(f"Error parsing exception message: {e}")
+
+    def read_and_print_asset_number(self):
+        """Read asset number from SAS and print it to screen."""
+        try:
+            command = self.sas_address + '7301FF'
+            command_crc = get_crc(command)
+            self.sas_send_command_with_queue('ReadAssetNo', command_crc, 0)
+            for _ in range(10):
+                time.sleep(0.2)
+                response = self.get_data_from_sas_port()
+                if response and response.startswith('0173'):
+                    asset_hex = response[6:14]
+                    # Reverse hex string to int
+                    if len(asset_hex) % 2 != 0:
+                        asset_hex = '0' + asset_hex
+                    reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
+                    asset_dec = int(reversed_hex, 16)
+                    print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
+                    return
+            print("[ASSET NO] Could not read asset number from SAS.")
+        except Exception as e:
+            print(f"[ASSET NO] Error reading from SAS: {e}") 

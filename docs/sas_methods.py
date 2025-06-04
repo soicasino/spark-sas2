@@ -1,3 +1,50 @@
+import time
+
+# --- Asset Number Utilities ---
+def ReadAssetToInt(d):
+    HexaString = d
+    if len(HexaString) % 2 != 0:
+        HexaString = "0" + HexaString
+    ReversedHexaString = ""
+    i = len(HexaString) - 2
+    while i >= 0:
+        ReversedHexaString = ReversedHexaString + HexaString[i:i+2]
+        i = i - 2
+    return int(ReversedHexaString, 16)
+
+# Minimal CRC placeholder (replace with real implementation if needed)
+def GetCRC(komut):
+    # This is a placeholder. Use the real CRC16 Kermit as in the reference for production.
+    # For now, just append '0000' as CRC for testing.
+    return komut + '0000'
+
+# --- Read asset number from SAS at startup ---
+def print_asset_number_from_sas():
+    try:
+        # SAS command for AFT registration status: 0x73, reg_code=0xFF
+        # Format: [address][73][01][FF][CRC]
+        # Assume address is '01' (can be changed if needed)
+        command = '017301FF'
+        command_crc = GetCRC(command)
+        SAS_SendCommand('ReadAssetNo', command_crc, 0)
+        # Wait for response (simulate, in real code this should be event/callback driven)
+        for _ in range(10):
+            time.sleep(0.2)
+            # Assume GetDataFromSasPort(0) returns the hex string response
+            response = GetDataFromSasPort(0)
+            if response and response.startswith('0173'):
+                # Parse asset number from response
+                # Response: [address][73][status][asset_number(8)][registration_key(40)]...
+                asset_hex = response[6:14]
+                asset_dec = ReadAssetToInt(asset_hex)
+                print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
+                return
+        print("[ASSET NO] Could not read asset number from SAS.")
+    except Exception as e:
+        print(f"[ASSET NO] Error reading from SAS: {e}")
+
+# Print asset number from SAS at startup
+print_asset_number_from_sas()
 
 
 
@@ -213,7 +260,6 @@ def GetDataFromSasPort(IsMessageSent):
 
 
 
-
 def SendSASCommand(Command):
     global Sas_LastSent
     global G_Machine_DeviceTypeId
@@ -319,7 +365,6 @@ def SendSASCommand(Command):
             ddsdf=11
             #print("SasSendErr")
             #ExceptionHandler("SendSASCommand xx",e,0)
-
 
 
 
@@ -2786,3 +2831,32 @@ def Komut_ParaSifirla(doincreaseid):
 
     
 Cas
+
+# --- Asset Number Utilities ---
+def ReadAssetToInt(d):
+    HexaString = d
+    if len(HexaString) % 2 != 0:
+        HexaString = "0" + HexaString
+    ReversedHexaString = ""
+    i = len(HexaString) - 2
+    while i >= 0:
+        ReversedHexaString = ReversedHexaString + HexaString[i:i+2]
+        i = i - 2
+    print("Read: HexaString", HexaString)
+    print("Read: ReversedHexaString", ReversedHexaString)
+    print("Int Read:", int(ReversedHexaString, 16))
+    return int(ReversedHexaString, 16)
+
+
+def print_asset_number_at_startup():
+    try:
+        import config_manager
+        config = config_manager.ConfigManager()
+        asset_hex = config.get('sas', 'assetnumber', fallback='00000000')
+        asset_dec = ReadAssetToInt(asset_hex)
+        print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
+    except Exception as e:
+        print(f"[ASSET NO] Could not read asset number: {e}")
+
+# Print asset number at startup
+print_asset_number_at_startup()
