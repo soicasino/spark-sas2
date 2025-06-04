@@ -161,6 +161,8 @@ class CardReader:
                     print("Card ejected!")
                     self.is_card_inside = False
                     self.last_card_number = None
+                    # REMARK: Place card removal/session cleanup logic here (see SQL_CardExit(sender) in legacy code)
+                    # This is where you should handle session cleanup, UI updates, and any business logic needed on card removal.
             except Exception as e:
                 print(f"Polling error: {e}")
             time.sleep(self.card_reader_interval)

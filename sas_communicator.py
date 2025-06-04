@@ -6,43 +6,11 @@ import termios  # For Linux parity control
 from crccheck.crc import CrcKermit
 from decimal import Decimal
 from card_reader import CardReader  # Import the CardReader class
+from sas_money_functions import SasMoney
+from billacceptor_functions import BillAcceptorFunctions
+from utils import decode_to_hex, get_crc, read_asset_to_int, add_left_bcd
 
 # Helper functions
-
-def decode_to_hex(input_str):
-    """Decodes a hex string to a bytearray."""
-    return bytearray.fromhex(input_str)
-
-def get_crc(command_hex):
-    """Calculates CRC Kermit for a SAS command - EXACTLY like working code."""
-    data = decode_to_hex(command_hex)
-    crc_instance = CrcKermit()
-    crc_instance.process(data)
-    crc_hex = crc_instance.finalbytes().hex().upper()
-    crc_hex = crc_hex.zfill(4)
-    return f"{command_hex}{crc_hex[2:4]}{crc_hex[0:2]}"
-
-def add_left_bcd(number_str, length_bytes):
-    """Pads a BCD number string with leading '00' to reach target byte length."""
-    number_str = str(int(number_str))
-    if len(number_str) % 2 != 0:
-        number_str = "0" + number_str
-    
-    current_len_bytes = len(number_str) / 2
-    padding_needed_bytes = length_bytes - current_len_bytes
-    
-    return "00" * int(padding_needed_bytes) + number_str
-
-def ReadAssetToInt(d):
-    HexaString = d
-    if len(HexaString) % 2 != 0:
-        HexaString = "0" + HexaString
-    ReversedHexaString = ""
-    i = len(HexaString) - 2
-    while i >= 0:
-        ReversedHexaString = ReversedHexaString + HexaString[i:i+2]
-        i = i - 2
-    return int(ReversedHexaString, 16)
 
 class SASCommunicator:
     """SAS Communication - Converted to match EXACTLY the working code logic"""
@@ -73,6 +41,8 @@ class SASCommunicator:
             self.is_communication_by_windows = 0
 
         self.card_reader = None  # Will hold CardReader instance
+        self.sas_money = SasMoney(self.global_config)
+        self.bill_acceptor = BillAcceptorFunctions()
 
     def open_port(self):
         """Opens SAS port - EXACTLY matching working code's OpenCloseSasPort logic"""
@@ -481,10 +451,7 @@ class SASCommunicator:
         """Handle balance query response"""
         try:
             print("Balance response received")
-            # This would contain balance parsing logic from Yanit_BakiyeSorgulama
-            # For now, just log that we got it
-            print(f"Balance data: {tdata}")
-            
+            self.sas_money.yanit_bakiye_sorgulama(tdata)
         except Exception as e:
             print(f"Error parsing balance response: {e}")
 
@@ -492,10 +459,7 @@ class SASCommunicator:
         """Handle AFT response"""
         try:
             print("AFT response received")
-            if len(tdata) >= 14:
-                transfer_status = tdata[12:14]
-                print(f"AFT Transfer Status: {transfer_status}")
-                
+            # TODO: Use self.sas_money for AFT parsing/logic
         except Exception as e:
             print(f"Error parsing AFT response: {e}")
 
@@ -568,4 +532,45 @@ class SASCommunicator:
 
         if not any(p.get('port_no') == '/dev/ttyUSB0' or p.get('port') == '/dev/ttyUSB0' for p in port_list):
             port_list.append({'port_no': '/dev/ttyUSB0', 'is_used': 0, 'device_name': ''})
-        print(f"[DEBUG] Port list for card reader: {port_list}") 
+        print(f"[DEBUG] Port list for card reader: {port_list}")
+
+    # --- Money command wrappers ---
+    def money_balance_query(self, sender, isforinfo, sendertext='UndefinedBakiyeSorgulama'):
+        return self.sas_money.komut_bakiye_sorgulama(sender, isforinfo, sendertext)
+
+    def money_cash_in(self, doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey):
+        return self.sas_money.komut_para_yukle(doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey)
+
+    def money_cash_out(self, doincreaseid, transactionid, assetnumber, registrationkey):
+        return self.sas_money.komut_para_sifirla(doincreaseid, transactionid, assetnumber, registrationkey)
+
+    def money_cancel_aft_transfer(self):
+        return self.sas_money.komut_cancel_aft_transfer()
+
+    def test_read_all_meters(self, meter_type='basic', game_id=None):
+        """Send a one-time SAS command to read meters for test purposes.
+        meter_type: 'basic', 'extended', 'bill', 'game'
+        game_id: required for 'game' type
+        """
+        if meter_type == 'basic':
+            print("[SAS TEST] Sending one-time read ALL BASIC meters command (012F0C0000)...")
+            command = get_crc("012F0C0000")
+        elif meter_type == 'extended':
+            print("[SAS TEST] Sending one-time read EXTENDED meters command (01AF...)")
+            # Example extended meters command (commonly used set)
+            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
+        elif meter_type == 'bill':
+            print("[SAS TEST] Sending one-time read BILL meters command (011E)...")
+            command = get_crc("011E")
+        elif meter_type == 'game':
+            if game_id is None:
+                print("[SAS TEST] Game ID required for game meters!")
+                return
+            print(f"[SAS TEST] Sending one-time read GAME meters command (0152) for game_id={game_id}...")
+            # 0152 + game_id (2 bytes, BCD)
+            game_id_bcd = f"{int(game_id):04X}"  # 2 bytes, hex
+            command = get_crc(f"0152{game_id_bcd}")
+        else:
+            print(f"[SAS TEST] Unknown meter_type: {meter_type}")
+            return
+        self.sas_send_command_with_queue(f"TestReadMeters_{meter_type}", command, 0) 
