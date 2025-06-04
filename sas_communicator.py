@@ -365,53 +365,97 @@ class SASCommunicator:
         return message_found, message_found_crc, message_rest_of_message, message_important
 
     def handle_received_sas_command(self, tdata):
-        """Handle received SAS command - core logic from working code"""
+        """Comprehensive SAS response handler, covering all message types from the reference."""
         try:
             if not tdata:
                 return
-                
-            tdata = tdata.replace(" ", "")
-            is_processed = 0
-            
-            print(f"RX SAS: {tdata}")
-            
-            # Simple responses that confirm communication
-            if tdata == "00" or tdata == "01" or tdata == "51":
-                is_processed = 1
-                print("Simple ACK received")
+            tdata = tdata.replace(" ", "").upper()
+
+            # Early returns for simple ACKs and known short responses
+            early_acks = {
+                "01FF838F13": "Ignore: known message",
+                "01FF001CA501FF001CA5": "Ignore: known message",
+                "01FF001CA501": "Ignore: known message",
+                "81": "Simple ACK",
+                "01FF820602": "Display meters or attendant menu has been entered",
+                "01FF201E84": "General tilt",
+                "0101FF001CA5": "Ignore: known message",
+            }
+            if tdata in early_acks:
+                print(early_acks[tdata])
                 return
-                
-            if tdata == "81" or tdata == "80":
-                is_processed = 1
+            if tdata[0:6] == "01FF1F":
+                print("send gaming machine id - information")
                 return
-                
-            # SAS Version response (0x54)
+
+            # Dispatch table for exact and prefix matches
+            dispatch = [
+                (lambda d: d.startswith("01FF7C"), lambda d: print("Legacy bonus pay")),
+                (lambda d: d.startswith("01FF6B"), lambda d: print("AFT request for host to cash out win")),
+                (lambda d: d.startswith("01FF6C"), lambda d: print("AFT request to register")),
+                (lambda d: d.startswith("011B"), lambda d: print("HandpayInformation")),
+                (lambda d: d.startswith("0153"), lambda d: print("GameConfiguration")),
+                (lambda d: d.startswith("01731D"), lambda d: print("Register Gaming Machine Response")),
+                (lambda d: d.startswith("01FF6FED3E"), lambda d: print("Game locked")),
+                (lambda d: d[0:10] == "01FF5110E6", lambda d: print("Handpay is pending")),
+                (lambda d: d[0:10].startswith("01FF52"), lambda d: print("Handpay was reset")),
+                (lambda d: d[0:4] == "012F" or d[0:4] == "01AF", lambda d: print("MeterAll")),
+                (lambda d: d[0:4] == "0172", lambda d: print("AFT response")),
+                (lambda d: d[0:4] == "0174", lambda d: print("Balance query response")),
+                (lambda d: d.startswith("01FF54BDB1"), lambda d: print("Progressive win")),
+                (lambda d: d == "01FF29DF19", lambda d: print("Bill acceptor hardware failure!")),
+                (lambda d: d == "00", lambda d: print("Simple ACK")),
+                (lambda d: d == "01", lambda d: print("Simple ACK")),
+                (lambda d: d == "51", lambda d: print("Simple ACK")),
+                (lambda d: d.startswith("01FF69DB5B") or d == "FF69DB5B" or d == "69DB5B" or d == "69", lambda d: print("AFT Transfer is completed")),
+                (lambda d: "01FF66" in d, lambda d: print("Cashout is pressed or Hopper Limit Reached")),
+                (lambda d: d[0:6] == "01FF8A", lambda d: print("Game Recall Entry Displayed")),
+                (lambda d: d[0:4] == "0156", lambda d: print("EnabledGameNumbers")),
+                (lambda d: d[0:6] == "01FF6A" or "01FF6A4069" in d, lambda d: print("AFT Request for host cashout")),
+                (lambda d: d[0:2] == "87", lambda d: print("Gaming machine unable to perform transfers at this time")),
+                (lambda d: d[0:4] == "011F" and len(d) > 10, lambda d: print("Send gaming machine ID & information")),
+                (lambda d: d[0:6] == "019400", lambda d: print("Handpay is reseted")),
+                (lambda d: d[0:4] == "0154", lambda d: self._handle_sas_version_response(d)),
+                (lambda d: d == "1F", lambda d: print("Simple ACK")),
+                (lambda d: d == "01FF001CA5" or d == "01FF1F6A4D" or d == "01FF709BD6", lambda d: print("Real time reporting")),
+                (lambda d: d[0:6] == "01FF88", lambda d: print("Reel N has stopped")),
+                (lambda d: d[0:4] == "01B5", lambda d: print("Game Info")),
+                (lambda d: d[0:6] == "01FF8C", lambda d: print("Game selected")),
+            ]
+            for cond, action in dispatch:
+                try:
+                    if cond(tdata):
+                        action(tdata)
+                        return
+                except Exception as e:
+                    print(f"Error in dispatch for SAS message: {e}")
+
+            # Asset number response (0x73)
+            if tdata.startswith("0173"):
+                asset_hex = tdata[8:16]
+                if len(asset_hex) % 2 != 0:
+                    asset_hex = '0' + asset_hex
+                reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
+                asset_dec = int(reversed_hex, 16)
+                print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
+                return
+            # SAS Version response (0x54) (fallback)
             if tdata.startswith("0154"):
-                is_processed = 1
                 self._handle_sas_version_response(tdata)
                 return
-                
-            # Balance query response (0x74)
+            # Balance query response (0x74) (fallback)
             if tdata.startswith("0174"):
-                is_processed = 1
                 self._handle_balance_response(tdata)
                 return
-                
-            # AFT response (0x72)
+            # AFT response (0x72) (fallback)
             if tdata.startswith("0172"):
-                is_processed = 1
                 self._handle_aft_response(tdata)
                 return
-                
-            # Exception messages (01FF)
+            # Exception messages (01FF) (fallback)
             if tdata.startswith("01FF"):
-                is_processed = 1
                 self._handle_exception_message(tdata)
                 return
-                
-            if not is_processed:
-                print(f"Unhandled SAS message: {tdata}")
-                
+            print(f"Unhandled SAS message: {tdata}")
         except Exception as e:
             print(f"Error in handle_received_sas_command: {e}")
 
