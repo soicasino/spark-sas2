@@ -32,6 +32,17 @@ def add_left_bcd(number_str, length_bytes):
     
     return "00" * int(padding_needed_bytes) + number_str
 
+def ReadAssetToInt(d):
+    HexaString = d
+    if len(HexaString) % 2 != 0:
+        HexaString = "0" + HexaString
+    ReversedHexaString = ""
+    i = len(HexaString) - 2
+    while i >= 0:
+        ReversedHexaString = ReversedHexaString + HexaString[i:i+2]
+        i = i - 2
+    return int(ReversedHexaString, 16)
+
 class SASCommunicator:
     """SAS Communication - Converted to match EXACTLY the working code logic"""
     
@@ -471,10 +482,10 @@ class SASCommunicator:
                 time.sleep(0.2)
                 response = self.get_data_from_sas_port()
                 if response and response.startswith('0173'):
-                    # Correct: skip address (1 byte), command (1 byte), status (1 byte), then get 4 bytes (8 hex chars) for asset number
                     asset_hex = response[6:14]
                     if len(asset_hex) % 2 != 0:
                         asset_hex = '0' + asset_hex
+                    # Reverse by bytes
                     reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                     asset_dec = int(reversed_hex, 16)
                     print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
