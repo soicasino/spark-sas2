@@ -2860,3 +2860,1588 @@ def print_asset_number_at_startup():
 
 # Print asset number at startup
 print_asset_number_at_startup()
+
+
+
+
+
+
+
+
+
+
+
+
+
+#------------------------------------
+
+def DoHandUserInput(command):
+    global IsCanReturn
+    global G_TrustBalance
+    global JackpotWonAmount
+    global SendWakeUp
+    global arduinoPort
+
+    if len(command)==0:
+        return
+
+    global IsAvailableForCashoutButton
+    global G_Machine_IsLockedByAdmin
+
+    print("Command to process", command)
+    command=command.replace("\n","")
+    command=command.replace("\\n","")
+    isprocessed=0
+
+
+
+    if command=="stresstest:":
+        while 1==1:
+            DoHandUserInput("kart:1414")
+            time.sleep(60)
+
+    if command.startswith("cmd:"):
+        command=command.replace("cmd:","")
+        ExecuteLinuxCommand(command)
+
+
+    if command=="startgame:":
+        print("Game started emulation")
+        IsAvailableForCashoutButton=1
+
+
+
+    if command=="trustbalance:" or command=="tb:":
+        G_TrustBalance=datetime.datetime.now()
+        print("Trust balance!!!", G_TrustBalance)
+
+    if command=="uyari:":
+        ShowNotifyScreen("TEST","Window",5)
+    
+    if command=="endgame:":
+        print("Game ended emulation")
+        IsAvailableForCashoutButton=0
+
+    if command=="yanit":
+        command="yanitbakiye"
+
+    if command=="yanitbakiye":
+        isprocessed=1
+        #HandleReceivedSASCommand("01 74 23 01 00 00 00 FF 03 01 9E 46 00 00 01 02 15 00 00 00 00 00 00 00 00 00 00 00 02 98 98 00 00 00 00 00 00 00 AB CF")
+        HandleReceivedSASCommand("01 74 23 01 00 00 00 00 03 01 9E 46 00 00 01 02 15 00 00 00 00 00 00 00 00 00 00 00 02 98 98 00 00 00 00 00 00 00 AB CF")
+
+    if command=="y:":
+        isprocessed=1
+        Command="01 72 39 00 00 00 00 00 00 51 00 00 00 00 00 00 00 00 00 00 00 0B 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 06 31 32 33 34 35 38 05 30 20 16 00 30 00 0D 37"
+
+        Command=Command.replace(" ","")
+        SAS_SendCommand("yukle",Command,1);
+
+
+    if command.startswith("ozel:"):
+        print("Ozel Komut")
+        Command=command.replace("ozel:","")
+        Command=Command.replace(" ","")
+        if "CRC" in Command:
+            Command=Command.replace("CRC","")
+            Command=GetCRC(Command)
+        SAS_SendCommand("ozel",Command,1)
+
+
+
+    if command=="ro:":
+        isprocessed=1
+        ChangeRealTimeReporting(1)
+    
+
+    if command=="rc:":
+        isprocessed=1
+        ChangeRealTimeReporting(0)
+
+    if command=="oks:":
+        isprocessed=1
+        OpenCloseSasPort(1,1)
+
+    if command=="i:":
+        isprocessed=1
+        Komut_Interragition("command interragition")
+
+    if command=="m:":
+        isprocessed=1
+        Command="01 0A 82 B6";
+        Command=Command.replace(" ","")
+        SAS_SendCommand("maintenance",Command,0);
+
+    if command=="e:":
+        isprocessed=1
+        Command="01 0B 0B A7";
+        Command=Command.replace(" ","")
+        SAS_SendCommand("exitmaintenance",Command,0);
+
+    if command=="sesac:":
+        isprocessed=1
+        Command="01 04 FC 5F";
+        Command=Command.replace(" ","")
+        SAS_SendCommand("sesac",Command,0);
+
+    if command=="seskapa:":
+        isprocessed=1
+        Command="01 03 43 2B";
+        Command=Command.replace(" ","")
+        SAS_SendCommand("seskapa",Command,0);
+
+    if command=="kilit:" or command=="kilitle:":
+        isprocessed=1
+        Kilitle("Command Line")
+
+        G_Machine_IsLockedByAdmin=1
+        Config.set('machine','islockedbyadmin', "1")
+        SaveConfigFile()
+
+    if command=="ac:":
+        isprocessed=1
+        Ac("command line")
+
+        G_Machine_IsLockedByAdmin=0
+        Config.set('machine','islockedbyadmin', "0")
+        SaveConfigFile()
+
+
+    if command.startswith("rd:"):
+        command=command.replace("rd:","")
+        CardReaderCommand(command)
+
+
+    if command.startswith("."):
+        print("sas:80")
+        SAS_SendCommand("REMOTE COMMAND","80",0)
+
+    if command.startswith("ç"):
+        print("sas:81")
+        SAS_SendCommand("REMOTE COMMAND","81",0)
+
+    if command.startswith("sas:"):
+        command=command.replace("sas:","")
+        if "CRC" in command:
+            command=command.replace("CRC","")
+            command=GetCRC(command)
+        print("REMOTE COMMAND", len(command), command)
+        SAS_SendCommand("REMOTE COMMAND",command,1)
+
+    if command=="oyna":
+        isprocessed=1
+        HandleReceivedSASCommand("7E")
+
+    if command=="metertest:":
+        Yanit_MeterAll("012F380000A00000000000B80000000000020000000003000000001E00000000000000000001000000000B00000000A20000000000BA00000000002F64")
+
+    if command=="oy:":
+        isprocessed=1
+
+        Bet=round(random.uniform(0.01, 20),2)
+        Won=round(random.uniform(0, 30),2)
+
+        if round(random.uniform(0, 10),0)%2==0:
+            Won=0
+
+        HandleReceivedSASCommand("%s%s%s" % ("01FF7E", AddLeftBCD(int((Bet*100)),2),"009847504300131D"))
+        HandleReceivedSASCommand("%s%s%s" % ("01FF7F", AddLeftBCD(int((Won*100)),4),"F01D"))
+
+    if command=="oy:":
+        isprocessed=1
+
+        Bet=1
+        Won=1
+
+        if round(random.uniform(0, 10),0)%2==0:
+            Won=0
+
+        HandleReceivedSASCommand("%s%s%s" % ("01FF7E", AddLeftBCD(int((Bet*100)),2),"009847504300131D"))
+        HandleReceivedSASCommand("%s%s%s" % ("01FF7F", AddLeftBCD(int((Won*100)),4),"F01D"))
+
+    if command.startswith("o:")==True:
+        command=command.replace("o:","")
+        isprocessed=1
+
+        Bet=Decimal(command)
+        Won=Bet
+
+        if round(random.uniform(0, 10),0)%2==0:
+            Won=0
+
+
+        HandleReceivedSASCommand("%s%s%s" % ("01FF7E", AddLeftBCD(int((Bet)),2),"009847504300131D"))
+        HandleReceivedSASCommand("%s%s%s" % ("01FF7F", AddLeftBCD(int((Won)),4),"F01D"))
+
+
+    if command=="endgame":
+        isprocessed=1
+        HandleReceivedSASCommand("7F")
+
+
+
+    if command=="yukle:1":
+        isprocessed=1
+        HandleReceivedSASCommand("47")
+    
+    if command=="yukle:5":
+        isprocessed=1
+        HandleReceivedSASCommand("48")
+
+    if command=="yukle:10":
+        isprocessed=1
+        HandleReceivedSASCommand("49")
+
+    if command=="sifirla":
+        IsCanReturn=0
+        isprocessed=1
+        print("Sifirla basla")
+        Komut_CollectButtonProcess()
+        print("Sifirla bitis")
+        IsCanReturn=1
+
+
+
+    if command=="getmeter:":
+        print("Meter will be received")
+        GetMeter(0,"getmeter")
+
+
+    if command=="bs100:":
+        for i in range(1, 100):
+            Wait_Bakiye(1,1,"sqlreadcustomer")
+            time.sleep(1)
+
+    if command=="getmeter100:":
+        print("Meter will be received")
+        for i in range(1, 100):
+            GetMeter(0,"getmeter")
+            time.sleep(0.5)
+
+    if command=="getmeter1:":
+        print("Meter will be received")
+        GetMeter(1,"getmeter1")
+
+    if command=="getmeter2:":
+        print("Meter will be received")
+        GetMeter(2,"getmeter1")
+
+    if command=="billenable:":
+        Komut_EnableBillAcceptor()
+
+    if command=="billdisable:":
+        Komut_DisableBillAcceptor("bill disable")
+
+    if command=="handpay:":
+        Wait_RemoteHandpay()
+
+    if command=="sifirla:":
+        Wait_Bakiye(2,0,"sifirla")
+        print("Sifirla: Yanit_BakiyeTutar", Yanit_BakiyeTutar)
+        print("SIFIRLA ISLEMI!!!!!")
+        Wait_ParaSifirla()
+        print("**********************************************")
+        print("BITTI!!!")
+        print("**********************************************")
+
+
+    if command=="xi":
+        HandleReceivedSASCommand("012F16000502000000001E000000000035251500013038450042B0")
+
+    if command=="bonustest:":
+        JackpotWonAmount=1
+        Wait_ParaYukle(10)
+        print("******************************************* xxx")
+        #Wait_Bakiye(2,0,"soner")
+        #Wait_ParaSifirla()
+        print("**********************************************")
+        print("BITTI!!!")
+        print("**********************************************")
+        print("**********************************************")
+
+    if command=="Mevlut12!:":
+        JackpotWonAmount=10
+        Wait_ParaYukle(10)
+        print("******************************************* xxx")
+        #Wait_Bakiye(2,0,"soner")
+        #Wait_ParaSifirla()
+        print("**********************************************")
+        print("BITTI!!!")
+        print("**********************************************")
+        print("**********************************************")
+
+
+    if command=="promobonustest:":
+        JackpotWonAmount=1
+        Wait_ParaYukle(13)
+        print("******************************************* xxx")
+        #Wait_Bakiye(2,0,"soner")
+        #Wait_ParaSifirla()
+        print("**********************************************")
+        print("BITTI!!!")
+        print("**********************************************")
+        print("**********************************************")
+
+    if command=="jackpottest:":
+        JackpotWonAmount=1
+        Wait_ParaYukle(11)
+        print("******************************************* xxx")
+        #Wait_Bakiye(2,0,"soner")
+        #Wait_ParaSifirla()
+        print("**********************************************")
+        print("BITTI!!!")
+        print("**********************************************")
+        print("**********************************************")
+
+
+    if command=="register:" or command=="r:":
+        isprocessed=1
+        Komut_RegisterAssetNo()
+
+    if command=="register2:" or command=="r:":
+        isprocessed=1
+        Komut_RegisterAssetNo2()
+
+    if command=="readasset:":
+        isprocessed=1
+        Komut_ReadAssetNo()
+
+
+
+    if command=="cashboxcikart:":
+        HandleReceivedSASCommand("01FF1B4E0B")
+
+    if command=="cashboxtak:":
+        HandleReceivedSASCommand("01FF1CF17F")
+
+    if command=="admin:":
+        GUI_ShowAdmin()
+
+    if command=="balance:":
+        GUI_ShowBalance()
+
+    if command=="eb:":
+        isprocessed=1
+        Komut_EnableBillAcceptor()
+
+
+    if command=="db:":
+        isprocessed=1
+        Komut_DisableBillAcceptor("db")
+
+    if command=="bsi:":
+        isprocessed=1
+        Wait_Bakiye(11,0,"bsi")
+
+    if command=="brs:" or command=="billreset:":
+        print("************************* BILL RESET!! *****************************")
+        isprocessed=1
+        BillAcceptor_Reset()
+
+    if command=="bsix:":
+        isprocessed=1
+        Komut_CancelBalanceLock()
+
+    if command=="brj:":
+        isprocessed=1
+        BillAcceptor_Reject("brj")
+
+
+    if command=="video:":
+        ExecuteJSFunction("ShowVideo","")
+
+    if command=="nt:":
+        ShowNotifyScreen("Test","Merhabalar",10)
+
+    if command=="admin:":
+        GUI_ShowAdmin()
+
+    if command=="settings:":
+        GUI_ShowSettings()
+
+    if command=="metertest:":
+        #mustafa
+        #Yanit_MeterAll("012F380000A00093798040B80102856689020086000003511418191E00000000003145353001588194490B73973000A20006611150BA0006573250FB23")
+        Yanit_MeterAll("012F380000A00111268840B80110878556020000225003078998591E00633200002985346501939867770B13250000A20006629350BA000574954046C501")
+        Yanit_MeterAll("012F380000A00111268840B80110878556020000225003078998591E00633200002985346501939867770B13250000A20006629350BA000574954046C501")
+    if command=="test:":
+        Yanit_BakiyeSorgulama("0174232C010000FF8003B2650000000442000000829000000000009999991268011720200030B21D")
+
+    if command=="merkur:":
+        Yanit_ParaYukle("0172020087782D")
+
+    #if command=="":
+    #    print("Send 81 sas")
+    #    SendSASCommand("81")
+
+    if command=="ishak:":
+        messageFound, messageFoundCRC, messageRestOfMessage, messageImportant = ParseMessage("012F380000A00111277240B8011088595602")
+        dfsfsdsfd="321321"
+
+    if command=="refreshgui:":
+        GUI_RefreshPage()
+
+    if command=="ports:":
+        isprocessed=1
+        print("Check ports")
+        CheckAndRestartPorts("cmd")
+
+    if command=="portsas:":
+        isprocessed=1
+        print("Check ports")
+        CheckAndRestartPorts("sas")
+
+    if command=="portbill:":
+        isprocessed=1
+        print("Check ports")
+        CheckAndRestartPorts("bill")
+
+    if command=="sistem:":
+        SystemCPUCheck(-1)
+
+    if command=="sistem0:":
+        SystemCPUCheck(0)
+
+    if command=="sistem1:":
+        SystemCPUCheck(1)
+
+    if command=="stress:":
+        ThreadStressTest()
+
+    if command=="js:":
+        DoExecuteJS("dsakldjsakl()")
+
+    if command=="restartprogram" or command=="restartprogram:":
+        print("Program Restart edilecek")
+        RestartProgram()
+
+    if command=="test1:":
+        isprocessed=1
+        DoConsumeSASMessage("0172482A00FF80000000110000000000000000000000077A00000004333639320712202002150100000000000009000000000012682423090000000000001917400900000000000000000060CD")
+
+    if command=="0":
+        SendSASPORT("80")
+
+    if command=="1":
+        SendSASPORT("81")
+
+
+    if command=="pool":
+        print("pool from now on")
+        SendWakeUp=1
+        
+    if command=="notpool":
+        print("Dont pool anymore")
+        SendWakeUp=0
+
+    if command=="ca:":
+        Komut_CancelAFTTransfer()
+
+    if command=="main:":
+        GUI_ShowIdleWindow()
+
+    if command=="cust:":
+        GUI_ShowCustomerWindow()
+
+    if command=="bs:":
+        isprocessed=1
+        Wait_Bakiye(11,1,"bs")
+
+    if command=="addmoney:":
+        Ret,ErrMsg= AddMoney(1)
+        print("*************************")
+        print("Ret", Ret, "ErrMsg", ErrMsg)
+        print("*************************")
+
+    if command=="eft:":
+        Komut_ParaYukleEFT(1,12)
+
+    if command=="eft-:":
+        Komut_ParaSilEFT(1,1)
+
+    if command=="eftb:":
+        Komut_EFT_RequestCashoutAmount()
+
+    if command=="eftl:":
+        Komut_EFT_RequestTransferLog()
+
+    if command=="n0":
+        NextionCommand(["tMainStatu.txt=\"merhaba"])
+
+    if command=="n1":
+        NextionCommand(["page 0"])
+
+    if command=="n2":
+        NextionCommand(["page 1"])
+
+
+
+    if command=="undelay:":
+        UnDelayPlay()
+
+    if command=="delay:":
+        DelayPlay()
+
+
+    if command=="undelay:":
+        isprocessed=1
+        DelayPlay()
+
+    if command=="tn:":
+        PrizeDescription="MERHABA"
+        JackpotWonAmount=145
+        ShowNotifyScreen("Congratulations!","Prize Prize Prize Prize Prize Prize Prize Prize Prize %s! %s %s" % (PrizeDescription, JackpotWonAmount, G_Machine_Currency),20)
+
+
+    if command=="parayukle:":
+        Config.set('customer','customerbalance', str(1))
+        Config.set("customer","currentbalance",str(0))
+        ParaYukleSonuc=Wait_ParaYukle(0)
+        print("************************************ParaYukleSonuc",ParaYukleSonuc)
+
+    if command=="parasifirla:":
+        Wait_ParaSifirla()
+        print("************************************ParaSifirla")
+
+    if command=="guiidle":
+        print("Show Idle window")
+        ExecuteJSFunction("ShowIdleScreen", "a")
+
+    if command.startswith("k1:")==True:
+        command="kart:1"
+
+    if command.startswith("k2:")==True:
+        command="kart:1C0DF63A"
+
+    if command.startswith("ks:")==True:
+        command="kart:"
+
+    if command.startswith("kart:")==True:
+        isprocessed=1
+        command=command.replace("kart:","")
+        DoCardRead(command,command)
+
+    if command.startswith("ar:")==True:
+        isprocessed=1
+        command=command.replace("ar:","")
+        if len(command)==0:
+            command="t,250,35000,300"
+        print(command, arduinoPort.port, arduinoPort.isOpen(), arduinoPort.baudrate, arduinoPort.parity, arduinoPort.bytesize)
+        my_str_as_bytes = str.encode(command)
+        arduinoPort.write(my_str_as_bytes)
+        arduinoPort.flush()
+        print("Command sent!", command)
+
+    if command.startswith("bc:")==True:
+        print("Bill acceptor command")
+        isprocessed=1
+        command=command.replace("bc:","")
+        BillAcceptorCommand(command)
+
+    if command.startswith("relay:")==True:
+        isprocessed=1
+        command=command.replace("relay:","")
+        OpenCloseGPIO(command)
+
+    if command=="testnot:":
+        ShowNotifyScreen("ALLAH","Yandik bittik kul olduk. Yandik bittik kul olduk. Yandik bittik kul olduk. Yandik bittik kul olduk. Yandik bittik kul olduk. ",5)
+
+    if command.startswith("nextion:")==True or command.startswith("nx:")==True:
+        isprocessed=1
+        command=command.replace("nextion:","")
+        command=command.replace("nx:","")
+        nextioncmd = []
+        nextioncmd.append(command)
+        NextionCommand(nextioncmd)
+
+    if command.startswith("nextp:")==True:
+        isprocessed=1
+        NextionCommand(["sendme"])
+
+    if command=="cikart:" or command=="cikar:":
+        CardReaderCommand("02000232300301")
+
+
+    if command=="makehandpay:":
+        Komut_Handpay(1)
+
+    if command=="kartcikart" or command=="kartcikart:" or command=="cardexit:":
+        if command=="cardexit:":
+            G_TrustBalance=datetime.datetime.now()
+
+        isprocessed=1
+        if IsCardInside==0:
+            print("Kart yok zaten?")
+            
+            if G_Machine_CardReaderModel=="Eject":
+                CardReader_EjectCard()
+
+            return
+
+
+        CardIsRemoved(0)
+
+
+    if isprocessed==0:
+        print("Hatali komut" , command)
+
+def HandUserInput(command):
+    ProcessUserInput = Thread(target=DoHandUserInput, args=(command,))
+    ProcessUserInput.name="ProcessUserInput"
+    ProcessUserInput.start();
+
+
+
+
+
+
+
+G_SelectedGameId=0
+try:
+    G_SelectedGameId=Config.getint('customer','selectedgameid')
+except:
+    SetMachineStatu("SelectedGameId cannot be reached")
+    print("Selected Game Error")
+
+
+try:
+    Log_TotalCoinInMeter=round(Decimal(Config.get("customer","totalcoininmeter")),2)
+except Exception as e:
+    print("Err on Log_TotalCoinInMeter")
+
+
+if platform.system().startswith("Window")==True:
+    print("Windows operation system")
+
+
+try:
+    G_Machine_Balance=round(Decimal(Config.get("customer","currentbalance")),2)
+except Exception as e:
+    print("Err on G_Machine_Balance")
+
+try:
+    G_Machine_Promo=round(Decimal(Config.get("customer","currentpromo")),2)
+except Exception as e:
+    print("Err on G_Machine_Promo Balance")
+
+
+
+
+
+
+if LinuxVersion==2:
+    SQL_InsImportantMessageByWarningType("Started","Started",1)
+
+
+
+
+
+
+
+
+
+Result_SQL_ReadCustomerInfo=""
+def DoCardRead(tdata,CardRawData):
+    global IsCardReaderBusy
+    global IsWaitingAdminScreen
+    global Result_SQL_ReadCustomerInfo
+    KartNo=""
+
+    print("Card is readed")
+    try:
+        if G_Machine_CardReaderType==0:
+            tdata=tdata.replace("#","^")
+            tdata=tdata.replace(";",":")
+            KartNo = re.search('%:CARD:(.*?):', tdata).group(1)
+            print("KartNo-1:" , KartNo)
+            tdata=tdata.replace("\r","");
+
+    except Exception as e:
+        print("Buyuk kart olmadi")
+
+    if G_Machine_CardReaderType==1 or G_Machine_CardReaderType==2:
+        KartNo=tdata
+
+    
+
+    PrintAndSetAsStatuText("New card is inserted")
+    #<Check if it is admin card or not>--------------------------
+    #print("Okunan kart no:", tdata)
+    if G_Machine_AdminCards.find(KartNo) != -1 and len(G_Machine_AdminCards)>4 and len(KartNo)>4:
+        PrintAndSetAsStatuText("Admin card is inserted")
+
+
+
+        IsCardReaderBusy=1
+        print("Admin Card", tdata)
+        if IsGUI_Type==2:
+            NextionCommand(["vis btnAdmin,1"])
+
+        GUI_ShowAdmin()
+        IsWaitingAdminScreen=1
+        while IsWaitingAdminScreen==1:
+            time.sleep(1)
+        IsCardReaderBusy=0#DoCardRead Admin card exit
+        print("Admin card exited!")
+        return
+    #</Check if it is admin card or not>--------------------------
+
+    try:
+
+        L_CardRemoveDate=datetime.datetime.now()
+
+
+        
+        global G_User_CardNo
+        global IsCardInside
+
+        print("IsCardInside", IsCardInside)
+        Result_SQL_ReadCustomerInfo=""
+        if IsCardInside==0:
+            CardReader_CardInsertStart()
+            
+            ChangeRealTimeReporting(0)#2021-11-28
+            Result_SQL_ReadCustomerInfo=SQL_ReadCustomerInfo(KartNo,CardRawData)
+            ChangeRealTimeReporting(1)#2021-11-28
+
+            print("Result_SQL_ReadCustomerInfo", Result_SQL_ReadCustomerInfo)
+            if Result_SQL_ReadCustomerInfo=="Sistemde zaten kart var." or Result_SQL_ReadCustomerInfo=="System cant accept card-in"  or Result_SQL_ReadCustomerInfo=="System is reserved" or Result_SQL_ReadCustomerInfo=="Unable to query balance on Card Read" or Result_SQL_ReadCustomerInfo=="GM has money" or Result_SQL_ReadCustomerInfo=="System is locked. Cant insert card" or Result_SQL_ReadCustomerInfo=="Cancelled card insert. Cant upload money" or Result_SQL_ReadCustomerInfo=="Card is not registered":
+                SQL_Safe_InsImportantMessage("Session problem: " +Result_SQL_ReadCustomerInfo ,91)
+                CardReader_CardProblem()
+                time.sleep(4)
+                if G_Machine_CardReaderModel=="Eject":
+                    CardReader_EjectCard()
+                    time.sleep(1)
+            else:
+                CardReader_CardInsertEnd()
+
+        ProcessSecondLength=(datetime.datetime.now()-L_CardRemoveDate).total_seconds()
+        SQL_InsException("CardIsInserted", ("%s-%s" % (str(ProcessSecondLength), Result_SQL_ReadCustomerInfo)))
+
+    except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        print("DoCardRead On ", name, exc_type, fname, exc_tb.tb_lineno)
+    
+    IsCardReaderBusy=0#DoCardRead
+    #end DoCardRead
+
+
+
+def Process_CardExitFailed():
+    print("Card exit is failed")
+    #UnDelayPlay()
+
+
+
+DebugPicture=0
+IsLocked_NetworkCheck=0
+WaitingForGameEndDBInsert=0
+G_Count_CardOut=0
+#sender: 0: realcard exit, 1:removecardcommand, 2: Cant upload money, 3: Force handpay
+def CardIsRemoved(sender):
+    cardmachinelogid=Config.getint('customer','cardmachinelogid')
+
+    try:
+        cardmachinelogid=G_CardMachineLogId
+    except Exception as eCardLogId:
+        ExceptionHandler("cardmachinelogid",eCardLogId,0)
+
+    if DebugPicture==0:
+        Do_CardIsRemoved(sender)
+
+
+    
+    SQL_Safe_InsImportantMessage("Card Remove Steps " + Step_CardIsRemoved +"-" + Step_RemoveCustomerInfo,100)
+
+    if DebugPicture==1:
+        graphviz = GraphvizOutput()
+        graphviz.output_file = "cashout"+str(cardmachinelogid)+".png"
+        with PyCallGraph(output=graphviz):
+            Do_CardIsRemoved(sender)
+
+
+Step_CardIsRemoved=""
+def Do_CardIsRemoved(sender):
+    global IsCardReaderBusy
+    try:
+        global Step_CardIsRemoved
+        global IsCollectButtonProcessInUse
+        global IsLocked_NetworkCheck
+        global WaitingForGameEndDBInsert
+        WaitingForGameEndDBInsert=0
+        global G_Count_CardOut
+        G_Count_CardOut=0
+
+        Step_CardIsRemoved="1"
+        L_CardRemoveDate=datetime.datetime.now()
+
+        if sender!=123:
+            ChangeRealTimeReporting(0)#2021-11-04
+            SystemCPUCheck(1)
+
+        if G_Machine_IsCanPlayWithoutCard==0 or G_Machine_IsCashless==1:
+            Komut_DisableBillAcceptor("card is removed first")
+        Step_CardIsRemoved="2"
+        CardReader_CardExitStart()
+
+        SQL_Safe_InsImportantMessageByWarningType("Card exit is started",1,0)
+
+
+        Step_CardIsRemoved="3"
+
+        #2020-01-16
+        if 2==1:
+            if G_Machine_DeviceTypeId!=7:
+                print("<OYUN KILITLENESIYE KADAR BEKLE 0!>-----------------------------------------")
+                Wait_Bakiye(11,0,"oyunkilitnenesiye-0")
+                print("</OYUN KILITLENESIYE KADAR BEKLE 0!>-----------------------------------------")
+
+
+        Step_CardIsRemoved="4"
+
+        #<Check if network is online>--------------------------------------------
+        IsProblemNetwork=0
+        if 1==1:
+            try:
+                Step_CardIsRemoved="5"
+                print("Check network connection")
+                conn = pymssql.connect(host=G_DB_Host, user=G_DB_User, password=G_DB_Password, database=G_DB_Database,tds_version='7.2')
+                conn.autocommit(True)
+                cursor = conn.cursor(as_dict=True)
+                cursor.callproc('tsp_CheckNetwork', (G_Machine_Mac, G_User_CardNo))
+                for row in cursor:
+                    print("Network exists")
+                conn.close()
+            except Exception as ecardtype:
+                IsProblemNetwork=1
+
+        if IsProblemNetwork==1:
+            Step_CardIsRemoved="6"
+            
+            IsLocked_NetworkCheck=1
+            #Kilitle("IsLocked_NetworkCheck")
+            GUI_ShowIfPossibleMainStatu("No network!")
+            ShowNotifyScreen("NO NETWORK!","Please make sure ethernet cable is plugged in.",10)
+            SQL_InsImportantMessageByWarningType("No network tsp_CheckNetwork",1,0)
+            time.sleep(10)
+            ExceptionHandler("tsp_CheckNetwork",ecardtype,0)
+            IsCardReaderBusy=0#Do_CardIsRemoved
+            return
+
+
+        if 2==1:#2021-07-05 Yaptim ama hic acmadim.
+            IsSASLink=1
+            Last_G_SASLastDate_Diff=(datetime.datetime.now()-G_SASLastDate).total_seconds()
+            if Last_G_SASLastDate_Diff>=60:
+                IsSASLink=0
+
+            if IsSASLink==0:
+                Step_CardIsRemoved="6.SASLink"
+                GUI_ShowIfPossibleMainStatu("No SAS!")
+                ShowNotifyScreen("NO SAS!","Please make sure SAS cable is plugged in.",10)
+                time.sleep(10)
+                ExceptionHandler("NO SAS",ecardtype,0)
+                SQL_InsImportantMessageByWarningType("No SAS...",1,0)
+                IsCardReaderBusy=0#Do_CardIsRemoved
+
+
+
+        Step_CardIsRemoved="7"
+        if IsLocked_NetworkCheck==1:
+            IsLocked_NetworkCheck=0
+            Ac("IsLocked_NetworkCheck")
+        #</Check if network is online>-------------------------------------------
+
+
+
+        Step_CardIsRemoved="8"
+        if IsCardInside==0:
+            Step_CardIsRemoved="9"
+            print("Card is not inside. CardIsRemoved", sender)
+            IsCardReaderBusy=0#Card is not inside Card Is Removed
+            Process_CardExitFailed()
+            return
+
+        Step_CardIsRemoved="10"
+        #SQL_InsException("CardExit is started 1/100","fixix")
+        LastCardExitDiff=(datetime.datetime.now()-G_LastCardExit).total_seconds()
+        if sender==0 and LastCardExitDiff<=2:
+            Step_CardIsRemoved="11 (3 sec wait)"
+            PrintAndSetAsStatuText("Wait 3 seconds for card exit")
+            IsCardReaderBusy=0#Wait 5 Seconds for card exit
+            Process_CardExitFailed()
+            return
+
+        Step_CardIsRemoved="12"
+        GUI_ShowCustomerWindow()
+
+        Step_CardIsRemoved="13"
+
+        TempWaitInt=0
+
+        #2020-06-05 Kaldirdik.
+        #if IsAvailableForCashout(sender)==0 and G_Machine_LockBeforeAFT==1:
+        #    Kilitle("Card Is Removed")
+        
+        Step_CardIsRemoved="15"
+
+        if sender==0:
+            print("***************REAL CARD EXIT*******************", sender)
+        Step_CardIsRemoved="16"
+        BlinkCustomerScreenLine(1, 3, "Please wait. Card exit is in process", 0)
+        Step_CardIsRemoved="17"
+
+        #2016-09-29 Eskiden oyunun bitip bitmedigini buradan anliyorduk. Bunu kaldiralim artik. 
+        IsCheckForWaiting=True
+
+        if G_Machine_IsCashless==0:
+            IsCheckForWaiting=False
+
+        #2018-12-27 artik bunu kullanmayalim. hadi bakalim
+        IsCheckForWaiting=False
+
+        Step_CardIsRemoved="18"
+
+        if IsCheckForWaiting==True:
+            AvailableWaitingDate=datetime.datetime.now()
+            while IsAvailableForCashout(sender)==0:
+                try:
+                    if TempWaitInt%3==0:
+                        PrintAndSetAsStatuText("Waiting for game end")
+                        GUI_ShowIfPossibleMainStatu("Waiting for game end")
+
+                    time.sleep(0.5)
+                    TempWaitInt=TempWaitInt+1
+                    if TempWaitInt>40 and TempWaitInt%150==0 and WaitingForGameEndDBInsert==0:
+                        SQL_InsImportantMessageByWarningType("Waiting for game end. Please check gaming machine",155,10)
+                        WaitingForGameEndDBInsert=WaitingForGameEndDBInsert+1
+
+
+                    try:
+                        AvailableWaitingDateDiff=(datetime.datetime.now()-AvailableWaitingDate).total_seconds()
+                        if ((G_Count_CardOut>=4 and G_Machine_IsRulet==1) or (G_Count_CardOut%3==0 and G_Machine_IsRulet==0)) and AvailableWaitingDateDiff>70:
+                            Komut_BakiyeSorgulama(2,0,"no need for game end")
+                            SQL_InsImportantMessage("No need to wait for game end. Can cashout now.",131)
+                            break
+
+                    except Exception as ex:
+                        ExceptionHandler("AvailableWaitingDateDiff",ex,1)
+
+                
+                except Exception as e:
+                    print("Exception")
+
+            print('Oyun bitti. Kart cikartma islemi baslasin')
+
+        Step_CardIsRemoved="25-CardRemoveCustomer"
+        #mevo
+        Card_RemoveCustomerInfo(sender)
+        Step_CardIsRemoved="26"
+
+        ProcessSecondLength=(datetime.datetime.now()-L_CardRemoveDate).total_seconds()
+        Step_CardIsRemoved="27"
+        SQL_InsException("CardIsRemoved",str(ProcessSecondLength))
+        Step_CardIsRemoved="100"
+
+    except Exception as e:
+        ExceptionHandler("CardIsRemoved",e,1)
+
+    IsCardReaderBusy=0#Do_CardIsRemoved
+    #end CardIsRemoved
+
+
+
+IsInstantCardInside=0
+IsCardReaderBusy=0
+
+   
+G_Sys_CardNotWorkingCount=0
+def SetCardReaderIsNotWorking():
+    global G_Sys_CardNotWorkingCount
+    G_Sys_CardNotWorkingCount=G_Sys_CardNotWorkingCount+1
+    SetMachineStatu("Card reader is not working")
+    if G_Sys_CardNotWorkingCount%100==True:
+        SQL_InsImportantMessageByWarningType("Card reader is not working. Please control card reader",4,12)
+
+
+G_Sys_GetCardUID_Error=0
+G_Sys_Card_LastStatus=0
+G_Sys_LastCardSuccess=datetime.datetime.now()
+CardReaderLib=None
+def CardRead_CRT288B_Process():
+    global G_Sys_Card_LastStatus
+    global G_Sys_LastCardSuccess
+    global G_Sys_GetCardUID_Error
+    global CardReaderLib
+    global G_Machine_LastCardreaderTime
+
+
+
+    Result=0
+    try:
+        CardArrayType = ctypes.c_ubyte * 1024
+        CardArray = CardArrayType()
+
+
+
+        if CardReaderLib==None:
+            CardReaderLib = ctypes.cdll.LoadLibrary(FilePathSO)
+
+        CurrentCardReaderStatus=CardReaderLib.CRT288B_OpenDev(0,0,0)
+        if CurrentCardReaderStatus==-5:
+            if G_Sys_Card_LastStatus!=-5:
+                G_Sys_Card_LastStatus=CurrentCardReaderStatus
+                print("USB Kart okuyucusunda hata!!!**************************************")
+                SetCardReaderIsNotWorking()
+                GUI_ShowIfPossibleMainStatu("Card reader is not working")
+
+            return ""
+        G_Sys_Card_LastStatus=CurrentCardReaderStatus
+        G_Machine_LastCardreaderTime=datetime.datetime.now()
+        Result = CardReaderLib.CRT288B_GetCardUID(CardArray)
+        CardReaderLib.CRT288B_CloseDev()
+
+
+        if Result==-1:
+            print("Python: ERROR ON GETCARDUID, it returned", Result, " G_Sys_LastCardSuccess: ", G_Sys_LastCardSuccess, " CurrentDate", datetime.datetime.now())
+            if G_Sys_GetCardUID_Error==0:
+                SetCardReaderIsNotWorking()
+                G_Sys_GetCardUID_Error=-1
+
+            return "-1"
+        
+
+        #Gelen=''.join([chr(i) for i in CardArray]).rstrip('\x00')
+        #GelenStr=Gelen.encode('hex').upper()
+        #print(GelenStr)
+        GelenStr=bytearray(CardArray).hex().upper()
+        while (GelenStr.startswith("590400")==True):
+            GelenStr=GelenStr[6:len(GelenStr)]
+            GelenStr=GelenStr[0:8]
+        
+        IsCardReadedOk=0
+        if len(GelenStr)==8:
+            #print("Result", Result, datetime.datetime.now(), " GelenStr", GelenStr)
+            G_Sys_LastCardSuccess=datetime.datetime.now()
+            G_Sys_GetCardUID_Error=0
+            #print("Card read ok")
+            return GelenStr
+        else:
+            return ""
+
+
+    except:
+        Result=2
+        return ""
+
+
+
+
+def CardRead_CRT288B():
+    try:
+        global G_Count_CardOut
+        global IsInstantCardInside
+        global IsCardRead
+        global IsCardReaderBusy
+        global IsWaitAtLeastCardExistDbSaved
+        global IsWaitingAdminScreen
+
+        if G_Machine_Ready==0:
+            return
+
+        tdata=CardRead_CRT288B_Process()
+        
+
+
+        
+        if IsCardReaderBusy==1:
+            return
+
+        if IsCardRead==1:
+
+            
+
+
+            if tdata!=None:
+
+
+
+
+
+                if len(tdata)>4 and IsCardInside==0 and IsCardReaderBusy==0:
+                    IsCardReaderBusy=1
+
+                    try:
+                        GUI_ShowIfPossibleMainStatu("Card is inserted!")
+                        if DebugPicture==0:
+                            DoCardRead(tdata, tdata)
+                        if DebugPicture==1:
+                            graphviz = GraphvizOutput()
+                            graphviz.output_file = "cashin"+str(G_CardMachineLogId)+".png"
+                            with PyCallGraph(output=graphviz):
+                                DoCardRead(tdata, tdata)
+                    except Exception as ecard:
+                        ExceptionHandler("DoCardRead Thread",ecard,0)
+
+
+            if IsCardInside==1:
+                DoCardExitProcess=0
+
+                if tdata==None:
+                    DoCardExitProcess=1
+
+                if tdata!=None:
+
+
+                    if tdata!=G_User_CardNo:
+                        if len(tdata)>2:
+                            print("***************************************************")
+                            print("Su an makinanin icinde farkli bir kart var!!!")
+                            print("***************************************************")
+                        DoCardExitProcess=1
+
+
+                if DoCardExitProcess==1:
+
+                    #print("Card cikma proseduru")
+                    
+                    LastCardEnterDiff=(datetime.datetime.now()-G_LastCardEnter).total_seconds()
+                    if LastCardEnterDiff<=3:
+                        print("Wait at least 5 seconds for card exit",LastCardEnterDiff)
+                        return
+                    
+                    IsCardReaderBusy=1
+                    #Komut_BakiyeSorgulama(2,0,"cardexit-crt288b")
+
+                    try:
+                        CardIsRemoved(0)
+                    except Exception as ecard:
+                        ExceptionHandler("CardIsRemoved Thread",ecard,0)
+
+
+
+    except Exception as e:
+        ExceptionHandler("CRT288B",e,0)
+
+
+#<Card Reader Fuheng>------------------
+def print_time_stamp_ms():
+    return
+
+CardReaderCommandStr = ""
+
+def CardReaderCommand(data):
+
+    if G_Online_IsOnlinePlaying==1:
+        return
+
+    global CardReaderCommandStr
+
+    TryCount=0
+    while len(CardReaderCommandStr) > 0:
+        print("Please wait.. Another command is being sent to card reader",
+              CardReaderCommandStr)
+        time.sleep(0.1)
+        TryCount=TryCount+1
+        if TryCount>10:
+            break
+
+    CardReaderCommandStr = data
+
+def CardReaderSendCommandImmediately(sendstring, doPooling):
+    try:
+        cardreader.flushInput
+
+        if platform.system() == "Windows":
+            hex_data = Decode2Hex(sendstring)#.decode("hex")
+            bytearray = map(ord, hex_data)
+            cardreader.write(hex_data)
+        else:
+            hex_data = Decode2Hex(sendstring)
+            cardreader.write(hex_data)
+
+        if doPooling == 1 and 2 == 2:
+            time.sleep(0.1)
+            #DoCardReaderPooling(doPooling)
+    except Exception as ecard:
+        WINDOWS=WINDOWS
+        #ExceptionHandler("CardReaderSendCommandImmediately Thread", ecard, 0)
+
+G_LastCardRead=datetime.datetime.now()
+def CardRead_rCloud(sender=0):
+    global IsCardReaderBusy
+    global G_User_CardNo
+    global CardReaderCommandStr
+    global G_CardLastDate
+    global IsCardReaderOpened
+    global G_Machine_LastCardreaderTime
+    global G_LastCardRead
+    global G_Session_IsByOnline
+
+    IsSpecialyCommand = False
+    # mifare S50 get uid
+    senddata = "02000235310307"
+
+    teststr="1"
+    if len(CardReaderCommandStr) > 0:
+        #print("-----------------------------------------")
+        #print("Ozel komut", CardReaderCommandStr)
+        IsSpecialyCommand = True
+        senddata = CardReaderCommandStr
+        CardReaderCommandStr = ""
+
+    tdata = ""
+    try:
+        #print("-----------------------------------------")
+        print_time_stamp_ms()
+
+        CardReaderSendCommandImmediately(senddata, 0)
+        #print("Sent data card", senddata)
+        retry = 5
+
+        # receive response, may be should wait like most 100ms
+        while 1:
+            data_left = cardreader.inWaiting()
+            if data_left == 0:
+                retry = retry - 1
+                if retry <= 0:
+                    break
+                else:
+                    time.sleep(0.02)
+                    continue
+
+            out = ''
+            while cardreader.inWaiting() > 0:
+                #out += str(cardreader.read(1)).replace("b'\\x","").replace("'","")
+                out += '{:02X}'.format(cardreader.read(1)[0])
+            if out == '':
+                continue
+            tdata += out
+
+        if len(tdata) > 0:
+            tdata = tdata.upper()
+            print_time_stamp_ms()
+            
+            
+
+            if tdata=="06":
+                IsCardReaderOpened=1
+
+            IsMessageHandled = 0
+            if tdata == '15': # # receive NAK "16"
+                 print("+++++++Receive NAK, send command BCC error+++++++",
+                      IsSpecialyCommand, "sender", sender)
+            elif tdata == "06" or IsSpecialyCommand == True or sender == 1: #receive ACK "06"
+                IsMessageHandled = 1
+                print_time_stamp_ms()
+                #print("05 gonder IsSpecialyCommand",IsSpecialyCommand, "sender", sender)
+                # send "05" ENQ
+                CardReaderSendCommandImmediately("05", 0)
+
+                tdata = ""
+                # receive data 
+                # we should modify the timeout depends diferent command
+                # we should check frame start and calculate the whole frame size depend on frame length(data[1] << 8 + data[2])
+                retry = 20
+                while 1:
+                    data_left = cardreader.inWaiting()
+                    if data_left == 0:
+                        retry = retry - 1
+                        if retry <= 0:
+                            break
+                        else:
+                            time.sleep(0.05)
+                            continue
+                    out = ''
+                    while cardreader.inWaiting() > 0:
+                        #out += str(cardreader.read(1)).replace("b'\\x","").replace("'","")
+                        out += '{:02X}'.format(cardreader.read(1)[0])
+                    if out == '':
+                        continue
+                    tdata += out
+
+                if len(tdata) > 0:
+                    tdata = tdata.upper()
+                    print_time_stamp_ms()
+                    #if len(tdata)>2:
+                    #    print("tdata card", tdata)
+
+
+                    if tdata.startswith("020003")==True:
+                        IsCardReaderOpened=1
+
+
+                    # we should check response frame valid
+                    # check frame start
+                    # check frame length
+                    # check frame end
+                    # check frame BCC
+                    if tdata.startswith("02") != True: # check frame start
+                         #print("+++++++Response frame error+++++++", tdata)
+                         teststr="1"
+                    else:
+                        G_Machine_LastCardreaderTime=datetime.datetime.now()
+
+                        if IsCardReaderBusy == 0:
+                            DoCardExitProcess = 0
+
+                            #2020-02-20  and IsWaitingForParaYukle==0 kaldirdim buradan
+                            if tdata.startswith("020003") == True and tdata.find("02000380")==-1 and IsCardInside == 1:
+                                IsMessageHandled = 1
+                                DoCardExitProcess = 1
+
+
+#tdata card 02000335314E0348
+#tdata card 02000335314E0348
+#tdata card 02000335314E0348
+#tdata card 020007353159F88EBB4903DF
+#tdata card 020007353159F88EBB4903DF
+#tdata card 020007353159F88EBB4903DF
+
+
+                            if tdata.startswith("020007") == True:
+
+                                G_CardLastDate=datetime.datetime.now()
+                                CardIndexLength = tdata.find("353159")+6
+                                CardNo = tdata[CardIndexLength: CardIndexLength+8]
+
+                                
+                                LastCardReadDiff=(datetime.datetime.now()-G_LastCardRead).total_seconds()
+
+                                #print("debug card", CardNo, "IsCardInside", IsCardInside, "IsCardReaderBusy", IsCardReaderBusy, "LastCardReadDiff", LastCardReadDiff)
+
+
+                                # and LastCardReadDiff<2 bunu kaldirdik. neden?
+                                #if IsCardInside == 0 and IsCardReaderBusy == 0 and LastCardReadDiff<2:
+                                if IsCardInside == 0 and IsCardReaderBusy == 0:
+                                    print("debug card - 2", CardNo)
+                                    G_LastCardRead=datetime.datetime.now()
+                                    IsCardReaderBusy = 1
+
+                                    try:
+                                        print("Readed card data", tdata)
+                                        if G_Machine_IsRecordAllSAS==1:
+                                            SQL_Safe_InsImportantMessage("RawCardData:" + tdata,1)
+                                        G_Machine_LastCardreaderTime=datetime.datetime.now()
+
+                                        G_Session_IsByOnline=0
+                                        GUI_ShowIfPossibleMainStatu("Card is inserted!")
+                                        
+                                        if DebugPicture==0:
+                                            processGameoperation = Thread(target=DoCardRead, args=(CardNo,tdata,))
+                                            processGameoperation.name="DoCardRead2"
+                                            processGameoperation.start()
+
+                                        if DebugPicture==1:
+                                            graphviz = GraphvizOutput()
+                                            graphviz.output_file = "cashin"+str(G_CardMachineLogId)+".png"
+                                            with PyCallGraph(output=graphviz):
+                                                DoCardRead(CardNo,tdata)
+
+                                    except Exception as ecard:
+                                        ExceptionHandler("DoCardRead Thread", ecard, 0)
+
+                                if IsCardInside == 1:
+                                    if G_User_CardNo != CardNo and CardNo!="735314E0":
+                                        print("Su an farkli bir kart var cihazda!", G_User_CardNo, CardNo)
+                                        DoCardExitProcess = 1
+
+                            if DoCardExitProcess == 1:
+                                G_CardLastDate=datetime.datetime.now()
+
+                                if G_Session_IsByOnline==1:
+                                    return
+
+                                LastCardEnterDiff = (datetime.datetime.now()-G_LastCardEnter).total_seconds()
+                                if LastCardEnterDiff <= 3:
+                                    print("Wait at least 5 seconds for card exit",LastCardEnterDiff)
+                                    return
+
+                                IsCardReaderBusy = 1
+
+                                try:
+                                    processGameoperation = Thread(target=CardIsRemoved, args=(0,))
+                                    processGameoperation.name="CardIsRemoved"
+                                    processGameoperation.start()
+
+                                    #2019-12-30: Savoy'da kart ciktiginda belki thread'i calistirmiyordu. Onun icin thread'den function'a donuldu.
+                                    #CardIsRemoved(0)
+
+                                except Exception as ecard:
+                                    ExceptionHandler("CardIsRemoved Thread", ecard, 0)
+
+                        #endif IsCardReaderBusy==0:
+                else :
+                    #print("+++++++ Not receive data +++++++")
+                    teststr="1"
+            else :
+                 #print("+++++++ Response frame error +++++++")
+                 teststr="1"
+        else :
+            print("+++++++ Not receive data ++++++++")
+    except Exception as e:
+        IsCardReaderBusy=IsCardReaderBusy
+        #ExceptionHandler("CardRead_rCloud", e, 0)
+         
+
+#<Card Reader Fuheng>------------------
+
+
+
+
+def TmrCardRead():
+
+    if G_Online_IsOnlinePlaying==1:
+        return
+
+    if platform.system().startswith("Window")==True:
+        return
+
+    #return #card iptal
+
+    if G_Machine_CardReaderType==1:
+        CardRead_CRT288B()
+
+    if G_Machine_CardReaderType==2:
+        CardRead_rCloud(0)
+
+def XSendSASPORT(command):
+    valsend=1
+    try:
+        #hex_data=Decode2Hex(command)
+        #bytearray=map(ord, hex_data);
+        #sasport.write("".join(map(chr, bytearray)))
+        hex_data = Decode2Hex(command)
+        sasport.write(hex_data)
+        #print("SAS PORT SENT", hex_data)
+    except:
+        valsend=0
+        #print("Err on SendSASPORT", sasport.port)
+
+
+#-----------------------------------
+
+
+def FindPortForCardReader():
+    global G_Machine_USB_Ports
+    global IsCardReaderOpened
+    global G_Machine_LastCardreaderTime
+
+    IsCardReaderOpened=0
+    #<Find port for Card Reader>------------------------------------
+    for member in G_Machine_USB_Ports:
+        if int(member['isUsed'])==0 and IsCardReaderOpened==0:
+    
+            
+            cardreader.port = member['portNo']
+            cardreader.open()
+    
+            print("Try cardreader.port", cardreader.port,"*************************************************")
+    
+    
+    
+            time.sleep(CardReaderInterval)
+            TryCountSAS=0
+            while 1==1:
+                time.sleep(CardReaderInterval)
+                TryCountSAS=TryCountSAS+1
+                if IsCardReaderOpened==1:
+                    print("Card Reader Port bulundu!!!", cardreader.port)
+                    member['isUsed']=1
+                    member['deviceName']="cardreader"
+                    CardReaderCommand("02000235310307")
+                    break
+                time.sleep(0.01)
+                if TryCountSAS>10:
+                    cardreader.close()
+                    G_Machine_LastCardreaderTime=datetime.datetime.now() - datetime.timedelta(minutes=2)
+                    print("Cant find Card Reader Port on "+ cardreader.port +"!******************************************* TryCountSAS", TryCountSAS)
+                    time.sleep(1)
+                    break
+    
+            print("IsCardReaderOpened", IsCardReaderOpened)
+    
+    #</Find port for Card Reader>------------------------------------
+
+IsCardReaderBusy=1
+cardreader = serial.Serial()
+if IsCardRead==1:
+    try:
+
+        CardReaderInterval=0.03
+        if G_Machine_CardReaderType==1:
+            CardReaderInterval=0.50
+
+
+        if G_Machine_CardReaderType==2 or G_Machine_CardReaderModel=="Eject":
+            CardReaderInterval=0.05
+
+        t2 = perpetualTimer(CardReaderInterval,TmrCardRead)
+        t2.start()
+        IsCardReaderOpened=1
+
+
+
+        #print("G_Machine_CardReaderType", G_Machine_CardReaderType, "G_Machine_CardReaderModel", G_Machine_CardReaderModel, "G_Machine_USB_Ports", G_Machine_USB_Ports)
+        #Fuheng
+        if G_Machine_CardReaderType==2 or G_Machine_CardReaderModel=="Eject":
+            IsCardReaderOpened=0
+            
+
+
+
+            cardreader.baudrate = 9600
+            cardreader.bytesize = 8
+            cardreader.parity = serial.PARITY_NONE
+            cardreader.stopbits = 1
+            cardreader.timeout = 0.2
+
+            FindPortForCardReader()
+
+            if IsCardReaderOpened==0:
+                print("Card reader is not working!")
+                #SQL_InsImportantMessageByWarningType("Card reader is not working. Please restart device and control card reader1",4,12)
+
+
+
+        if G_Machine_CardReaderType==0:
+            G_Machine_SASPort="/dev/ttyUSB1"
+            cardreader.port = G_Machine_CardReaderPort
+
+            if platform.system().startswith("Window")==True:
+                cardreader.port = 'COM9'
+
+            cardreader.baudrate=9600
+            cardreader.open()
+            print("Card reader is opened at:" , G_Machine_CardReaderPort)
+
+            if 3==3:
+                if DoTestCardReader()==0:
+                    print("Card reader failed at 1")
+                    G_Machine_CardReaderPort="/dev/ttyUSB1"
+                    G_Machine_SASPort="/dev/ttyUSB0"
+                    cardreader.close()
+                    cardreader.port = G_Machine_CardReaderPort
+                    cardreader.open()
+
+                    if DoTestCardReader()==0:
+                        print("Card reader failed at 2")
+
+
+        print("G_Machine_CardReaderType", G_Machine_CardReaderType)
+        if G_Machine_CardReaderType==1:
+            print("New type card reader")
+
+        print("CardReaderInterval", CardReaderInterval)
+
+    except:
+        IsCardReaderOpened=0
+        SetMachineStatu("Card reader is not working")
+        SQL_InsImportantMessageByWarningType("Card reader is not working. Please restart device and control card reader2",4,12)
+        print("Kart okuyucu acilamadi")
+
+
+sasport = serial.Serial()
+
+
