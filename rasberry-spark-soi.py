@@ -3,721 +3,799 @@ import time
 import datetime
 import platform
 import os
-import fnmatch
 import subprocess
-import re
-import pymssql # For type hinting, actual DB calls would be in a DBManager
-import sqlite3 # For type hinting
+import threading
+import termios  # For Linux parity control
 from crccheck.crc import CrcKermit
 import configparser
-import ctypes # For CRT288B Card Reader
-import threading # For placeholder, original threading logic needs careful integration
 from decimal import Decimal
 
 class ConfigManager:
-    def __init__(self, config_file_path="settings.ini"):
+    def __init__(self, config_file="settings.ini"):
         self.config = configparser.ConfigParser()
-        self.config_file_path = config_file_path
-        self.logger = print # Replace with a proper logger
+        if not os.path.exists(config_file):
+            print(f"Warning: Config file {config_file} not found. Using defaults.")
+            self._create_default_config()
+        else:
+            self.config.read(config_file)
 
-    def _create_default_config_sections(self):
-        default_sections = ['sas', 'machine', 'cardreader', 'billacceptor', 'payment']
-        for section in default_sections:
-            if not self.config.has_section(section):
-                self.config.add_section(section)
+    def _create_default_config(self):
+        if not self.config.has_section('sas'):
+            self.config.add_section('sas')
+        self.config.set('sas', 'address', '01')
+        self.config.set('sas', 'assetnumber', '00000000')
+        self.config.set('sas', 'registrationkey', '0000000000000000000000000000000000000000')
 
-    def apply_operational_defaults(self):
-        self._create_default_config_sections()
-        self.set_value('sas', 'address', self.get('sas', 'address', '01'))
-        self.set_value('sas', 'assetnumber', self.get('sas', 'assetnumber', '00000000'))
-        self.set_value('sas', 'registrationkey', self.get('sas', 'registrationkey', '0000000000000000000000000000000000000000'))
-        self.set_value('machine', 'devicetypeid', str(self.getint('machine', 'devicetypeid', 8)))
-        self.set_value('machine', 'config_is_cashout_soft', str(self.getint('machine', 'config_is_cashout_soft', 0)))
-        self.set_value('cardreader', 'type', str(self.getint('cardreader', 'type', 2)))
-        self.set_value('cardreader', 'lib_path', self.get('cardreader', 'lib_path', './crt_288B_UR.so'))
-        self.set_value('billacceptor', 'typeid', str(self.getint('billacceptor', 'typeid', 0)))
-        self.set_value('payment', 'transactionid', str(self.getint('payment', 'transactionid', 0)))
-        self.logger("Applied operational default configurations.")
+        if not self.config.has_section('machine'):
+            self.config.add_section('machine')
+        self.config.set('machine', 'devicetypeid', '8')
 
     def get(self, section, option, fallback=None):
-        if self.config.has_option(section, option): return self.config.get(section, option)
+        if self.config.has_option(section, option):
+            return self.config.get(section, option)
         return fallback
+
     def getint(self, section, option, fallback=0):
         if self.config.has_option(section, option):
-            try: return self.config.getint(section, option)
-            except ValueError: return fallback
+            try:
+                return self.config.getint(section, option)
+            except ValueError:
+                return fallback
         return fallback
-    def getdecimal(self, section, option, fallback=Decimal('0.0')):
-        if self.config.has_option(section, option):
-            try: return Decimal(self.config.get(section, option))
-            except Exception: return fallback
-        return fallback
-    def set_value(self, section, option, value):
-        if not self.config.has_section(section): self.config.add_section(section)
-        if value is not None: self.config.set(section, option, str(value))
-        elif self.config.has_option(section, option): self.config.remove_option(section, option)
-    def save(self):
-        try:
-            with open(self.config_file_path, 'w') as configfile: self.config.write(configfile)
-            self.logger(f"Configuration saved to {self.config_file_path}")
-        except Exception as e: self.logger(f"Error saving config file to {self.config_file_path}: {e}")
 
-def decode_to_hex(input_str): return bytearray.fromhex(input_str)
-def get_crc(command_hex_with_addr): 
-    data = decode_to_hex(command_hex_with_addr)
-    crc_instance = CrcKermit(); crc_instance.process(data)
-    crc_hex = crc_instance.finalbytes().hex().upper().zfill(4)
-    return f"{command_hex_with_addr}{crc_hex[2:4]}{crc_hex[0:2]}" 
+def decode_to_hex(input_str):
+    """Decodes a hex string to a bytearray."""
+    return bytearray.fromhex(input_str)
+
+def get_crc(command_hex):
+    """Calculates CRC Kermit for a SAS command - EXACTLY like working code."""
+    data = decode_to_hex(command_hex)
+    crc_instance = CrcKermit()
+    crc_instance.process(data)
+    crc_hex = crc_instance.finalbytes().hex().upper()
+    crc_hex = crc_hex.zfill(4)
+    return f"{command_hex}{crc_hex[2:4]}{crc_hex[0:2]}"
 
 def add_left_bcd(number_str, length_bytes):
+    """Pads a BCD number string with leading '00' to reach target byte length."""
     number_str = str(int(number_str))
-    if len(number_str) % 2 != 0: number_str = "0" + number_str
-    padding_needed_bytes = length_bytes - (len(number_str) / 2)
+    if len(number_str) % 2 != 0:
+        number_str = "0" + number_str
+    
+    current_len_bytes = len(number_str) / 2
+    padding_needed_bytes = length_bytes - current_len_bytes
+    
     return "00" * int(padding_needed_bytes) + number_str
-def hex_to_int(hex_str):
-    try: return bytes.fromhex(hex_str).decode('ascii', errors='ignore')
-    except UnicodeDecodeError: return int(hex_str, 16)
-    except ValueError: return hex_str
-
-class PortManager:
-    def __init__(self, config_manager_instance):
-        self.config_manager = config_manager_instance
-        self.available_ports = []
-        self.sas_port_name = None
-        self.card_reader_port_name = None
-        self.bill_acceptor_port_name = None
-        self.logger = self.config_manager.logger
-    def _execute_linux_command(self, command):
-        try:
-            process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            output, error = process.communicate(timeout=5)
-            if error: self.logger(f"Error executing '{command}': {error.decode(errors='ignore')}")
-            return output.decode(errors='ignore')
-        except subprocess.TimeoutExpired: self.logger(f"Timeout executing command: {command}"); return ""
-        except FileNotFoundError: self.logger(f"Command '{command.split()[0]}' not found."); return ""
-        except Exception as e: self.logger(f"Exception executing '{command}': {e}"); return ""
-    def find_available_serial_ports(self):
-        self.available_ports = []
-        self.logger("Finding available serial ports...")
-        if platform.system().startswith("Window"):
-            try:
-                import serial.tools.list_ports
-                ports = serial.tools.list_ports.comports()
-                for port in ports: self.available_ports.append({"port_no": port.device, "is_used": False, "device_name": ""})
-            except ImportError: self.logger("pyserial list_ports not available.")
-            except Exception as e: self.logger(f"Error listing Windows COM ports: {e}")
-            if not self.available_ports: self.available_ports.append({"port_no": "COM4", "is_used": False, "device_name": ""}) 
-        elif platform.system().startswith("Linux"):
-            patterns = ["/dev/ttyUSB*", "/dev/ttyS*", "/dev/ttyACM*"]
-            for pattern in patterns:
-                try:
-                    import glob
-                    for port_name in glob.glob(pattern):
-                        if not any(p['port_no'] == port_name for p in self.available_ports):
-                             self.available_ports.append({"port_no": port_name, "is_used": False, "device_name": ""})
-                except Exception as e: self.logger(f"Error globbing for {pattern} ports: {e}")
-        else: self.logger(f"Unsupported platform for port detection: {platform.system()}")
-        self.logger(f"Found ports: {[p['port_no'] for p in self.available_ports]}")
-        return self.available_ports
-    def _assign_port_locally(self, port_name, device_name):
-        for port_info in self.available_ports:
-            if port_info["port_no"] == port_name:
-                port_info["is_used"] = True; port_info["device_name"] = device_name
-                self.logger(f"Locally assigned port {port_name} to {device_name}.")
-                return True
-        return False
-    def find_and_assign_sas_port(self):
-        self.logger("Attempting to find SAS port...")
-        for port_info in [p for p in self.available_ports if not p["is_used"]]:
-            port_name = port_info['port_no']
-            self.logger(f"Testing port {port_name} for SAS...")
-            temp_sas_comm = SASCommunicator(port_name, self.config_manager)
-            if temp_sas_comm.open_sas_port_for_test(): 
-                sas_confirmed = False
-                for attempt in range(10): 
-                    self.logger(f"SAS detection on {port_name}: Attempt {attempt+1}/10 to get SAS version...")
-                    temp_sas_comm.send_specific_command_for_test("54") 
-                    time.sleep(0.15) 
-                    response = temp_sas_comm.receive_data(expect_long_response=False) 
-                    if response and response.startswith(temp_sas_comm.sas_address + "54"):
-                        self.logger(f"SAS Get Version successful on {port_name}. SAS Port Confirmed. Response: {response}")
-                        sas_confirmed = True; break 
-                    elif response and response.startswith(temp_sas_comm.sas_address):
-                        self.logger(f"Received other valid SAS response ({response}) on {port_name} after 0x54. SAS Port Confirmed.")
-                        sas_confirmed = True; break
-                    elif response: self.logger(f"Non-SAS or unexpected response on {port_name} (attempt {attempt+1}): {response}")
-                    else: self.logger(f"No response to 0x54 on {port_name} (attempt {attempt+1})")
-                    if attempt < 9: time.sleep(0.1) 
-                temp_sas_comm.close_port() 
-                if sas_confirmed:
-                    self._assign_port_locally(port_name, "SAS"); self.sas_port_name = port_name
-                    return port_name
-            else: self.logger(f"Could not open/init {port_name} for SAS test (open_sas_port_for_test failed).")
-        self.logger("SAS port not found after testing all available unassigned ports."); return None
-    def find_and_assign_card_reader_port(self):
-        reader_type_id = self.config_manager.getint('cardreader', 'type', 2)
-        if reader_type_id == 1:
-            self.card_reader_port_name = self.config_manager.get('cardreader', 'lib_path', './crt_288B_UR.so')
-            self.logger(f"CRT288B card reader: using configured path: {self.card_reader_port_name}"); return self.card_reader_port_name
-        self.logger("Attempting to find serial Card Reader port...")
-        for port_info in [p for p in self.available_ports if not p["is_used"]]:
-            port_name = port_info['port_no']
-            self.logger(f"Testing port {port_name} for Card Reader (type {reader_type_id})...")
-            temp_card_reader = CardReaderHandler(port_name, self.config_manager, reader_type_id)
-            if temp_card_reader._open_serial_port():
-                response = None
-                if reader_type_id == 2: # rCloud
-                    temp_card_reader._send_rcloud_command("02000235310307")
-                    time.sleep(0.1); response = temp_card_reader._receive_rcloud_data()
-                    if response and (response.startswith("020003") or response.startswith("020007") or response == "06"):
-                        self.logger(f"Card Reader (rCloud) identified on {port_name}")
-                        self._assign_port_locally(port_name, "CardReader"); self.card_reader_port_name = port_name
-                        temp_card_reader._close_serial_port(); return port_name
-                temp_card_reader._close_serial_port()
-                if response: self.logger(f"No conclusive CR response from {port_name}, got: {response}")
-            else: self.logger(f"Could not open {port_name} for CR test.")
-        self.logger("Serial Card Reader port not found."); return None
-    def find_and_assign_bill_acceptor_port(self):
-        acceptor_type_id = self.config_manager.getint('billacceptor', 'typeid', 0)
-        if acceptor_type_id == 0: self.logger("BA is SAS controlled."); return None
-        self.logger("Attempting to find direct serial Bill Acceptor port...")
-        for port_info in [p for p in self.available_ports if not p["is_used"]]:
-            port_name = port_info['port_no']
-            self.logger(f"Testing port {port_name} for BA (type {acceptor_type_id})...")
-            temp_ba_handler = BillAcceptorHandler(port_name, self.config_manager, acceptor_type_id)
-            if temp_ba_handler._open_direct_port():
-                temp_ba_handler.request_status(); time.sleep(0.2)
-                response = temp_ba_handler._receive_direct_data(); temp_ba_handler._close_direct_port()
-                if response:
-                    self.logger(f"BA (type {acceptor_type_id}) identified on {port_name}")
-                    self._assign_port_locally(port_name, "BillAcceptor"); self.bill_acceptor_port_name = port_name
-                    return port_name
-            else: self.logger(f"Could not open {port_name} for BA test.")
-        self.logger("Direct serial Bill Acceptor port not found."); return None
 
 class SASCommunicator:
-    def __init__(self, port_name, config_manager_instance, baud_rate=19200, timeout=0.1):
-        self.port_name = port_name; self.baud_rate = baud_rate; self.timeout = timeout
-        self.config_manager = config_manager_instance; self.serial_port = None
-        self.sas_address = self.config_manager.get('sas', 'address', '01') 
-        self.last_sent_poll_type = 81; self.is_port_open = False
-        self.logger = self.config_manager.logger
-        self.use_termios_for_parity = platform.system() == "Linux"
-        
-        if self.use_termios_for_parity:
-            try:
-                import termios; self.termios = termios
-                # Original script used a fixed 0x40000000 for CMSPAR.
-                # This is often PAREXT on systems where CMSPAR isn't directly defined.
-                # We will try termios.CMSPAR, then termios.PAREXT, then the fixed value.
-                self.CMSPAR = getattr(termios, 'CMSPAR', getattr(termios, 'PAREXT', 0x40000000))
-                if self.CMSPAR == 0x40000000 and not hasattr(termios, 'CMSPAR') and not hasattr(termios, 'PAREXT'):
-                     self.logger("termios.CMSPAR and termios.PAREXT not found, using fallback 0x40000000 for Mark/Space.")
-            except ImportError: self.logger("Warning: termios module not found."); self.use_termios_for_parity = False
-            except AttributeError: self.logger("Warning: termios attributes missing."); self.use_termios_for_parity = False
+    """SAS Communication - Converted to match EXACTLY the working code logic"""
     
-    def open_sas_port_for_test(self):
-        if self.is_port_open: self.close_port() 
+    def __init__(self, port_name, global_config, baud_rate=19200, timeout=0.1):
+        self.port_name = port_name
+        self.baud_rate = baud_rate
+        self.timeout = timeout
+        self.global_config = global_config
+        self.serial_port = None
+        self.sas_address = self.global_config.get('sas', 'address', '01')
+        self.is_port_open = False
+        self.device_type_id = self.global_config.getint('machine', 'devicetypeid', 8)
+        
+        # CRITICAL: Match working code's global variables
+        self.last_sent_poll_type = 81  # Sas_LastSent equivalent
+        self.is_communication_by_windows = -1  # G_IsComunicationByWindows
+        self.last_80_time = datetime.datetime.now()  # G_Last_80
+        self.last_81_time = datetime.datetime.now()  # G_Last_81
+        
+        # Command queue like working code
+        self.pending_command = ""  # GENEL_GonderilecekKomut equivalent
+        
+        # Initialize platform detection
+        if platform.system().startswith("Window"):
+            self.is_communication_by_windows = 1
+        else:
+            self.is_communication_by_windows = 0
+
+    def open_port(self):
+        """Opens SAS port - EXACTLY matching working code's OpenCloseSasPort logic"""
+        if self.is_port_open:
+            return True
+            
         try:
             self.serial_port = serial.Serial()
-            self.serial_port.port = self.port_name; self.serial_port.baudrate = self.baud_rate
-            self.serial_port.timeout = self.timeout; 
-            self.serial_port.parity = serial.PARITY_NONE 
-            self.serial_port.stopbits = serial.STOPBITS_ONE; self.serial_port.bytesize = serial.EIGHTBITS
-            self.serial_port.xonxoff = False; self.serial_port.dtr = True; self.serial_port.rts = False
+            self.serial_port.port = self.port_name
+            self.serial_port.baudrate = self.baud_rate
+            self.serial_port.timeout = self.timeout
             
-            self.serial_port.open(); self.is_port_open = True
-            self.logger(f"SAS port {self.port_name} opened for test with PARITY_NONE.")
+            # CRITICAL: Match working code's serial settings
+            self.serial_port.parity = serial.PARITY_NONE
+            self.serial_port.stopbits = serial.STOPBITS_ONE
+            self.serial_port.bytesize = serial.EIGHTBITS
+            self.serial_port.xonxoff = False
+            self.serial_port.rtscts = False
+            self.serial_port.dsrdtr = False
             
-            device_type_id = self.config_manager.getint('machine', 'devicetypeid', 8)
-            if device_type_id in [1, 4]: 
-                self.logger("Novomatic/Octavian: initial polls with NONE, then switch to EVEN for test.")
-                self.serial_port.write(decode_to_hex("80")); self.serial_port.flush(); time.sleep(0.05)
-                self.serial_port.write(decode_to_hex("81")); self.serial_port.flush(); time.sleep(0.05)
+            # CRITICAL: DTR/RTS settings from working code
+            self.serial_port.dtr = True
+            self.serial_port.rts = False
+            
+            self.serial_port.open()
+            self.is_port_open = True
+            
+            # CRITICAL: Device type specific initialization like working code
+            if self.device_type_id in [1, 4]:  # Novomatic/Octavian
+                print("Device type is Novomatic/Octavian, setting parity to EVEN after initial polls.")
+                self._send_sas_port("80")
+                time.sleep(0.05)
+                self._send_sas_port("81")
                 self.serial_port.close()
                 self.serial_port.parity = serial.PARITY_EVEN
                 self.serial_port.open()
-                self.logger(f"SAS port {self.port_name} re-opened with PARITY_EVEN for Novomatic/Octavian test.")
-            else: 
-                self.logger(f"Sending initial '80' poll with PARITY_NONE for device type {device_type_id} during test.")
-                self.serial_port.write(decode_to_hex("80")); self.serial_port.flush()
-                time.sleep(0.05) 
-            return True
-        except Exception as e: 
-            self.logger(f"Error in open_sas_port_for_test ({self.port_name}): {e}")
-            self.is_port_open = False
-            return False
-
-    def open_port(self): 
-        # For operational use, ensure the port is configured as it was during successful test
-        # This might involve re-applying parity settings based on device_type_id
-        if self.is_port_open: self.close_port()
-        try:
-            self.serial_port = serial.Serial()
-            self.serial_port.port = self.port_name; self.serial_port.baudrate = self.baud_rate
-            self.serial_port.timeout = self.timeout; 
-            
-            device_type_id = self.config_manager.getint('machine', 'devicetypeid', 8)
-            if device_type_id in [1, 4]: # Novomatic/Octavian
-                self.serial_port.parity = serial.PARITY_EVEN
+                print(f"SAS port {self.port_name} re-opened with EVEN parity.")
             else:
-                self.serial_port.parity = serial.PARITY_NONE
+                # Initial poll for other devices
+                self._send_sas_port("80")
+                time.sleep(0.05)
             
-            self.serial_port.stopbits = serial.STOPBITS_ONE; self.serial_port.bytesize = serial.EIGHTBITS
-            self.serial_port.xonxoff = False; self.serial_port.dtr = True; self.serial_port.rts = False
-            
-            self.serial_port.open(); self.is_port_open = True
-            self.logger(f"SAS port {self.port_name} opened for operation with parity: {self.serial_port.parity}.")
-            
-            # Send an initial poll to ensure EGM is responsive with operational settings
-            # This poll will use the parity set above (NONE or EVEN)
-            # If termios is needed for this device type for polls, send_general_poll will handle it.
-            self.send_general_poll() # Send an initial poll upon operational open
-            time.sleep(0.05)
-
+            print(f"SAS port {self.port_name} opened successfully.")
             return True
-        except Exception as e: 
-            self.logger(f"Error in operational open_port ({self.port_name}): {e}")
+            
+        except serial.SerialException as e:
+            print(f"Error opening SAS port {self.port_name}: {e}")
             self.is_port_open = False
             return False
-
 
     def close_port(self):
+        """Closes the serial port."""
         if self.serial_port and self.serial_port.is_open:
-            self.serial_port.close(); self.is_port_open = False
-            self.logger(f"SAS port {self.port_name} closed.")
+            self.serial_port.close()
+            self.is_port_open = False
+            print(f"SAS port {self.port_name} closed.")
 
-    def _send_raw_command_platform_specific(self, command_hex_full):
-        if not self.is_port_open or not self.serial_port: self.logger("SAS port not open."); return
-        data_bytes = decode_to_hex(command_hex_full)
-        device_type_id = self.config_manager.getint('machine', 'devicetypeid', 8)
-        
-        # Determine if termios Mark/Space should be used for this specific send
-        # This applies to non-Novomatic/Octavian/Interblock on Linux
-        apply_termios = self.use_termios_for_parity and \
-                        platform.system() == "Linux" and \
-                        device_type_id not in [1, 4, 11]
-
-        if apply_termios:
-            try:
-                fd = self.serial_port.fileno()
-                # Get current settings (should reflect PARITY_NONE from open_port)
-                iflag, oflag, cflag, lflag, ispeed, ospeed, cc = self.termios.tcgetattr(fd)
-                original_cflag = cflag 
-                
-                # Set MARK parity for the first byte
-                # Use PARENB for parity enable, PARODD for ODD parity. With CMSPAR, this combination means MARK.
-                cflag_mark = (cflag | self.termios.PARENB | self.CMSPAR | self.termios.PARODD)
-                cflag_mark &= ~self.termios.CSTOPB # Ensure 1 stop bit
-                self.termios.tcsetattr(fd, self.termios.TCSANOW, [iflag, oflag, cflag_mark, lflag, ispeed, ospeed, cc])
-                self.serial_port.write(data_bytes[0:1]); self.serial_port.flush()
-                
-                if len(data_bytes) > 1: 
-                    time.sleep(0.001) # saswaittime from original script
-                    # Set SPACE parity for subsequent bytes
-                    # Use PARENB for parity enable, clear PARODD for EVEN parity. With CMSPAR, this means SPACE.
-                    cflag_space = (cflag | self.termios.PARENB | self.CMSPAR) & ~self.termios.PARODD
-                    cflag_space &= ~self.termios.CSTOPB # Ensure 1 stop bit
-                    self.termios.tcsetattr(fd, self.termios.TCSANOW, [iflag, oflag, cflag_space, lflag, ispeed, ospeed, cc])
-                    self.serial_port.write(data_bytes[1:]); self.serial_port.flush()
-                    
-                    # After a multi-byte command, restore original cflag (PARITY_NONE settings)
-                    self.termios.tcsetattr(fd, self.termios.TCSANOW, [iflag, oflag, original_cflag, lflag, ispeed, ospeed, cc])
-                # If it was a single-byte command (like a poll), the cflag is left with MARK parity settings.
-                # The next call to tcgetattr() at the start of this method for the *next* command
-                # will get this MARK-configured cflag as its 'original_cflag', which is then correctly
-                # re-configured for MARK for its first byte, and then restored to PARITY_NONE if multi-byte.
-                # This matches the implicit behavior of the original script.
-            except Exception as e: 
-                self.logger(f"Error setting termios Mark/Space parity: {e}. Sending with port's current parity ({self.serial_port.parity}).")
-                try: # Attempt to restore original cflag on error
-                    if 'original_cflag' in locals() and 'fd' in locals(): # Ensure fd and original_cflag are defined
-                         self.termios.tcsetattr(fd, self.termios.TCSANOW, [iflag, oflag, original_cflag, lflag, ispeed, ospeed, cc])
-                except: pass 
-                self.serial_port.write(data_bytes); self.serial_port.flush() # Fallback
-        else: 
-            # For Windows, or device types 1, 4, 11 (Novomatic, Octavian, Interblock)
-            # These use the port's currently configured parity (PARITY_NONE or PARITY_EVEN)
-            self.serial_port.write(data_bytes); self.serial_port.flush()
-
-    def send_general_poll(self): 
-        if not self.is_port_open: return
-        poll_byte_to_send = "81" if self.last_sent_poll_type == 80 else "80"
-        self.logger(f"TX Poll Byte (regular operation): {poll_byte_to_send}")
-        # General polls are single bytes. _send_raw_command_platform_specific will handle
-        # applying Mark/Space via termios if needed for this device type, leaving the
-        # port in MARK state if it's a single byte termios send.
-        self._send_raw_command_platform_specific(poll_byte_to_send)
-        self.last_sent_poll_type = int(poll_byte_to_send, 16)
-
-    def send_specific_command_for_test(self, command_body_no_addr="54"):
-        if not self.is_port_open: self.logger(f"Cannot send test command '{command_body_no_addr}', port not open."); return
-        command_with_addr = self.sas_address + command_body_no_addr
-        full_command_hex_to_send = get_crc(command_with_addr)
-        self.logger(f"TX SAS Test Cmd ('{command_body_no_addr}'): {full_command_hex_to_send}")
-        self._send_raw_command_platform_specific(full_command_hex_to_send)
-
-    def send_command(self, command_name, command_body_hex_no_addr, add_address_and_crc=True):
-        if not self.is_port_open: self.logger(f"Cannot send '{command_name}', port not open."); return
-        full_command_hex_to_send = command_body_hex_no_addr
-        if add_address_and_crc:
-            command_with_addr = self.sas_address + command_body_hex_no_addr
-            full_command_hex_to_send = get_crc(command_with_addr)
-        self.logger(f"TX SAS ('{command_name}'): {full_command_hex_to_send}")
-        self._send_raw_command_platform_specific(full_command_hex_to_send)
-        
-    def receive_data(self, timeout_override=None, expect_long_response=False): 
-        if not self.is_port_open or not self.serial_port: self.logger("SAS port not open."); return None
-        original_timeout = self.serial_port.timeout
-        actual_timeout = timeout_override if timeout_override is not None else self.timeout
-        buffer = bytearray()
-        try:
-            self.serial_port.timeout = actual_timeout if not expect_long_response else max(actual_timeout, 0.2) 
-            # Read with a small blocking timeout initially
-            initial_chunk = self.serial_port.read(1) # Try to read at least one byte
-            if initial_chunk:
-                buffer.extend(initial_chunk)
-                # Poll for more data with very short delays if in_waiting suggests more
-                # This aims to collect any immediately trailing bytes of a fragmented message
-                for _ in range(20): # Try up to 20 times * 5ms = 100ms for trailing bytes
-                    if self.serial_port.in_waiting > 0:
-                        buffer.extend(self.serial_port.read(self.serial_port.in_waiting))
-                    else:
-                        # If nothing in buffer after a short wait, and we already have some data, assume message ended
-                        if len(buffer) > 0: 
-                            time.sleep(0.005) # Shortest practical sleep
-                            if self.serial_port.in_waiting == 0: break 
-                        else: # No initial data and nothing in buffer, means timeout on first byte
-                            break 
+    def _send_sas_port(self, command_hex):
+        """Send raw hex to SAS port - EXACTLY like working code's SendSASPORT"""
+        if not self.is_port_open or not self.serial_port:
+            return
             
-        except serial.SerialTimeoutException: 
-            if not buffer: # Only log timeout if nothing was received at all
-                self.logger(f"SAS receive timeout on {self.port_name}.")
-        except Exception as e: self.logger(f"Error receiving SAS data: {e}")
-        finally: self.serial_port.timeout = original_timeout
-        hex_data = buffer.hex().upper()
-        if hex_data: self.logger(f"RX SAS: {hex_data}")
-        return hex_data if hex_data else None
+        try:
+            data_bytes = decode_to_hex(command_hex)
+            self.serial_port.write(data_bytes)
+            # CRITICAL: Flush input like working code
+            # self.serial_port.flushInput()  # Commented in working code
+        except Exception as e:
+            print(f"Error in _send_sas_port: {e}")
 
-    def _parse_sas_message(self, message_hex): 
-        if not message_hex or len(message_hex) < 2: return None
-        parsed_data = {"raw": message_hex, "type": "unknown", "address_match": False}
-        received_address = message_hex[0:2]
-        if received_address == self.sas_address:
-            parsed_data["address_match"] = True
-            command_byte = message_hex[2:4] if len(message_hex) >= 4 else None
-            parsed_data["command_byte"] = command_byte
-            if command_byte == "72": parsed_data["type"] = "AFT_RESPONSE"; parsed_data["transfer_status"] = message_hex[8:10] if len(message_hex) >= 10 else None
-            elif command_byte == "74": parsed_data["type"] = "BALANCE_INFO"; parsed_data["asset_number_resp"] = message_hex[6:14] if len(message_hex) >= 14 else None; parsed_data["game_lock_status"] = message_hex[14:16] if len(message_hex) >= 16 else None
-            elif command_byte == "54": parsed_data["type"] = "SAS_VERSION_INFO"; parsed_data["sas_version"] = hex_to_int(message_hex[8:14]) if len(message_hex) >= 14 else None
-            elif command_byte == "73" and len(message_hex) >= 16: parsed_data["type"] = "ASSET_INFO_RESPONSE"; parsed_data["registration_status"] = message_hex[6:8]; parsed_data["asset_number_hex_reversed"] = message_hex[8:16]
-            elif command_byte == "FF": parsed_data["type"] = "GENERAL_EXCEPTION_FROM_EGM"; parsed_data["exception_code"] = message_hex[4:6] if len(message_hex) >=6 else None
-        elif len(message_hex) == 2 and (message_hex == "80" or message_hex == "81"): parsed_data["type"] = "UNEXPECTED_POLL_BYTE_AS_RESPONSE"
-        elif message_hex.startswith("FF"): parsed_data["type"] = "GENERAL_EXCEPTION_UNKNOWN_SOURCE"; parsed_data["exception_code"] = message_hex[2:4] if len(message_hex) >= 4 else None
-        return parsed_data
+    def send_sas_command(self, command_hex):
+        """Send SAS command - EXACTLY matching working code's SendSASCommand"""
+        
+        command_hex = command_hex.replace(" ", "")
+        
+        # Update last sent times like working code
+        if command_hex == "81":
+            self.last_81_time = datetime.datetime.now()
+            self.last_sent_poll_type = 81
+            
+        if command_hex == "80":
+            self.last_80_time = datetime.datetime.now()
+            self.last_sent_poll_type = 80
 
-    def process_received_message(self, message_hex): 
-        if not message_hex: return None
-        parsed_message = self._parse_sas_message(message_hex)
-        if parsed_message and parsed_message["address_match"]: self.logger(f"Processed SAS Message: {parsed_message}")
-        elif parsed_message: self.logger(f"Ignored SAS Message (no address match or unhandled): {parsed_message}"); return None
-        return parsed_message
+        # Log like working code
+        if len(command_hex) >= 3:
+            print("TX: ", self.device_type_id, command_hex, self.serial_port.port, datetime.datetime.now())
 
-    def request_balance_info(self, lock_request_code="FF", for_info=True):
-        lock_timeout_bcd = "0000"
-        if lock_request_code != "FF" and lock_request_code != "00": lock_timeout_bcd = "9000"
-        self.send_command("RequestBalanceInfo", f"74{lock_request_code}{lock_timeout_bcd}")
-
-    def cancel_aft_lock(self): self.send_command("CancelAFTLock", "7480030000")
-    def get_sas_version_and_serial(self): self.send_command("GetSASVersion", "54")
-    def get_asset_number_info(self): self.send_command("ReadAssetNumber", "7301FF")
-
-class AssetManager: 
-    def __init__(self, sas_communicator, config_manager_instance):
-        self.sas_comm = sas_communicator; self.config_manager = config_manager_instance
-        self.current_asset_number_int = 0
-        self.current_asset_number_hex_reversed = self.config_manager.get('sas', 'assetnumber', '00000000')
-        self.registration_key = self.config_manager.get('sas', 'registrationkey', '0000000000000000000000000000000000000000')
-        self.logger = self.config_manager.logger
-        if self.current_asset_number_hex_reversed and self.current_asset_number_hex_reversed != '00000000':
-            self.current_asset_number_int = self._read_asset_to_int(self.current_asset_number_hex_reversed)
-    def _get_asset_binary(self, asset_int):
-        hex_str = hex(int(asset_int)).split('x')[-1].upper().zfill(8)
-        return "".join(reversed([hex_str[i:i+2] for i in range(0, len(hex_str), 2)])).ljust(8, '0')[:8]
-    def _read_asset_to_int(self, rev_hex_8_chars):
-        if len(rev_hex_8_chars) != 8: self.logger(f"Warn: Asset hex '{rev_hex_8_chars}' not 8 chars."); return 0
-        norm_hex = "".join(reversed([rev_hex_8_chars[i:i+2] for i in range(0, len(rev_hex_8_chars), 2)]))
-        try: return int(norm_hex, 16)
-        except ValueError: self.logger(f"Error converting asset hex '{norm_hex}' to int."); return 0
-    def update_asset_info_from_sas_response(self, parsed_sas_message):
-        if not parsed_sas_message: return
-        asset_hex_from_resp = None
-        if parsed_sas_message.get("type") == "ASSET_INFO_RESPONSE": asset_hex_from_resp = parsed_sas_message.get("asset_number_hex_reversed")
-        elif parsed_sas_message.get("type") == "BALANCE_INFO": asset_hex_from_resp = parsed_sas_message.get("asset_number_resp")
-        if asset_hex_from_resp and len(asset_hex_from_resp) == 8:
-            new_asset_int = self._read_asset_to_int(asset_hex_from_resp)
-            if new_asset_int != 0 and new_asset_int != self.current_asset_number_int :
-                self.logger(f"Asset number updated from SAS: {new_asset_int} (Hex: {asset_hex_from_resp})")
-                self.current_asset_number_int = new_asset_int; self.current_asset_number_hex_reversed = asset_hex_from_resp
-                self.config_manager.set_value('sas', 'assetnumber', self.current_asset_number_hex_reversed)
-            elif new_asset_int == 0 and asset_hex_from_resp != "00000000": self.logger(f"Warn: Read asset {asset_hex_from_resp} converted to 0.")
-    def read_asset_from_machine(self): self.logger("Requesting asset number..."); self.sas_comm.get_asset_number_info()
-    def register_asset_on_machine(self, asset_num_to_reg_int=None, mode="register"):
-        asset_int = asset_num_to_reg_int if asset_num_to_reg_int is not None else self.current_asset_number_int
-        asset_hex = self.current_asset_number_hex_reversed
-        if asset_int != 0: asset_hex = self._get_asset_binary(asset_int)
-        elif self.current_asset_number_int == 0 and self.current_asset_number_hex_reversed == '00000000': self.logger("Asset 0 not configured.")
-        reg_mode = "00" if mode == "register" else "01"; pos_id = "00000000"
-        cmd_payload = f"1D{reg_mode}{asset_hex}{self.registration_key}{pos_id}"
-        self.logger(f"Registering asset: {asset_int} (Hex: {asset_hex}), Mode: {mode}")
-        self.sas_comm.send_command("RegisterAssetNumber", "73" + cmd_payload, add_address_and_crc=True)
-
-class AFTHandler: 
-    def __init__(self, sas_communicator, config_manager_instance, asset_manager):
-        self.sas_comm = sas_communicator; self.config_manager = config_manager_instance; self.asset_manager = asset_manager
-        self.is_transfer_in_progress = False; self.last_transfer_status = None
-        self.current_transaction_id = int(self.config_manager.get('payment', 'transactionid', 0))
-        self.logger = self.config_manager.logger
-    def _get_next_transaction_id(self, increment=True):
-        if increment: self.current_transaction_id = (self.current_transaction_id % 255)+1; self.config_manager.set_value('payment', 'transactionid', self.current_transaction_id)
-        return self.current_transaction_id
-    def _format_amount_bcd(self, amount_decimal, num_bytes=5): return add_left_bcd(str(int(amount_decimal*100)), num_bytes)
-    def _construct_aft_payload(self, transfer_type_byte, cash_amt, rest_amt, non_rest_amt, pool_id_hex):
-        tx_id = self._get_next_transaction_id(); tx_id_hex = "".join(f"{ord(c):02x}" for c in str(tx_id)); tx_id_len_hex = f"{int(len(tx_id_hex)/2):02x}".zfill(2)
-        asset_num_hex = self.asset_manager.current_asset_number_hex_reversed; reg_key_hex = self.asset_manager.registration_key
-        payload = "0000" + transfer_type_byte + self._format_amount_bcd(cash_amt, 5) + self._format_amount_bcd(rest_amt, 5) + self._format_amount_bcd(non_rest_amt, 5)
-        transfer_flags = "07"; 
-        if self.config_manager.getint('machine', 'config_is_cashout_soft', 0) == 1: transfer_flags = "03"
-        if transfer_type_byte == "0B": transfer_flags = "0B" # Handpay
-        payload += transfer_flags + asset_num_hex + reg_key_hex + tx_id_len_hex + tx_id_hex + "00000000" + pool_id_hex + "00"
-        return payload, tx_id
-    def transfer_to_machine(self, cash_amt, rest_amt, non_rest_amt, transfer_type="00", pool_id="0000"):
-        if self.is_transfer_in_progress: self.logger("AFT Error: Transfer in progress."); return False
-        self.is_transfer_in_progress = True; self.last_transfer_status = "PENDING_TO_MACHINE"
-        payload, tx_id = self._construct_aft_payload(transfer_type, cash_amt, rest_amt, non_rest_amt, pool_id)
-        cmd_len_hex = f"{int(len(payload)/2):02x}".zfill(2); cmd_body_no_addr = f"72{cmd_len_hex}{payload}"
-        self.sas_comm.send_command("AFT_TransferToMachine", cmd_body_no_addr, add_address_and_crc=True)
-        self.logger(f"AFT to machine: TxID {tx_id}, C {cash_amt}, R {rest_amt}, NR {non_rest_amt}"); return True
-    def transfer_from_machine(self, cash_amt, rest_amt, non_rest_amt, transfer_type="80", pool_id="0000"):
-        if self.is_transfer_in_progress: self.logger("AFT Error: Transfer in progress."); return False
-        self.is_transfer_in_progress = True; self.last_transfer_status = "PENDING_FROM_MACHINE"
-        payload, tx_id = self._construct_aft_payload(transfer_type, cash_amt, rest_amt, non_rest_amt, pool_id)
-        cmd_len_hex = f"{int(len(payload)/2):02x}".zfill(2); cmd_body_no_addr = f"72{cmd_len_hex}{payload}"
-        self.sas_comm.send_command("AFT_TransferFromMachine", cmd_body_no_addr, add_address_and_crc=True)
-        self.logger(f"AFT from machine: TxID {tx_id}, ExpC {cash_amt}, ExpR {rest_amt}"); return True
-    def update_transfer_status(self, sas_parsed_response):
-        if sas_parsed_response and sas_parsed_response.get("type") == "AFT_RESPONSE":
-            status_code = sas_parsed_response.get("transfer_status"); self.last_transfer_status = status_code
-            if status_code == "00": self.logger("AFT successful."); self.is_transfer_in_progress = False
-            elif status_code == "40": self.logger("AFT pending...")
-            else: self.logger(f"AFT status: {status_code}"); self.is_transfer_in_progress = False
-
-class BillAcceptorHandler: 
-    def __init__(self, port_name_or_sas_comm, config_manager_instance, acceptor_type_id):
-        self.config_manager = config_manager_instance; self.acceptor_type_id = acceptor_type_id
-        self.port_name = None; self.serial_port = None; self.sas_communicator = None
-        self.is_enabled_hw = False; self.is_enabled_sas = False; self.mei_last_ack_nack = "10"; self.last_bill_escrowed = None
-        self.logger = self.config_manager.logger
-        if self.acceptor_type_id == 0:
-            if not isinstance(port_name_or_sas_comm, SASCommunicator): raise ValueError("SASComm for SAS BA.")
-            self.sas_communicator = port_name_or_sas_comm; self.logger("BA: SAS controlled.")
+        # CRITICAL: Device type specific sending logic - EXACTLY like working code
+        if self.device_type_id == 1 or self.device_type_id == 4:
+            # Novomatic/Octavian - just send normally
+            self._send_sas_port(command_hex)
         else:
-            self.port_name = port_name_or_sas_comm; self.baudrate = 9600; self.parity = serial.PARITY_EVEN
-            self.bytesize = serial.SEVENBITS if acceptor_type_id == 2 else serial.EIGHTBITS
-            self.logger(f"BA: Direct serial {self.port_name}, type {acceptor_type_id}")
-    def _open_direct_port(self):
-        if self.acceptor_type_id == 0 or not self.port_name: return True
-        if self.serial_port and self.serial_port.is_open: return True
-        try:
-            self.serial_port = serial.Serial(port=self.port_name, baudrate=self.baudrate, parity=self.parity,
-                                             bytesize=self.bytesize, stopbits=serial.STOPBITS_ONE, timeout=0.1)
-            self.logger(f"BA port {self.port_name} opened."); return True
-        except serial.SerialException as e: self.logger(f"Error opening BA port {self.port_name}: {e}"); return False
-    def _close_direct_port(self):
-        if self.serial_port and self.serial_port.is_open: self.serial_port.close(); self.logger(f"BA port {self.port_name} closed.")
-    def _send_direct_command(self, cmd_hex):
-        if self.acceptor_type_id == 0 or not self.serial_port or not self.serial_port.is_open: self.logger("BA: No direct send."); return
-        try: self.serial_port.write(decode_to_hex(cmd_hex))
-        except Exception as e: self.logger(f"Error sending direct BA cmd: {e}")
-    def _receive_direct_data(self, num_bytes=None):
-        if self.acceptor_type_id == 0 or not self.serial_port or not self.serial_port.is_open: return None
-        try:
-            data = self.serial_port.read(self.serial_port.in_waiting or 1) if not num_bytes else self.serial_port.read(num_bytes)
-            return data.hex().upper() if data else None
-        except Exception as e: self.logger(f"Error receiving direct BA data: {e}"); return None
-    def _get_mei_ack(self): self.mei_last_ack_nack = "11" if self.mei_last_ack_nack == "10" else "10"; return self.mei_last_ack_nack
-    def _get_mei_msg_crc(self, cmd_body_no_crc):
-        temp_cmd = cmd_body_no_crc.replace(" ", "") + "00"; hex_data = decode_to_hex(temp_cmd); bcc = 0
-        for i in range(1, len(hex_data) - 1): bcc ^= hex_data[i]
-        return cmd_body_no_crc.replace(" ", "") + f"{bcc:02X}"
-    def enable(self):
-        if self.acceptor_type_id == 0: self.sas_communicator.send_command("EnableBASAS", "06"); self.is_enabled_sas = True
-        elif self.acceptor_type_id == 1: self._send_direct_command("FC06C30004D6"); self.is_enabled_hw = True
-        elif self.acceptor_type_id == 2: cmd = self._get_mei_msg_crc(f"0208{self._get_mei_ack()}7F1C1003"); self._send_direct_command(cmd); self.is_enabled_hw = True
-        self.logger("BA enabled.")
-    def disable(self):
-        if self.acceptor_type_id == 0: self.sas_communicator.send_command("DisableBASAS", "07"); self.is_enabled_sas = False
-        elif self.acceptor_type_id == 1: self._send_direct_command("FC06C3018DC7"); self.is_enabled_hw = False
-        elif self.acceptor_type_id == 2: cmd = self._get_mei_msg_crc(f"0208{self._get_mei_ack()}001C1003"); self._send_direct_command(cmd); self.is_enabled_hw = False
-        self.logger("BA disabled.")
-    def request_status(self):
-        if self.acceptor_type_id == 1: self._send_direct_command("FC05112756")
-        elif self.acceptor_type_id == 2:
-            ack = self._get_mei_ack(); cmd_body = f"0208{ack}7F1C1003" if self.is_enabled_hw else f"0208{ack}001C1003"
-            self._send_direct_command(self._get_mei_msg_crc(cmd_body))
-    def poll_events(self):
-        if self.acceptor_type_id == 0: return None
-        raw_data = self._receive_direct_data()
-        if not raw_data: return None
-        if self.acceptor_type_id == 2 and raw_data.startswith("02"): self.logger(f"MEI Data: {raw_data} - Needs parsing")
-        return {"event_type": "BILL_STATUS", "data": raw_data, "port": self.port_name}
-
-class CardReaderHandler: 
-    def __init__(self, port_name_or_lib_path, config_manager_instance, reader_type_id):
-        self.config_manager = config_manager_instance; self.reader_type_id = reader_type_id
-        self.port_name = None; self.serial_port = None; self.crt_lib = None
-        self.is_card_present = False; self.current_card_uid = None; self.last_card_status_crt288b = 0
-        self.logger = self.config_manager.logger
-        if self.reader_type_id == 1: self.lib_path = port_name_or_lib_path; self._init_crt288b()
-        else: self.port_name = port_name_or_lib_path; self.baudrate = 9600
-    def _init_crt288b(self):
-        if platform.system().startswith("Window"): self.logger("CRT288B .so lib not for Windows."); return
-        try: self.crt_lib = ctypes.CDLL(self.lib_path); self.logger(f"CRT288B lib loaded: {self.lib_path}")
-        except Exception as e: self.logger(f"Error loading CRT288B lib: {e}"); self.crt_lib = None
-    def _open_serial_port(self):
-        if self.reader_type_id == 1 or not self.port_name: return True
-        if self.serial_port and self.serial_port.is_open: return True
-        try:
-            self.serial_port = serial.Serial(port=self.port_name, baudrate=self.baudrate, timeout=0.1)
-            if self.reader_type_id == 2: self.serial_port.bytesize=serial.EIGHTBITS; self.serial_port.parity=serial.PARITY_NONE; self.serial_port.stopbits=serial.STOPBITS_ONE
-            self.logger(f"CR port {self.port_name} opened."); return True
-        except serial.SerialException as e: self.logger(f"Error opening CR port {self.port_name}: {e}"); return False
-    def _close_serial_port(self):
-        if self.serial_port and self.serial_port.is_open: self.serial_port.close(); self.logger(f"CR port {self.port_name} closed.")
-    def _send_rcloud_command(self, cmd_hex):
-        if not self.serial_port or not self.serial_port.is_open: return
-        try: self.serial_port.write(decode_to_hex(cmd_hex))
-        except Exception as e: self.logger(f"Error sending rCloud cmd: {e}")
-    def _receive_rcloud_data(self):
-        if not self.serial_port or not self.serial_port.is_open: return None
-        buffer = bytearray()
-        try:
-            if self.serial_port.in_waiting > 0: buffer.extend(self.serial_port.read(self.serial_port.in_waiting))
-            return buffer.hex().upper() if buffer else None
-        except Exception as e: self.logger(f"Error receiving rCloud data: {e}"); return None
-    def check_for_card(self):
-        uid, present = None, False
-        if self.reader_type_id == 1:
-            if not self.crt_lib: return "ERROR", None
             try:
-                arr=(ctypes.c_ubyte*1024)(); open_res=self.crt_lib.CRT288B_OpenDev(ctypes.c_int(0),ctypes.c_int(0),ctypes.c_int(0))
-                if open_res == -5: self.last_card_status_crt288b = -5; return "ERROR", None
-                self.last_card_status_crt288b=open_res; res=self.crt_lib.CRT288B_GetCardUID(arr); self.crt_lib.CRT288B_CloseDev()
-                if res > 0: raw=bytearray(arr[:res]).hex().upper(); uid=raw[6:14] if raw.startswith("590400") and len(raw)>=14 else (raw if len(raw)==8 else None); present=bool(uid)
-            except Exception as e: self.logger(f"Error CRT288B: {e}"); return "ERROR", None
-        elif self.reader_type_id == 2:
-            self._send_rcloud_command("02000235310307"); time.sleep(0.05); resp=self._receive_rcloud_data()
-            if resp and resp.startswith("0200073531") and len(resp) >= 22:
-                uid_start = resp.find("3531")+4
-                if uid_start!=3 and len(resp) >= uid_start+8: uid=resp[uid_start:uid_start+8]; present=True
-            elif resp and resp.startswith("0200033531"): present=False
-        if present and not self.is_card_present: self.is_card_present=True; self.current_card_uid=uid; return "CARD_INSERTED", uid
-        elif not present and self.is_card_present: old_uid=self.current_card_uid; self.is_card_present=False; self.current_card_uid=None; return "CARD_REMOVED", old_uid
-        if present and self.is_card_present and self.current_card_uid != uid: old_uid=self.current_card_uid; self.current_card_uid=uid; return "CARD_SWAPPED", (old_uid, uid)
-        return "NO_CHANGE", self.current_card_uid
+                # Determine sending method like working code
+                is_new_sending_msg = 0
+                if self.is_communication_by_windows == 1 or self.device_type_id == 11:
+                    is_new_sending_msg = 1
+                    
+                if self.device_type_id == 6:
+                    is_new_sending_msg = 0
 
-class SlotMachineApplication: 
-    def __init__(self, config_file_path="settings.ini"):
-        self.config_file_path = config_file_path; self.config = None; self.port_mgr = None
-        self.sas_comm = None; self.asset_mgr = None; self.aft_handler = None
-        self.bill_acceptor_handler = None; self.card_reader_handler = None
-        self.running = False; self.sas_poll_timer = None; self.card_read_timer = None; self.bill_acceptor_poll_timer = None
-        self.logger = print
-    def _delete_config_file(self):
-        if os.path.exists(self.config_file_path):
-            try: os.remove(self.config_file_path); self.logger(f"Removed config: {self.config_file_path}")
-            except OSError as e: self.logger(f"Error removing config {self.config_file_path}: {e}")
-    def _setup_configuration_and_ports(self):
-        self._delete_config_file(); self.config = ConfigManager(self.config_file_path); self.logger = self.config.logger
-        self.port_mgr = PortManager(self.config); self.port_mgr.find_available_serial_ports()
-        self.port_mgr.find_and_assign_sas_port(); self.port_mgr.find_and_assign_card_reader_port(); self.port_mgr.find_and_assign_bill_acceptor_port()
-        self.config.set_value('sas', 'port', self.port_mgr.sas_port_name)
-        self.config.set_value('cardreader', 'port_or_path', self.port_mgr.card_reader_port_name)
-        self.config.set_value('billacceptor', 'port', self.port_mgr.bill_acceptor_port_name)
-        self.config.apply_operational_defaults(); self.config.save()
-        self.logger("Initial config and port detection complete.")
-    def initialize_components(self):
-        self.logger("Initializing components based on detected/configured ports...")
-        if self.port_mgr.sas_port_name:
-            self.sas_comm = SASCommunicator(self.port_mgr.sas_port_name, self.config)
-            if self.sas_comm.open_port(): 
-                self.asset_mgr = AssetManager(self.sas_comm, self.config); self.aft_handler = AFTHandler(self.sas_comm, self.config, self.asset_mgr)
-            else: self.logger(f"Failed to open SAS port {self.port_mgr.sas_port_name}"); self.sas_comm = None
-        else: self.logger("SAS port was not assigned.")
-        if self.port_mgr.card_reader_port_name:
-            reader_type = self.config.getint('cardreader', 'type', 2)
-            self.card_reader_handler = CardReaderHandler(self.port_mgr.card_reader_port_name, self.config, reader_type)
-            if reader_type != 1 and not self.card_reader_handler._open_serial_port():
-                self.logger(f"Failed to open CR port {self.port_mgr.card_reader_port_name}"); self.card_reader_handler = None
-        else: self.logger("CR port/path was not assigned.")
-        ba_type = self.config.getint('billacceptor', 'typeid', 0)
-        if ba_type != 0:
-            if self.port_mgr.bill_acceptor_port_name:
-                self.bill_acceptor_handler = BillAcceptorHandler(self.port_mgr.bill_acceptor_port_name, self.config, ba_type)
-                if not self.bill_acceptor_handler._open_direct_port(): self.logger(f"Failed to open BA port {self.port_mgr.bill_acceptor_port_name}"); self.bill_acceptor_handler = None
-            else: self.logger("Direct serial BA port not assigned.")
-        elif self.sas_comm: self.bill_acceptor_handler = BillAcceptorHandler(self.sas_comm, self.config, 0)
-        else: self.logger("BA SAS controlled, but SAS comm unavailable.")
-        self.logger("Component initialization finished.")
-    def _sas_polling_loop(self):
-        if not self.running or not self.sas_comm or not self.sas_comm.is_port_open: return
-        self.sas_comm.send_general_poll(); response_hex = self.sas_comm.receive_data(timeout_override=0.05)
-        if response_hex:
-            parsed_msg = self.sas_comm.process_received_message(response_hex)
-            if parsed_msg and self.asset_mgr: self.asset_mgr.update_asset_info_from_sas_response(parsed_msg)
-        if self.running: self.sas_poll_timer = threading.Timer(0.04, self._sas_polling_loop); self.sas_poll_timer.daemon=True; self.sas_poll_timer.start()
-    def _card_reader_loop(self):
-        if not self.running or not self.card_reader_handler: return
-        event, uid_data = self.card_reader_handler.check_for_card()
-        if event=="CARD_INSERTED": self.logger(f"MainApp: Card Inserted - UID: {uid_data}")
-        elif event=="CARD_REMOVED": self.logger(f"MainApp: Card Removed - UID: {uid_data}")
-        elif event=="ERROR": self.logger("MainApp: Card Reader Error")
-        if self.running:
-            interval = 0.5; 
-            if self.card_reader_handler.reader_type_id == 2: interval = 0.1 
-            self.card_read_timer = threading.Timer(interval, self._card_reader_loop); self.card_read_timer.daemon=True; self.card_read_timer.start()
-    def _bill_acceptor_loop(self):
-        if not self.running or not self.bill_acceptor_handler or self.bill_acceptor_handler.acceptor_type_id == 0: return
-        self.bill_acceptor_handler.request_status(); time.sleep(0.05)
-        event_data = self.bill_acceptor_handler.poll_events()
-        if event_data: self.logger(f"MainApp: BA Event - {event_data}")
-        if self.running: self.bill_acceptor_poll_timer = threading.Timer(0.2, self._bill_acceptor_loop); self.bill_acceptor_poll_timer.daemon=True; self.bill_acceptor_poll_timer.start()
-    def start(self):
-        self._setup_configuration_and_ports(); self.initialize_components(); self.running = True
-        if self.sas_comm and self.sas_comm.is_port_open: self._sas_polling_loop()
-        if self.card_reader_handler:
-            if self.card_reader_handler.reader_type_id != 1 and (not self.card_reader_handler.serial_port or not self.card_reader_handler.serial_port.is_open): self.card_reader_handler._open_serial_port()
-            if (self.card_reader_handler.reader_type_id == 1 and self.card_reader_handler.crt_lib) or \
-               (self.card_reader_handler.reader_type_id != 1 and self.card_reader_handler.serial_port and self.card_reader_handler.serial_port.is_open): self._card_reader_loop()
-        if self.bill_acceptor_handler and self.bill_acceptor_handler.acceptor_type_id != 0:
-            if not self.bill_acceptor_handler.serial_port or not self.bill_acceptor_handler.serial_port.is_open: self.bill_acceptor_handler._open_direct_port()
-            if self.bill_acceptor_handler.serial_port and self.bill_acceptor_handler.serial_port.is_open: self._bill_acceptor_loop()
-        self.logger("Slot Machine App Started. Ctrl+C to exit.")
+                if is_new_sending_msg == 1:  # Windows or Interblock
+                    sleeptime = 0.005
+                    if self.device_type_id == 11:
+                        sleeptime = 0.003
+                    
+                    # MARK parity for first byte
+                    if self.serial_port.parity != serial.PARITY_MARK:
+                        self.serial_port.parity = serial.PARITY_MARK
+                    self._send_sas_port(command_hex[0:2])
+                    time.sleep(sleeptime)
+                    
+                    # SPACE parity for rest
+                    if len(command_hex) > 2:
+                        if self.serial_port.parity != serial.PARITY_SPACE:
+                            self.serial_port.parity = serial.PARITY_SPACE
+                        self._send_sas_port(command_hex[2:])
+                        
+                else:
+                    # Linux with termios - EXACTLY like working code
+                    saswaittime = 0.001  # From working code comment: "2020-12-25 test ok gibi.."
+                    
+                    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port)
+                    
+                    CMSPAR = 0x40000000  # EXACTLY like working code
+                    
+                    # MARK parity for first byte
+                    cflag |= termios.PARENB | CMSPAR | termios.PARODD
+                    termios.tcsetattr(self.serial_port, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                    
+                    self._send_sas_port(command_hex[0:2])
+                    
+                    if len(command_hex) > 2:
+                        time.sleep(saswaittime)
+                        
+                        # SPACE parity for rest
+                        iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port)
+                        cflag |= termios.PARENB
+                        cflag &= ~termios.PARODD
+                        termios.tcsetattr(self.serial_port, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                        
+                        self._send_sas_port(command_hex[2:])
+                        
+            except Exception as e:
+                print(f"Error in send_sas_command: {e}")
+
+    def get_data_from_sas_port(self, is_message_sent=0):
+        """Receive data - EXACTLY like working code's GetDataFromSasPort"""
+        if not self.is_port_open or not self.serial_port:
+            return ""
+            
         try:
-            while self.running: time.sleep(1) 
-        except KeyboardInterrupt: self.logger("Shutdown requested.")
-        finally: self.shutdown()
+            data_left = self.serial_port.in_waiting
+            if data_left == 0:
+                return ""
+            
+            out = ''
+            read_count_timeout = 3  # From working code
+            
+            while read_count_timeout > 0:
+                read_count_timeout = read_count_timeout - 1
+                
+                while self.serial_port.in_waiting > 0:
+                    out += self.serial_port.read_all().hex()
+                    time.sleep(0.005)
+            
+            return out.upper()
+            
+        except Exception as e:
+            print(f"Error in get_data_from_sas_port: {e}")
+            return ""
+
+    def sas_send_command_with_queue(self, command_name, command, do_save_db=0):
+        """Send command with queue - EXACTLY like working code's SAS_SendCommand"""
+        try:
+            # Wait for pending command to clear - EXACTLY like working code
+            while len(self.pending_command) > 0:
+                time.sleep(0.01)
+            
+            if len(command) % 2 != 0:
+                print("PROBLEM BUYUK!!! Length not even")
+                return
+                
+            self.pending_command = command
+            
+            # Send immediately like working code
+            try:
+                self.send_command_if_exists()
+            except Exception as e:
+                print("Gondermede hata")
+                
+            # Clear the queue
+            self.pending_command = ""
+            
+        except Exception as e:
+            print(f"Error in sas_send_command_with_queue: {e}")
+
+    def send_command_if_exists(self):
+        """Send pending command - like working code's SendCommandIsExist"""
+        if len(self.pending_command) > 0:
+            self.send_sas_command(self.pending_command)
+
+    def send_general_poll(self):
+        """Send general poll - alternating 80/81 like working code"""
+        if not self.is_port_open:
+            return
+            
+        # Alternate between 80 and 81 like working code
+        if self.last_sent_poll_type == 80:
+            poll_command = "81"
+        else:
+            poll_command = "80"
+            
+        self.send_sas_command(poll_command)
+
+    def request_sas_version(self):
+        """Send 0x54 command like working code"""
+        command = get_crc("0154")
+        self.sas_send_command_with_queue("GetSASVersion", command, 1)
+
+    def request_balance_info(self, lock_code="00", timeout_bcd="9000"):
+        """Send 0x74 command like working code"""
+        command_body = f"74{lock_code}{timeout_bcd}"
+        command = get_crc(self.sas_address + command_body)
+        self.sas_send_command_with_queue("RequestBalanceInfo", command, 1)
+
+    def parse_message(self, message):
+        """Parse received message - EXACTLY like working code's ParseMessage"""
+        if not message:
+            return None, None, None, 0
+            
+        message_found = ""
+        message_found_crc = ""
+        message_rest_of_message = ""
+        message_important = 0
+        
+        # Check if length exists - EXACTLY like working code
+        is_length_exist = 0
+        if (message[0:4] == "0172" or message[0:4] == "0174" or 
+            message[0:4] == "012F" or message[0:4] == "0154" or message[0:4] == "01AF"):
+            is_length_exist = 1
+        
+        if is_length_exist == 1:
+            message_important = 1
+            message_length = (int(message[4:6], 16) * 2)
+            
+            message_found = message[0:message_length + 6 + 4]
+            message_found_crc = message[message_length + 6:message_length + 6 + 4]
+            message_rest_of_message = message[message_length + 6 + 4:len(message)]
+            
+        else:  # Messages without length
+            if message[0:4] == "01FF":
+                message_important = 1
+                message_length = 2
+                
+                message_found = message[4:6]
+                
+                # Specific message types like working code
+                if message_found == "4F":  # Bill accepted
+                    message_length = 8
+                if message_found == "69":  # AFT TRANSFER COMPLETED
+                    message_length = 2
+                if message_found == "7C":  # Legacy bonus pay
+                    message_length = 12
+                if message_found == "7E":  # Game started
+                    message_length = 10
+                if message_found == "7F":  # Game end
+                    message_length = 6
+                if message_found == "88":  # Reel stopped
+                    message_length = 4
+                if message_found == "8A":  # Game recall entered
+                    message_length = 6
+                if message_found == "8B":  # Card held
+                    message_length = 3
+                if message_found == "8C":  # Game selected
+                    message_length = 4
+                
+                message_length = ((message_length + 1) * 2)
+                message_found = message[0:message_length + 4]
+                message_found_crc = message[message_length:message_length + 4]
+                try:
+                    message_rest_of_message = message[message_length + 4 + 4:len(message)]
+                except:
+                    print("Parse error at 01FF")
+            else:
+                message_length = len(message)
+                message_found = message[0:message_length]
+                message_found_crc = message[message_length - 4:message_length]
+        
+        return message_found, message_found_crc, message_rest_of_message, message_important
+
+    def handle_received_sas_command(self, tdata):
+        """Handle received SAS command - core logic from working code"""
+        try:
+            if not tdata:
+                return
+                
+            tdata = tdata.replace(" ", "")
+            is_processed = 0
+            
+            print(f"RX SAS: {tdata}")
+            
+            # Simple responses that confirm communication
+            if tdata == "00" or tdata == "01" or tdata == "51":
+                is_processed = 1
+                print("Simple ACK received")
+                return
+                
+            if tdata == "81" or tdata == "80":
+                is_processed = 1
+                return
+                
+            # SAS Version response (0x54)
+            if tdata.startswith("0154"):
+                is_processed = 1
+                self._handle_sas_version_response(tdata)
+                return
+                
+            # Balance query response (0x74)
+            if tdata.startswith("0174"):
+                is_processed = 1
+                self._handle_balance_response(tdata)
+                return
+                
+            # AFT response (0x72)
+            if tdata.startswith("0172"):
+                is_processed = 1
+                self._handle_aft_response(tdata)
+                return
+                
+            # Exception messages (01FF)
+            if tdata.startswith("01FF"):
+                is_processed = 1
+                self._handle_exception_message(tdata)
+                return
+                
+            if not is_processed:
+                print(f"Unhandled SAS message: {tdata}")
+                
+        except Exception as e:
+            print(f"Error in handle_received_sas_command: {e}")
+
+    def _handle_sas_version_response(self, tdata):
+        """Handle SAS version response"""
+        try:
+            print("SAS Version response received")
+            if len(tdata) >= 10:
+                sas_version = tdata[6:12]  # 3 bytes for version
+                print(f"SAS Version: {sas_version}")
+                
+                # Serial number is the rest
+                serial_data = tdata[12:-4]  # Exclude CRC
+                print(f"Serial Number data: {serial_data}")
+                
+        except Exception as e:
+            print(f"Error parsing SAS version: {e}")
+
+    def _handle_balance_response(self, tdata):
+        """Handle balance query response"""
+        try:
+            print("Balance response received")
+            # This would contain balance parsing logic from Yanit_BakiyeSorgulama
+            # For now, just log that we got it
+            print(f"Balance data: {tdata}")
+            
+        except Exception as e:
+            print(f"Error parsing balance response: {e}")
+
+    def _handle_aft_response(self, tdata):
+        """Handle AFT response"""
+        try:
+            print("AFT response received")
+            if len(tdata) >= 14:
+                transfer_status = tdata[12:14]
+                print(f"AFT Transfer Status: {transfer_status}")
+                
+        except Exception as e:
+            print(f"Error parsing AFT response: {e}")
+
+    def _handle_exception_message(self, tdata):
+        """Handle exception messages (01FF)"""
+        try:
+            if len(tdata) >= 6:
+                exception_code = tdata[4:6]
+                print(f"Exception code: {exception_code}")
+                
+                # Specific exceptions like working code
+                if tdata == "01FF69DB5B":
+                    print("AFT Transfer is completed")
+                elif tdata.startswith("01FF7E"):
+                    print("Game started")
+                elif tdata.startswith("01FF7F"):
+                    print("Game ended")
+                elif tdata.startswith("01FF6A"):
+                    print("AFT request for host cashout")
+                    
+        except Exception as e:
+            print(f"Error parsing exception message: {e}")
+
+
+class PortManager:
+    """Port detection and management"""
+    
+    def __init__(self):
+        self.available_ports = []
+
+    def find_ports_linux(self):
+        """Find available ports on Linux - FIXED to find actual serial ports"""
+        self.available_ports = []
+        
+        # Check for USB serial ports
+        try:
+            import glob
+            usb_ports = glob.glob('/dev/ttyUSB*')
+            for port in usb_ports:
+                self.available_ports.append({
+                    'port_no': port,
+                    'is_used': False,
+                    'device_name': ''
+                })
+            print(f"Found USB ports: {usb_ports}")
+        except Exception as e:
+            print(f"Error finding USB ports: {e}")
+        
+        # Check for ACM ports (USB serial adapters)
+        try:
+            import glob
+            acm_ports = glob.glob('/dev/ttyACM*')
+            for port in acm_ports:
+                self.available_ports.append({
+                    'port_no': port,
+                    'is_used': False,
+                    'device_name': ''
+                })
+            print(f"Found ACM ports: {acm_ports}")
+        except Exception as e:
+            print(f"Error finding ACM ports: {e}")
+        
+        # Check for standard serial ports
+        try:
+            import glob
+            serial_ports = glob.glob('/dev/ttyS*')
+            # Only add first few serial ports to avoid testing too many
+            for port in serial_ports[:4]:  # Limit to first 4 serial ports
+                self.available_ports.append({
+                    'port_no': port,
+                    'is_used': False,
+                    'device_name': ''
+                })
+            print(f"Found serial ports: {serial_ports[:4]}")
+        except Exception as e:
+            print(f"Error finding serial ports: {e}")
+        
+        # Alternative method using pyserial if available
+        if not self.available_ports:
+            try:
+                import serial.tools.list_ports
+                ports = serial.tools.list_ports.comports()
+                for port in ports:
+                    self.available_ports.append({
+                        'port_no': port.device,
+                        'is_used': False,
+                        'device_name': f"{port.description}"
+                    })
+                print(f"Found ports via pyserial: {[p.device for p in ports]}")
+            except Exception as e:
+                print(f"Error using pyserial port detection: {e}")
+        
+        # If still no ports found, add some common defaults to test
+        if not self.available_ports:
+            print("No serial ports detected. Adding common defaults to test...")
+            common_ports = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyS0']
+            for port in common_ports:
+                self.available_ports.append({
+                    'port_no': port,
+                    'is_used': False,
+                    'device_name': 'default'
+                })
+        
+        print(f"Total ports to test: {len(self.available_ports)}")
+        for port in self.available_ports:
+            print(f"  - {port['port_no']}")
+            
+        return self.available_ports
+
+    def find_sas_port(self, config):
+        """Find SAS port by testing communication - like working code's FindPortForSAS"""
+        print("<FIND SAS PORT>-----------------------------------------------------------------")
+        
+        if not self.available_ports:
+            self.find_ports_linux()
+            
+        for port_info in self.available_ports:
+            if not port_info['is_used']:
+                port_name = port_info['port_no']
+                print(f"Testing SAS on port: {port_name}")
+                
+                # Try different device types like working code
+                for device_type in [8, 1, 2]:  # Try default first, then Novomatic types
+                    config.config.set('machine', 'devicetypeid', str(device_type))
+                    
+                    sas_comm = SASCommunicator(port_name, config)
+                    if sas_comm.open_port():
+                        print(f"Port {port_name} opened, testing communication...")
+                        
+                        # Test communication
+                        found_sas = False
+                        for attempt in range(10):  # 10 attempts like working code
+                            sas_comm.request_sas_version()
+                            time.sleep(0.1)
+                            
+                            response = sas_comm.get_data_from_sas_port()
+                            if response and ("0154" in response or len(response) > 6):
+                                print(f"SAS found on port {port_name} with device type {device_type}")
+                                found_sas = True
+                                break
+                                
+                            time.sleep(0.05)
+                        
+                        sas_comm.close_port()
+                        
+                        if found_sas:
+                            port_info['is_used'] = True
+                            port_info['device_name'] = 'sas'
+                            print("</FIND SAS PORT>-----------------------------------------------------------------")
+                            return port_name, device_type
+                            
+                print(f"No SAS found on port {port_name}")
+        
+        print("No SAS port found!")
+        print("</FIND SAS PORT>-----------------------------------------------------------------")
+        return None, None
+
+
+class SlotMachineApplication:
+    """Main application - simplified for SAS communication testing"""
+    
+    def __init__(self):
+        self.config = ConfigManager()
+        self.port_mgr = PortManager()
+        self.sas_comm = None
+        self.running = False
+        self.sas_poll_timer = None
+
+    def check_system_info(self):
+        """Check system and available ports"""
+        print("=== SYSTEM CHECK ===")
+        
+        # Check if we're running as root (needed for serial ports)
+        import os
+        print(f"Running as user: {os.getuid()} (0=root)")
+        
+        # Check for serial devices
+        print("\nChecking for serial devices:")
+        import glob
+        
+        dev_files = glob.glob('/dev/tty*')
+        print(f"All /dev/tty* devices: {len(dev_files)}")
+        
+        usb_files = glob.glob('/dev/ttyUSB*')
+        print(f"USB serial devices: {usb_files}")
+        
+        acm_files = glob.glob('/dev/ttyACM*')
+        print(f"ACM serial devices: {acm_files}")
+        
+        s_files = glob.glob('/dev/ttyS*')
+        print(f"Standard serial devices: {s_files[:5]}...")  # Show first 5
+        
+        # Check permissions
+        for port in usb_files + acm_files + s_files[:2]:
+            try:
+                import stat
+                st = os.stat(port)
+                mode = stat.filemode(st.st_mode)
+                print(f"  {port}: {mode}")
+            except:
+                print(f"  {port}: Cannot access")
+        
+        # Try pyserial detection
+        try:
+            import serial.tools.list_ports
+            ports = list(serial.tools.list_ports.comports())
+            print(f"\nPySerial detected ports:")
+            for port in ports:
+                print(f"  {port.device}: {port.description}")
+        except Exception as e:
+            print(f"\nPySerial detection failed: {e}")
+        
+        print("=== END SYSTEM CHECK ===\n")
+
+    def initialize_sas(self):
+        """Initialize SAS communication"""
+        print("Initializing SAS communication...")
+        
+        # First check system
+        self.check_system_info()
+        
+        # Find SAS port
+        sas_port, device_type = self.port_mgr.find_sas_port(self.config)
+        
+        if sas_port:
+            print(f"Using SAS port: {sas_port}, device type: {device_type}")
+            self.config.config.set('machine', 'devicetypeid', str(device_type))
+            
+            self.sas_comm = SASCommunicator(sas_port, self.config)
+            if self.sas_comm.open_port():
+                print("SAS communication initialized successfully!")
+                return True
+            else:
+                print("Failed to open SAS port")
+                return False
+        else:
+            print("No SAS port found")
+            return False
+
+    def sas_polling_loop(self):
+        """SAS polling loop"""
+        if not self.running or not self.sas_comm or not self.sas_comm.is_port_open:
+            return
+        
+        # Send poll
+        self.sas_comm.send_general_poll()
+        
+        # Check for response
+        time.sleep(0.05)  # Give time for response
+        response = self.sas_comm.get_data_from_sas_port()
+        if response:
+            self.sas_comm.handle_received_sas_command(response)
+        
+        # Schedule next poll
+        if self.running:
+            self.sas_poll_timer = threading.Timer(0.04, self.sas_polling_loop)  # 40ms like working code
+            self.sas_poll_timer.daemon = True
+            self.sas_poll_timer.start()
+
+    def test_sas_commands(self):
+        """Test basic SAS commands"""
+        if not self.sas_comm:
+            print("SAS not initialized")
+            return
+            
+        print("Testing SAS commands...")
+        
+        # Test SAS version
+        print("Requesting SAS version...")
+        self.sas_comm.request_sas_version()
+        time.sleep(0.2)
+        response = self.sas_comm.get_data_from_sas_port()
+        if response:
+            self.sas_comm.handle_received_sas_command(response)
+        
+        time.sleep(1)
+        
+        # Test balance query
+        print("Requesting balance info...")
+        self.sas_comm.request_balance_info()
+        time.sleep(0.2)
+        response = self.sas_comm.get_data_from_sas_port()
+        if response:
+            self.sas_comm.handle_received_sas_command(response)
+
+    def start(self):
+        """Start the application"""
+        print("Starting Slot Machine Application...")
+        
+        if not self.initialize_sas():
+            print("Failed to initialize SAS. Exiting.")
+            return
+        
+        self.running = True
+        
+        # Test some commands
+        self.test_sas_commands()
+        
+        # Start polling
+        self.sas_polling_loop()
+        
+        print("Application started. Press Ctrl+C to exit.")
+        try:
+            while self.running:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("Shutdown requested.")
+        finally:
+            self.shutdown()
+
     def shutdown(self):
-        self.logger("Shutting down..."); self.running = False
-        if self.sas_poll_timer: self.sas_poll_timer.cancel()
-        if self.card_read_timer: self.card_read_timer.cancel()
-        if self.bill_acceptor_poll_timer: self.bill_acceptor_poll_timer.cancel()
-        if self.sas_comm: self.sas_comm.close_port()
-        if self.card_reader_handler and self.card_reader_handler.reader_type_id != 1: self.card_reader_handler._close_serial_port()
-        if self.bill_acceptor_handler and self.bill_acceptor_handler.acceptor_type_id != 0: self.bill_acceptor_handler._close_direct_port()
-        if self.config: self.config.save()
-        self.logger("Shutdown complete.")
+        """Shutdown the application"""
+        print("Shutting down...")
+        self.running = False
+        
+        if self.sas_poll_timer:
+            self.sas_poll_timer.cancel()
+        
+        if self.sas_comm:
+            self.sas_comm.close_port()
+        
+        print("Shutdown complete.")
+
 
 if __name__ == "__main__":
-    app = SlotMachineApplication(config_file_path="settings.ini")
+    # Run the application
+    app = SlotMachineApplication()
     app.start()
