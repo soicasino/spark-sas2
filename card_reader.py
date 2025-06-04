@@ -109,6 +109,7 @@ class CardReader:
 
     def _poll_card_reader(self):
         while self.polling_active:
+            card_detected = False  # Initialize at the start of each loop
             try:
                 self._send_command_hex("02000235310307")
                 time.sleep(self.card_reader_interval)
@@ -154,13 +155,12 @@ class CardReader:
                         print(f"Card detected: {card_no}")
                         self.last_card_number = card_no
                         self.is_card_inside = True
-                    else:
-                        self.is_card_inside = False
-                    # Card eject detection
-                    if not card_detected and self.is_card_inside:
-                        print("Card ejected!")
-                        self.is_card_inside = False
-                        self.last_card_number = None
+                        card_detected = True
+                # Card eject detection
+                if not card_detected and self.is_card_inside:
+                    print("Card ejected!")
+                    self.is_card_inside = False
+                    self.last_card_number = None
             except Exception as e:
                 print(f"Polling error: {e}")
             time.sleep(self.card_reader_interval)
