@@ -128,6 +128,7 @@ class CardReader:
                         continue
                     tdata += out.hex().upper()
                 if tdata:
+                    print(f"[DEBUG] Raw card reader response: {tdata}")
                     card_no = self._extract_card_number(tdata)
                     if card_no and card_no != self.last_card_number:
                         print(f"Card detected: {card_no}")
