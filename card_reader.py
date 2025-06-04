@@ -130,7 +130,6 @@ class CardReader:
                 if tdata:
                     print(f"[DEBUG] Raw card reader response: {tdata}")
                     if tdata == "06":
-                        # Received ACK, now send ENQ and wait for card data
                         print("[DEBUG] Received ACK (06), sending ENQ (05)...")
                         self._send_command_hex("05")
                         tdata = ""
@@ -157,6 +156,11 @@ class CardReader:
                         self.is_card_inside = True
                     else:
                         self.is_card_inside = False
+                    # Card eject detection
+                    if not card_detected and self.is_card_inside:
+                        print("Card ejected!")
+                        self.is_card_inside = False
+                        self.last_card_number = None
             except Exception as e:
                 print(f"Polling error: {e}")
             time.sleep(self.card_reader_interval)
