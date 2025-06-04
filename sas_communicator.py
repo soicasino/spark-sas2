@@ -482,7 +482,7 @@ class SASCommunicator:
                 time.sleep(0.2)
                 response = self.get_data_from_sas_port()
                 if response and response.startswith('0173'):
-                    asset_hex = response[6:14]
+                    asset_hex = response[8:16]
                     if len(asset_hex) % 2 != 0:
                         asset_hex = '0' + asset_hex
                     # Reverse by bytes
