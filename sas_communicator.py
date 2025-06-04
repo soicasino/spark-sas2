@@ -564,4 +564,8 @@ class SASCommunicator:
         if self.card_reader and self.card_reader.is_card_reader_opened:
             print("[SAS] Card reader found and polling started.")
         else:
-            print("[SAS] No card reader found.") 
+            print("[SAS] No card reader found.")
+
+        if not any(p.get('port_no') == '/dev/ttyUSB0' or p.get('port') == '/dev/ttyUSB0' for p in port_list):
+            port_list.append({'port_no': '/dev/ttyUSB0', 'is_used': 0, 'device_name': ''})
+        print(f"[DEBUG] Port list for card reader: {port_list}") 

@@ -82,6 +82,7 @@ class SlotMachineApplication:
                     port_list = self.port_mgr.get_all_ports()
                 else:
                     port_list = []  # TODO: Implement get_all_ports in PortManager to return port info dicts
+                print(f"[DEBUG] Port list for card reader: {port_list}")  # <-- Print port list for debug
                 self.card_reader_thread = threading.Thread(
                     target=self.card_reader_thread_main, args=(port_list,), daemon=True)
                 print("[Main] Starting card reader thread...")
