@@ -126,7 +126,7 @@ class PortManager:
         for port_info in self.available_ports:
             if port_info["port_no"] == port_name:
                 port_info["is_used"] = True; port_info["device_name"] = device_name
-                self.logger(f"Locally assigned port {port_name} to {device_name}.") # Removed "for testing"
+                self.logger(f"Locally assigned port {port_name} to {device_name}.")
                 return True
         return False
 
@@ -135,40 +135,48 @@ class PortManager:
         for port_info in [p for p in self.available_ports if not p["is_used"]]:
             port_name = port_info['port_no']
             self.logger(f"Testing port {port_name} for SAS...")
-            # Pass the config_manager instance to SASCommunicator
             temp_sas_comm = SASCommunicator(port_name, self.config_manager)
-            if temp_sas_comm.open_port(): # open_port sends an initial "80" poll
-                time.sleep(0.2) # Increased delay for EGM to respond to the initial poll
-                initial_response = temp_sas_comm.receive_data()
-                
+            
+            # Mimic original OpenCloseSasPort(1,0)
+            if temp_sas_comm.open_sas_port_for_test(): 
                 sas_confirmed = False
-                if initial_response and initial_response.startswith(temp_sas_comm.sas_address):
-                    self.logger(f"SAS device responded on {port_name} to initial poll (response: {initial_response})")
-                    # Send Get SAS Version for further confirmation
-                    temp_sas_comm.get_sas_version_and_serial() # This sends "0154..."
-                    time.sleep(0.25) # Allow time for this specific command
-                    version_response = temp_sas_comm.receive_data()
-                    if version_response and version_response.startswith(temp_sas_comm.sas_address + "54"):
-                        self.logger(f"SAS Get Version successful on {port_name}.")
+                # Loop to send "0154" command multiple times, like original FindPortForSAS
+                for attempt in range(10): # Original script had a loop of 10
+                    self.logger(f"SAS detection on {port_name}: Attempt {attempt+1}/10 to get SAS version...")
+                    
+                    # Mimic original SendSASCommand("0154")
+                    temp_sas_comm.send_specific_command_for_test("54") # Sends "0154" + CRC with Mark/Space if needed
+                    time.sleep(0.15) # Increased from 0.1 to allow more response time after command
+                    
+                    # Mimic original GetDataFromSasPort(1)
+                    response = temp_sas_comm.receive_data(expect_long_response=False) # expect_long_response=False for version
+                    
+                    if response and response.startswith(temp_sas_comm.sas_address + "54"):
+                        self.logger(f"SAS Get Version successful on {port_name}. SAS Port Confirmed. Response: {response}")
                         sas_confirmed = True
+                        break 
+                    elif response and response.startswith(temp_sas_comm.sas_address):
+                        self.logger(f"Received other valid SAS response ({response}) on {port_name} after 0x54. SAS Port Confirmed.")
+                        sas_confirmed = True
+                        break
+                    elif response:
+                        self.logger(f"Non-SAS or unexpected response on {port_name} (attempt {attempt+1}): {response}")
                     else:
-                        self.logger(f"SAS Get Version failed or no specific response on {port_name} (got: {version_response}), but initial poll was OK.")
-                        sas_confirmed = True # Still consider it SAS if initial poll was fine
+                        self.logger(f"No response to 0x54 on {port_name} (attempt {attempt+1})")
+                    
+                    if attempt < 9: time.sleep(0.1) # Wait before retrying 0x54 on the same port
                 
-                temp_sas_comm.close_port() # Close the temporary communicator
+                temp_sas_comm.close_port() # Close after all attempts on this port
                 if sas_confirmed:
                     self._assign_port_locally(port_name, "SAS")
                     self.sas_port_name = port_name
                     return port_name
-                elif initial_response:
-                     self.logger(f"No conclusive SAS confirmation from {port_name}, though initial response was: {initial_response}")
-                else:
-                    self.logger(f"No initial response from {port_name} for SAS test.")
-            else: self.logger(f"Could not open {port_name} for SAS test.")
-        self.logger("SAS port not found.")
+            else:
+                self.logger(f"Could not open/init {port_name} for SAS test (open_sas_port_for_test failed).")
+        self.logger("SAS port not found after testing all available unassigned ports.")
         return None
 
-    def find_and_assign_card_reader_port(self): # Same as previous version
+    def find_and_assign_card_reader_port(self): # No change from previous
         reader_type_id = self.config_manager.getint('cardreader', 'type', 2)
         if reader_type_id == 1:
             self.card_reader_port_name = self.config_manager.get('cardreader', 'lib_path', './crt_288B_UR.so')
@@ -193,7 +201,7 @@ class PortManager:
             else: self.logger(f"Could not open {port_name} for CR test.")
         self.logger("Serial Card Reader port not found."); return None
 
-    def find_and_assign_bill_acceptor_port(self): # Same as previous version
+    def find_and_assign_bill_acceptor_port(self): # No change from previous
         acceptor_type_id = self.config_manager.getint('billacceptor', 'typeid', 0)
         if acceptor_type_id == 0: self.logger("BA is SAS controlled."); return None
         self.logger("Attempting to find direct serial Bill Acceptor port...")
@@ -215,178 +223,165 @@ class SASCommunicator:
     def __init__(self, port_name, config_manager_instance, baud_rate=19200, timeout=0.1):
         self.port_name = port_name; self.baud_rate = baud_rate; self.timeout = timeout
         self.config_manager = config_manager_instance; self.serial_port = None
-        self.sas_address = self.config_manager.get('sas', 'address', '01') # EGM's SAS Address
-        self.last_sent_poll_type = 81; self.is_port_open = False # Start with 81 so first poll is 80
+        self.sas_address = self.config_manager.get('sas', 'address', '01') 
+        self.last_sent_poll_type = 81; self.is_port_open = False
         self.logger = self.config_manager.logger
-        self.use_termios_for_parity = platform.system() == "Linux" and \
-                                      self.config_manager.getint('machine', 'devicetypeid', 8) not in [1, 4, 11]
+        self.use_termios_for_parity = platform.system() == "Linux"
+        
         if self.use_termios_for_parity:
             try:
                 import termios; self.termios = termios
-                self.CMSPAR = getattr(termios, 'CMSPAR', 0o10000000000) # Octal for PAREXT
-                if self.CMSPAR == 0o10000000000 and not hasattr(termios, 'CMSPAR'):
-                     self.logger("termios.CMSPAR not found, using fallback 0o10000000000.")
+                self.CMSPAR = getattr(termios, 'CMSPAR', getattr(termios, 'PAREXT', 0o10000000000))
+                if self.CMSPAR == 0o10000000000 and not hasattr(termios, 'CMSPAR') and not hasattr(termios, 'PAREXT'):
+                     self.logger("termios.CMSPAR and termios.PAREXT not found, using fallback for Mark/Space.")
             except ImportError: self.logger("Warning: termios module not found."); self.use_termios_for_parity = False
-            except AttributeError: self.logger("Warning: termios attributes (CMSPAR/PARENB/PARODD) missing."); self.use_termios_for_parity = False
+            except AttributeError: self.logger("Warning: termios attributes missing."); self.use_termios_for_parity = False
     
-    def open_port(self):
-        if self.is_port_open: self.logger(f"SAS port {self.port_name} already open."); return True
+    def open_sas_port_for_test(self):
+        """Simplified open for port detection, mimics original OpenCloseSasPort."""
+        if self.is_port_open: self.close_port() # Ensure it's closed before trying to open
         try:
             self.serial_port = serial.Serial()
             self.serial_port.port = self.port_name; self.serial_port.baudrate = self.baud_rate
-            self.serial_port.timeout = self.timeout; self.serial_port.parity = serial.PARITY_NONE
+            self.serial_port.timeout = self.timeout; 
+            self.serial_port.parity = serial.PARITY_NONE # Start with NONE
             self.serial_port.stopbits = serial.STOPBITS_ONE; self.serial_port.bytesize = serial.EIGHTBITS
             self.serial_port.xonxoff = False; self.serial_port.dtr = True; self.serial_port.rts = False
+            
             self.serial_port.open(); self.is_port_open = True
-            self.logger(f"SAS port {self.port_name} opened with PARITY_NONE.")
+            self.logger(f"SAS port {self.port_name} opened for test with PARITY_NONE.")
             
             device_type_id = self.config_manager.getint('machine', 'devicetypeid', 8)
             if device_type_id in [1, 4]: # Novomatic/Octavian
-                self.logger("Novomatic/Octavian: initial polls with NONE parity, then switch to EVEN.")
-                self._send_raw_command_platform_specific("80", is_poll=True); time.sleep(0.05)
-                self._send_raw_command_platform_specific("81", is_poll=True); time.sleep(0.05)
-                self.serial_port.close(); self.serial_port.parity = serial.PARITY_EVEN; self.serial_port.open()
-                self.logger(f"SAS port {self.port_name} re-opened with PARITY_EVEN.")
-            else: # Initial poll for other devices
-                self._send_raw_command_platform_specific("80", is_poll=True) # Send initial poll
-                time.sleep(0.05) # Give EGM time to wake up
+                self.logger("Novomatic/Octavian: initial polls with NONE, then switch to EVEN for test.")
+                self.serial_port.write(decode_to_hex("80")); self.serial_port.flush(); time.sleep(0.05)
+                self.serial_port.write(decode_to_hex("81")); self.serial_port.flush(); time.sleep(0.05)
+                self.serial_port.close()
+                self.serial_port.parity = serial.PARITY_EVEN
+                self.serial_port.open()
+                self.logger(f"SAS port {self.port_name} re-opened with PARITY_EVEN for Novomatic/Octavian test.")
+            else: 
+                self.logger(f"Sending initial '80' poll with PARITY_NONE for device type {device_type_id} during test.")
+                self.serial_port.write(decode_to_hex("80")); self.serial_port.flush()
+                time.sleep(0.05) 
             return True
-        except serial.SerialException as e: self.logger(f"Error opening SAS port {self.port_name}: {e}"); self.is_port_open = False; return False
-        except Exception as e: self.logger(f"Unexpected error opening SAS port {self.port_name}: {e}"); self.is_port_open = False; return False
+        except Exception as e: 
+            self.logger(f"Error in open_sas_port_for_test ({self.port_name}): {e}")
+            self.is_port_open = False
+            return False
+
+    def open_port(self): # This is for regular operation, PortManager uses open_sas_port_for_test
+        return self.open_sas_port_for_test() # For now, they can share logic
 
     def close_port(self):
         if self.serial_port and self.serial_port.is_open:
             self.serial_port.close(); self.is_port_open = False
             self.logger(f"SAS port {self.port_name} closed.")
 
-    def _send_raw_command_platform_specific(self, command_hex_full, is_poll=False):
-        """ Sends a command hex string. `command_hex_full` is the exact byte(s) to send. """
+    def _send_raw_command_platform_specific(self, command_hex_full):
         if not self.is_port_open or not self.serial_port: self.logger("SAS port not open."); return
         data_bytes = decode_to_hex(command_hex_full)
-        
-        # Device types 1 (Novomatic) and 4 (Octavian) use PARITY_EVEN (handled by open_port)
-        # Device type 11 (Interblock) and Windows use PARITY_NONE (default)
-        # Other Linux devices use Mark/Space via termios
         device_type_id = self.config_manager.getint('machine', 'devicetypeid', 8)
         
-        if self.use_termios_for_parity and device_type_id not in [1, 4, 11]:
+        apply_termios = self.use_termios_for_parity and \
+                        platform.system() == "Linux" and \
+                        device_type_id not in [1, 4, 11]
+
+        if apply_termios:
             try:
                 fd = self.serial_port.fileno()
                 iflag, oflag, cflag, lflag, ispeed, ospeed, cc = self.termios.tcgetattr(fd)
-                original_cflag = cflag
+                original_cflag = cflag 
                 
-                # First byte (address for commands, or the poll byte itself) with MARK parity
-                cflag_mark = (original_cflag | self.termios.PARENB | self.CMSPAR | self.termios.PARODD)
-                # Ensure CSTOPB is NOT set for 1 stop bit, which is typical for Mark/Space
-                cflag_mark &= ~self.termios.CSTOPB 
+                cflag_mark = (original_cflag | self.termios.PARENB | self.CMSPAR | self.termios.PARODD) & ~self.termios.CSTOPB
                 self.termios.tcsetattr(fd, self.termios.TCSADRAIN, [iflag, oflag, cflag_mark, lflag, ispeed, ospeed, cc])
                 self.serial_port.write(data_bytes[0:1]); self.serial_port.flush()
                 
-                if len(data_bytes) > 1: # If there are more bytes
-                    time.sleep(0.001) # Small delay as in original code (saswaittime)
-                    # Subsequent bytes with SPACE parity
-                    cflag_space = (original_cflag | self.termios.PARENB | self.CMSPAR) & ~self.termios.PARODD
-                    cflag_space &= ~self.termios.CSTOPB
+                if len(data_bytes) > 1: 
+                    time.sleep(0.001) 
+                    cflag_space = (original_cflag | self.termios.PARENB | self.CMSPAR) & ~self.termios.PARODD & ~self.termios.CSTOPB
                     self.termios.tcsetattr(fd, self.termios.TCSADRAIN, [iflag, oflag, cflag_space, lflag, ispeed, ospeed, cc])
                     self.serial_port.write(data_bytes[1:]); self.serial_port.flush()
                 
-                # Restore original cflag (which should be PARITY_NONE settings)
                 self.termios.tcsetattr(fd, self.termios.TCSADRAIN, [iflag, oflag, original_cflag, lflag, ispeed, ospeed, cc])
             except Exception as e: 
-                self.logger(f"Error setting termios parity: {e}. Sending with current port settings.")
-                self.serial_port.write(data_bytes) # Fallback
-        else: # For Windows, Novomatic, Octavian, Interblock (uses port's current parity)
-            self.serial_port.write(data_bytes)
-        
-        # self.serial_port.flushInput() # Optional: Clear input buffer after sending
+                self.logger(f"Error termios parity: {e}. Sending with port's current parity ({self.serial_port.parity}).")
+                self.serial_port.write(data_bytes); self.serial_port.flush()
+        else: 
+            self.serial_port.write(data_bytes); self.serial_port.flush()
 
-    def send_general_poll(self):
+    def send_general_poll(self): # For regular operation
         if not self.is_port_open: return
-        # Poll byte is determined, e.g., "80" or "81" (machine address 0 + poll)
-        # The EGM at self.sas_address is expected to respond if this poll targets it.
-        # Original script just sent "80" or "81". Let's assume EGM is address 01 for now for clarity.
-        # If EGM is address 01, it responds to poll "81" (01 | 80).
-        # If EGM is address 00 (less common for slots), it responds to "80".
-        # The key is that the HOST sends "80" or "81", not "0180" or "0181".
         poll_byte_to_send = "81" if self.last_sent_poll_type == 80 else "80"
-        
-        self.logger(f"TX Poll Byte: {poll_byte_to_send}")
-        self._send_raw_command_platform_specific(poll_byte_to_send, is_poll=True)
+        self.logger(f"TX Poll Byte (regular operation): {poll_byte_to_send}")
+        # Polls are single bytes, sent with current port parity. Mark/Space not typically for these raw polls.
+        if self.serial_port and self.serial_port.is_open:
+            self.serial_port.write(decode_to_hex(poll_byte_to_send))
+            self.serial_port.flush()
         self.last_sent_poll_type = int(poll_byte_to_send, 16)
 
+    def send_specific_command_for_test(self, command_body_no_addr="54"):
+        """Used by PortManager for sending 0x54 during detection."""
+        if not self.is_port_open: self.logger(f"Cannot send test command '{command_body_no_addr}', port not open."); return
+        command_with_addr = self.sas_address + command_body_no_addr
+        full_command_hex_to_send = get_crc(command_with_addr)
+        self.logger(f"TX SAS Test Cmd ('{command_body_no_addr}'): {full_command_hex_to_send}")
+        self._send_raw_command_platform_specific(full_command_hex_to_send)
 
     def send_command(self, command_name, command_body_hex_no_addr, add_address_and_crc=True):
-        """
-        command_body_hex_no_addr: e.g., "54" for GetVersion, or "72<len><payload>" for AFT.
-        """
         if not self.is_port_open: self.logger(f"Cannot send '{command_name}', port not open."); return
-        
-        full_command_hex = command_body_hex_no_addr
+        full_command_hex_to_send = command_body_hex_no_addr
         if add_address_and_crc:
-            # Prepend the EGM's SAS address
             command_with_addr = self.sas_address + command_body_hex_no_addr
-            full_command_hex = get_crc(command_with_addr) # CRC is calculated on (Address + Body)
+            full_command_hex_to_send = get_crc(command_with_addr)
+        self.logger(f"TX SAS ('{command_name}'): {full_command_hex_to_send}")
+        self._send_raw_command_platform_specific(full_command_hex_to_send)
         
-        self.logger(f"TX SAS ('{command_name}'): {full_command_hex}")
-        self._send_raw_command_platform_specific(full_command_hex, is_poll=False)
-        
-    def receive_data(self, timeout_override=None):
+    def receive_data(self, timeout_override=None, expect_long_response=False): # Same as previous
         if not self.is_port_open or not self.serial_port: self.logger("SAS port not open."); return None
         original_timeout = self.serial_port.timeout
-        if timeout_override is not None: self.serial_port.timeout = timeout_override
+        actual_timeout = timeout_override if timeout_override is not None else self.timeout
         buffer = bytearray()
         try:
-            # Read initial byte(s)
-            initial_data = self.serial_port.read(self.serial_port.in_waiting or 1)
-            if initial_data:
-                buffer.extend(initial_data)
-                # Poll for more data with short inter-byte delays
-                # SAS messages are typically short, but this handles potential fragmentation
-                for _ in range(5): # Try a few times to catch trailing bytes
-                    time.sleep(0.005) # Inter-byte delay from original script
+            self.serial_port.timeout = actual_timeout if not expect_long_response else max(actual_timeout, 0.2) 
+            initial_chunk = self.serial_port.read(max(1, self.serial_port.in_waiting or 0)) # Ensure read arg > 0
+            if initial_chunk:
+                buffer.extend(initial_chunk)
+                for _ in range(10): # Increased attempts for trailing bytes
+                    time.sleep(0.005) 
                     if self.serial_port.in_waiting > 0:
                         buffer.extend(self.serial_port.read(self.serial_port.in_waiting))
-                    else:
-                        break 
+                    elif len(buffer) > 0: break
+            
+        except serial.SerialTimeoutException: self.logger(f"SAS receive timeout on {self.port_name}.")
         except Exception as e: self.logger(f"Error receiving SAS data: {e}")
-        finally:
-            if timeout_override is not None: self.serial_port.timeout = original_timeout
+        finally: self.serial_port.timeout = original_timeout
         hex_data = buffer.hex().upper()
         if hex_data: self.logger(f"RX SAS: {hex_data}")
         return hex_data if hex_data else None
 
-    def _parse_sas_message(self, message_hex): # Same as previous version
+    def _parse_sas_message(self, message_hex): # Same as previous
         if not message_hex or len(message_hex) < 2: return None
         parsed_data = {"raw": message_hex, "type": "unknown", "address_match": False}
         received_address = message_hex[0:2]
-        # Important: A response from EGM will start with *its own address* (self.sas_address)
         if received_address == self.sas_address:
             parsed_data["address_match"] = True
             command_byte = message_hex[2:4] if len(message_hex) >= 4 else None
-            parsed_data["command_byte"] = command_byte # This is the command byte *in the EGM's response*
+            parsed_data["command_byte"] = command_byte
             if command_byte == "72": parsed_data["type"] = "AFT_RESPONSE"; parsed_data["transfer_status"] = message_hex[8:10] if len(message_hex) >= 10 else None
             elif command_byte == "74": parsed_data["type"] = "BALANCE_INFO"; parsed_data["asset_number_resp"] = message_hex[6:14] if len(message_hex) >= 14 else None; parsed_data["game_lock_status"] = message_hex[14:16] if len(message_hex) >= 16 else None
-            elif command_byte == "54": parsed_data["type"] = "SAS_VERSION_INFO"; parsed_data["sas_version"] = hex_to_int(message_hex[8:14]) if len(message_hex) >= 14 else None # Example parsing
+            elif command_byte == "54": parsed_data["type"] = "SAS_VERSION_INFO"; parsed_data["sas_version"] = hex_to_int(message_hex[8:14]) if len(message_hex) >= 14 else None
             elif command_byte == "73" and len(message_hex) >= 16: parsed_data["type"] = "ASSET_INFO_RESPONSE"; parsed_data["registration_status"] = message_hex[6:8]; parsed_data["asset_number_hex_reversed"] = message_hex[8:16]
-            elif command_byte == "FF": # General Exception from EGM
-                 parsed_data["type"] = "GENERAL_EXCEPTION_FROM_EGM" # To distinguish from host-side FF
-                 if len(message_hex) >= 6: parsed_data["exception_code"] = message_hex[4:6] # The actual exception code
-        elif len(message_hex) == 2 and (message_hex == "80" or message_hex == "81"): # This should not happen as EGM response
-            parsed_data["type"] = "UNEXPECTED_POLL_BYTE_AS_RESPONSE"
-        elif message_hex.startswith("FF"): # A general exception not tied to our address - could be noise or other device
-            parsed_data["type"] = "GENERAL_EXCEPTION_UNKNOWN_SOURCE"
-            if len(message_hex) >= 4: parsed_data["exception_code"] = message_hex[2:4]
-
+            elif command_byte == "FF": parsed_data["type"] = "GENERAL_EXCEPTION_FROM_EGM"; parsed_data["exception_code"] = message_hex[4:6] if len(message_hex) >=6 else None
+        elif len(message_hex) == 2 and (message_hex == "80" or message_hex == "81"): parsed_data["type"] = "UNEXPECTED_POLL_BYTE_AS_RESPONSE"
+        elif message_hex.startswith("FF"): parsed_data["type"] = "GENERAL_EXCEPTION_UNKNOWN_SOURCE"; parsed_data["exception_code"] = message_hex[2:4] if len(message_hex) >= 4 else None
         return parsed_data
 
     def process_received_message(self, message_hex): # Same as previous
         if not message_hex: return None
         parsed_message = self._parse_sas_message(message_hex)
-        if parsed_message and parsed_message["address_match"]:
-            self.logger(f"Processed SAS Message: {parsed_message}")
-        elif parsed_message:
-             self.logger(f"Ignored SAS Message (no address match or unhandled): {parsed_message}")
-             return None
+        if parsed_message and parsed_message["address_match"]: self.logger(f"Processed SAS Message: {parsed_message}")
+        elif parsed_message: self.logger(f"Ignored SAS Message (no address match or unhandled): {parsed_message}"); return None
         return parsed_message
 
     def request_balance_info(self, lock_request_code="FF", for_info=True):
@@ -434,12 +429,9 @@ class AssetManager: # No changes
         if asset_int != 0: asset_hex = self._get_asset_binary(asset_int)
         elif self.current_asset_number_int == 0 and self.current_asset_number_hex_reversed == '00000000': self.logger("Asset 0 not configured.")
         reg_mode = "00" if mode == "register" else "01"; pos_id = "00000000"
-        # Command 73 payload starts after address and command byte (73) and length (1D)
-        # So, command_body_hex_no_addr should be "1D" + mode + asset_hex + reg_key + pos_id
         cmd_payload = f"1D{reg_mode}{asset_hex}{self.registration_key}{pos_id}"
         self.logger(f"Registering asset: {asset_int} (Hex: {asset_hex}), Mode: {mode}")
         self.sas_comm.send_command("RegisterAssetNumber", "73" + cmd_payload, add_address_and_crc=True)
-
 
 class AFTHandler: # No changes
     def __init__(self, sas_communicator, config_manager_instance, asset_manager):
@@ -619,7 +611,7 @@ class SlotMachineApplication: # No changes
         self.logger("Initializing components based on detected/configured ports...")
         if self.port_mgr.sas_port_name:
             self.sas_comm = SASCommunicator(self.port_mgr.sas_port_name, self.config)
-            if self.sas_comm.open_port():
+            if self.sas_comm.open_port(): # Use the regular open_port for operational use
                 self.asset_mgr = AssetManager(self.sas_comm, self.config); self.aft_handler = AFTHandler(self.sas_comm, self.config, self.asset_mgr)
             else: self.logger(f"Failed to open SAS port {self.port_mgr.sas_port_name}"); self.sas_comm = None
         else: self.logger("SAS port was not assigned.")
