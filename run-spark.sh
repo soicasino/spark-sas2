@@ -24,8 +24,8 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Check if Python application exists
-if [ ! -f "rasberry-spark-soi.py" ]; then
-    echo -e "${RED}Error: rasberry-spark-soi.py not found!${NC}"
+if [ ! -f "main.py" ]; then
+    echo -e "${RED}Error: main.py not found!${NC}"
     exit 1
 fi
 
