@@ -103,6 +103,7 @@ class CardReader:
                 poll_cmd = "02000235310307"
                 send_cmd = poll_cmd
                 # (Special command queue logic can be added here if needed)
+                print("[CardReaderRead] Polling for card...")
                 self._send_command_hex(send_cmd)
                 time.sleep(self.card_reader_interval)
                 tdata = ""
@@ -124,6 +125,7 @@ class CardReader:
                 if tdata:
                     # If ACK (06), send ENQ (05) and wait for next response
                     if tdata == "06":
+                        print("[CardReaderRead] Received ACK, sending ENQ...")
                         self._send_command_hex("05")
                         tdata = ""
                         retry = 20
@@ -146,7 +148,7 @@ class CardReader:
                         if idx != -1:
                             card_no = tdata[idx+6:idx+14]
                             if card_no != self.last_card_number:
-                                print(f"[rCloud] Card detected: {card_no}")
+                                print(f"[CardReaderRead] Card detected: {card_no}")
                                 self.last_card_number = card_no
                                 self.is_card_inside = True
                     else:
