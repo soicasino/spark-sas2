@@ -52,10 +52,10 @@ export DISPLAY=:0.0
 
 # Run the Python application
 echo -e "${GREEN}Starting Python application...${NC}"
-echo -e "${YELLOW}Running: python rasberry-spark-soi.py${NC}"
+echo -e "${YELLOW}Running: python main.py${NC}"
 
 # Run with error handling
-python rasberry-spark-soi.py
+python main.py
 
 # Check exit status
 EXIT_CODE=$?
