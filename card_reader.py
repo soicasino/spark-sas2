@@ -91,24 +91,68 @@ class CardReader:
     def _poll_card_reader(self):
         while self.polling_active:
             try:
-                self._send_poll_command()
+                # Always send poll command (or special command if queued)
+                poll_cmd = "02000235310307"
+                send_cmd = poll_cmd
+                # (Special command queue logic can be added here if needed)
+                self._send_command_hex(send_cmd)
                 time.sleep(self.card_reader_interval)
-                if self.serial_port.in_waiting > 0:
-                    resp = self.serial_port.read(self.serial_port.in_waiting)
-                    hex_data = resp.hex().upper()
-                    if hex_data.startswith("020007"):  # Card present
-                        idx = hex_data.find("353159")
+                tdata = ""
+                retry = 5
+                # Read response
+                while True:
+                    if self.serial_port.in_waiting == 0:
+                        retry -= 1
+                        if retry <= 0:
+                            break
+                        time.sleep(0.02)
+                        continue
+                    out = b''
+                    while self.serial_port.in_waiting > 0:
+                        out += self.serial_port.read(1)
+                    if not out:
+                        continue
+                    tdata += out.hex().upper()
+                if tdata:
+                    # If ACK (06), send ENQ (05) and wait for next response
+                    if tdata == "06":
+                        self._send_command_hex("05")
+                        tdata = ""
+                        retry = 20
+                        while True:
+                            if self.serial_port.in_waiting == 0:
+                                retry -= 1
+                                if retry <= 0:
+                                    break
+                                time.sleep(0.05)
+                                continue
+                            out = b''
+                            while self.serial_port.in_waiting > 0:
+                                out += self.serial_port.read(1)
+                            if not out:
+                                continue
+                            tdata += out.hex().upper()
+                    # Now check for card data
+                    if tdata.startswith("020007"):
+                        idx = tdata.find("353159")
                         if idx != -1:
-                            card_no = hex_data[idx+6:idx+14]
+                            card_no = tdata[idx+6:idx+14]
                             if card_no != self.last_card_number:
-                                print(f"Card detected: {card_no}")
+                                print(f"[rCloud] Card detected: {card_no}")
                                 self.last_card_number = card_no
                                 self.is_card_inside = True
                     else:
                         self.is_card_inside = False
             except Exception as e:
-                print(f"Polling error: {e}")
+                print(f"[rCloud] Polling error: {e}")
             time.sleep(self.card_reader_interval)
+
+    def _send_command_hex(self, hex_string):
+        try:
+            cmd = bytearray.fromhex(hex_string)
+            self.serial_port.write(cmd)
+        except Exception as e:
+            print(f"[rCloud] Error sending command: {e}")
 
     def card_eject(self):
         if not self.is_card_reader_opened:
