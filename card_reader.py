@@ -1,14 +1,17 @@
 import serial
 import time
+import threading
 import platform
 
 class CardReader:
     def __init__(self):
-        self.serial_port = None
+        self.serial_port = serial.Serial()
         self.port_name = None
-        self.is_port_open = False
-        self.is_card_reader_found = False
-        self.card_reader_interval = 0.05  # Default for Fuheng/Eject
+        self.is_card_reader_opened = False
+        self.is_card_inside = False
+        self.card_reader_interval = 0.05
+        self.polling_thread = None
+        self.polling_active = False
         self.last_card_number = None
 
     def find_port(self, port_list):
@@ -16,108 +19,99 @@ class CardReader:
         Try to find and open the card reader port from a list of candidate port names.
         Sets self.serial_port and self.port_name if successful.
         """
+        self.is_card_reader_opened = False
         for port_info in port_list:
-            if port_info.get('is_used', 0) != 0:
+            if port_info.get('is_used', 0) != 0 or self.is_card_reader_opened:
                 continue
             port_name = port_info['port_no'] if 'port_no' in port_info else port_info.get('port')
             try:
-                ser = serial.Serial()
-                ser.port = port_name
-                ser.baudrate = 9600
-                ser.bytesize = serial.EIGHTBITS
-                ser.parity = serial.PARITY_NONE
-                ser.stopbits = serial.STOPBITS_ONE
-                ser.timeout = 0.2
-                ser.open()
+                self.serial_port.port = port_name
+                self.serial_port.baudrate = 9600
+                self.serial_port.bytesize = serial.EIGHTBITS
+                self.serial_port.parity = serial.PARITY_NONE
+                self.serial_port.stopbits = serial.STOPBITS_ONE
+                self.serial_port.timeout = 0.2
+                self.serial_port.open()
                 print(f"Trying card reader port: {port_name}")
-                # Try to send a card reader command and check for response
-                if self._test_card_reader(ser):
-                    self.serial_port = ser
+                time.sleep(self.card_reader_interval)
+                if self._wait_for_card_reader_opened():
                     self.port_name = port_name
-                    self.is_port_open = True
-                    self.is_card_reader_found = True
+                    self.is_card_reader_opened = True
                     port_info['is_used'] = 1
                     port_info['device_name'] = 'cardreader'
                     print(f"Card reader found and opened on port: {port_name}")
-                    return True
+                    self._send_poll_command()  # Initial poll
+                    break
                 else:
-                    ser.close()
+                    self.serial_port.close()
             except Exception as e:
                 print(f"Error opening/testing card reader port {port_name}: {e}")
-        print("No card reader found.")
-        return False
+        if not self.is_card_reader_opened:
+            print("No card reader found.")
+        return self.is_card_reader_opened
 
-    def _test_card_reader(self, ser):
-        """
-        Send a test command to the card reader and check for a valid response.
-        Returns True if the card reader responds as expected.
-        """
+    def _send_poll_command(self):
         try:
-            # Typical card reader poll command (from ref):
-            test_cmd = bytearray.fromhex("02000235310307")
-            ser.write(test_cmd)
-            time.sleep(self.card_reader_interval)
-            retry = 5
-            while retry > 0:
-                if ser.in_waiting > 0:
-                    resp = ser.read(ser.in_waiting)
-                    if resp:
-                        # Accept any non-empty response as valid for now
-                        return True
-                time.sleep(0.02)
-                retry -= 1
+            poll_cmd = bytearray.fromhex("02000235310307")
+            self.serial_port.write(poll_cmd)
         except Exception as e:
-            print(f"Error testing card reader: {e}")
+            print(f"Error sending poll command: {e}")
+
+    def _wait_for_card_reader_opened(self):
+        retry = 10
+        while retry > 0:
+            self._send_poll_command()
+            time.sleep(self.card_reader_interval)
+            if self.serial_port.in_waiting > 0:
+                resp = self.serial_port.read(self.serial_port.in_waiting)
+                if resp and (b"06" in resp or len(resp) > 0):
+                    print("Card reader responded.")
+                    return True
+            retry -= 1
         return False
 
-    def read_card(self):
-        """
-        Send the card read command and parse the card number from the response.
-        Prints the card number if found.
-        """
-        if not self.is_port_open or not self.serial_port:
-            print("Card reader port not open.")
-            return None
-        try:
-            cmd = bytearray.fromhex("02000235310307")
-            self.serial_port.write(cmd)
-            time.sleep(self.card_reader_interval)
-            retry = 5
-            tdata = b''
-            while retry > 0:
+    def start_polling(self):
+        if not self.is_card_reader_opened:
+            print("Card reader not opened, cannot start polling.")
+            return
+        if self.polling_thread and self.polling_thread.is_alive():
+            print("Polling already running.")
+            return
+        self.polling_active = True
+        self.polling_thread = threading.Thread(target=self._poll_card_reader, daemon=True)
+        self.polling_thread.start()
+        print("Card reader polling started.")
+
+    def stop_polling(self):
+        self.polling_active = False
+        if self.polling_thread:
+            self.polling_thread.join(timeout=1)
+            print("Card reader polling stopped.")
+
+    def _poll_card_reader(self):
+        while self.polling_active:
+            try:
+                self._send_poll_command()
+                time.sleep(self.card_reader_interval)
                 if self.serial_port.in_waiting > 0:
-                    tdata += self.serial_port.read(self.serial_port.in_waiting)
-                else:
-                    retry -= 1
-                    time.sleep(0.02)
-                    continue
-                if tdata:
-                    break
-            if not tdata:
-                print("No response from card reader.")
-                return None
-            hex_data = tdata.hex().upper()
-            print(f"Raw card reader response: {hex_data}")
-            # Parse card number (example logic, may need adjustment)
-            if hex_data.startswith("020007"):  # Typical card data response
-                # Card number is usually 8 hex chars after a marker (e.g. '353159')
-                idx = hex_data.find("353159")
-                if idx != -1:
-                    card_no = hex_data[idx+6:idx+14]
-                    print(f"Card number: {card_no}")
-                    self.last_card_number = card_no
-                    return card_no
-            print("Card number not found in response.")
-            return None
-        except Exception as e:
-            print(f"Error reading card: {e}")
-            return None
+                    resp = self.serial_port.read(self.serial_port.in_waiting)
+                    hex_data = resp.hex().upper()
+                    if hex_data.startswith("020007"):  # Card present
+                        idx = hex_data.find("353159")
+                        if idx != -1:
+                            card_no = hex_data[idx+6:idx+14]
+                            if card_no != self.last_card_number:
+                                print(f"Card detected: {card_no}")
+                                self.last_card_number = card_no
+                                self.is_card_inside = True
+                    else:
+                        self.is_card_inside = False
+            except Exception as e:
+                print(f"Polling error: {e}")
+            time.sleep(self.card_reader_interval)
 
     def card_eject(self):
-        """
-        Send the card eject command to the card reader to eject the card.
-        """
-        if not self.is_port_open or not self.serial_port:
+        if not self.is_card_reader_opened:
             print("Card reader port not open.")
             return False
         try:
@@ -133,15 +127,16 @@ class CardReader:
     def close(self):
         if self.serial_port and self.serial_port.is_open:
             self.serial_port.close()
-            self.is_port_open = False
             print(f"Card reader port {self.port_name} closed.")
+        self.is_card_reader_opened = False
+        self.polling_active = False
 
     def send_command(self, hex_string):
         """
         Send a generic hex command to the card reader.
         Returns True if sent successfully, False otherwise.
         """
-        if not self.is_port_open or not self.serial_port:
+        if not self.is_card_reader_opened:
             print("Card reader port not open.")
             return False
         try:
