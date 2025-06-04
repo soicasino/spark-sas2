@@ -471,10 +471,12 @@ class SASCommunicator:
                 time.sleep(0.2)
                 response = self.get_data_from_sas_port()
                 if response and response.startswith('0173'):
-                    asset_hex = response[6:14]
-                    # Reverse hex string to int
+                    # Remove first 2 bytes (address and status), then get 4 bytes (8 hex chars) for asset number
+                    asset_hex = response[2:]
+                    # Pad to even length if needed
                     if len(asset_hex) % 2 != 0:
                         asset_hex = '0' + asset_hex
+                    # Reverse by bytes
                     reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                     asset_dec = int(reversed_hex, 16)
                     print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
