@@ -129,6 +129,27 @@ class CardReader:
                     tdata += out.hex().upper()
                 if tdata:
                     print(f"[DEBUG] Raw card reader response: {tdata}")
+                    if tdata == "06":
+                        # Received ACK, now send ENQ and wait for card data
+                        print("[DEBUG] Received ACK (06), sending ENQ (05)...")
+                        self._send_command_hex("05")
+                        tdata = ""
+                        retry = 20
+                        while True:
+                            if self.serial_port.in_waiting == 0:
+                                retry -= 1
+                                if retry <= 0:
+                                    break
+                                time.sleep(0.05)
+                                continue
+                            out = b''
+                            while self.serial_port.in_waiting > 0:
+                                out += self.serial_port.read(1)
+                            if not out:
+                                continue
+                            tdata += out.hex().upper()
+                        if tdata:
+                            print(f"[DEBUG] Card data after ENQ: {tdata}")
                     card_no = self._extract_card_number(tdata)
                     if card_no and card_no != self.last_card_number:
                         print(f"Card detected: {card_no}")
