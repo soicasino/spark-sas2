@@ -278,7 +278,8 @@ class SasMoney:
                 print(f"[DEBUG] meter_code={meter_code}, length={next_length//2} bytes, meter_val={meter_val}")
                 
                 try:
-                    meter_value = int(meter_val, 16) / 100.0
+                    # Use decimal interpretation like the reference, not hex
+                    meter_value = int(meter_val) / 100.0
                     
                     # Store the parsed meter using the same variable names as reference
                     meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, next_length//2))[0]
@@ -317,7 +318,8 @@ class SasMoney:
                 print(f"[DEBUG] AF meter_code={meter_code}, length={meter_length} bytes, meter_val={meter_val}")
                 
                 try:
-                    meter_value = int(meter_val, 16) / 100.0
+                    # Use decimal interpretation like the reference, not hex
+                    meter_value = int(meter_val) / 100.0
                     meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
                     parsed_meters[meter_name] = meter_value
                     received_all_meter += f"{meter_code}-{meter_val}|"
