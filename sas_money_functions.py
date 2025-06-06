@@ -152,27 +152,125 @@ class SasMoney:
         self.communicator.sas_send_command_with_queue("getmeter2", command, 0)
         print("=== METER: komut_get_meter end ===")
 
-    def get_meter(self, isall=0, sender="Unknown", gameid=0):
-        print("=== METER: get_meter called ===")
-        print(f"METER: get_meter params: isall={isall}, sender={sender}, gameid={gameid}")
-        L_OperationStartDate_Meter = datetime.datetime.now()
-        self.is_waiting_for_meter = True
-        self.meter_response_received = False  # New flag to prevent multiple processing
-        self.komut_get_meter(isall, gameid)
-        retry_count = 0
-        while self.is_waiting_for_meter and retry_count < 10:
-            print(f"METER: get_meter waiting, retry_count={retry_count}")
-            time.sleep(1.5)
-            retry_count += 1
-            if self.is_waiting_for_meter and not self.meter_response_received:
-                print(f"METER: get_meter retrying komut_get_meter, retry_count={retry_count}")
-                self.komut_get_meter(isall, gameid)
-        if not self.is_waiting_for_meter:
-            print("METER: get_meter meter is received")
+    def bcd_to_int(self, bcd_str):
+        """Convert a BCD string (e.g., '00012345') to an integer."""
+        # Each pair of hex digits is a BCD byte
+        # Convert to decimal by treating each nibble as a digit
+        digits = ''
+        for i in range(0, len(bcd_str), 2):
+            byte = bcd_str[i:i+2]
+            if len(byte) < 2:
+                continue
+            high = int(byte[0], 16)
+            low = int(byte[1], 16)
+            digits += f"{high}{low}"
+        return int(digits.lstrip('0') or '0')
+
+    METER_CODE_MAP = {
+        '00': ('total_turnover', 5),
+        '01': ('total_win', 5),
+        '02': ('total_jackpot', 5),
+        '03': ('total_handpay', 5),
+        '04': ('total_cancelled_credits', 5),
+        '05': ('games_played', 4),
+        '06': ('games_won', 4),
+        '0B': ('bills_accepted', 4),
+        '0C': ('current_credits', 5),
+        '15': ('total_ticket_in', 5),
+        '16': ('total_ticket_out', 5),
+        '17': ('total_electronic_in', 5),
+        '18': ('total_electronic_out', 5),
+        '1D': ('machine_paid_progressive', 5),
+        '1E': ('total_bonus', 5),
+        '23': ('total_handpaid_credits', 5),
+        '7F': ('weighted_avg_payback', 4),
+        'A0': ('total_coin_in', 5),
+        'A2': ('non_cashable_in', 5),
+        'B8': ('total_coin_out', 5),
+        'BA': ('non_cashable_out', 5),
+        'FA': ('regular_cashable_keyed', 5),
+        'FB': ('restricted_keyed', 5),
+        'FC': ('nonrestricted_keyed', 5),
+    }
+
+    def handle_single_meter_response(self, tdata):
+        """
+        Dynamically and robustly parses a meter block or single meter response.
+        Fixes BCD conversion by treating the hex string as a base-10 integer.
+        """
+        print(f"--- Parsing Meter Response: {tdata} ---")
+        # Check for a long poll response (meter block)
+        if len(tdata) > 20:  # A typical single meter response is shorter
+            idx = 6  # Skip address (2), command code (2), and length (2)
+            parsed_meters = {}
+            while idx + 4 <= len(tdata): # Need at least a 2-byte code and 2-byte value
+                code = tdata[idx:idx+2].upper()
+                idx += 2
+
+                if code not in self.METER_CODE_MAP:
+                    print(f"Warning: Unknown meter code '{code}'. Attempting to skip.")
+                    # As a fallback, assume a 4-byte value and skip
+                    idx += 8 
+                    continue
+
+                name, nbytes = self.METER_CODE_MAP[code]
+                hex_len = nbytes * 2
+                value_hex = tdata[idx:idx + hex_len]
+                idx += hex_len
+
+                if len(value_hex) < hex_len:
+                    print(f"Error: Incomplete data for meter '{name}'. Expected {hex_len} chars, got {len(value_hex)}.")
+                    continue
+
+                if self.is_valid_bcd(value_hex):
+                    # CORRECTED BCD CONVERSION
+                    value = self.bcd_to_int(value_hex) / 100.0
+                    parsed_meters[name] = value
+                    print(f"  {name} ({code}): {value:,.2f}")
+                else:
+                    print(f"Error: Invalid BCD format for meter '{name}': {value_hex}")
+            print("--- End of Meter Block ---")
+            return parsed_meters
+        # Handle a single meter response as a fallback
+        elif len(tdata) >= 14: # Min length for a single response (e.g., 012F + len + code + 4-byte val + crc)
+            code = tdata[6:8].upper()
+            if code in self.METER_CODE_MAP:
+                name, nbytes = self.METER_CODE_MAP[code]
+                hex_len = nbytes * 2
+                value_hex = tdata[8:8 + hex_len]
+
+                if self.is_valid_bcd(value_hex):
+                    # CORRECTED BCD CONVERSION
+                    value = self.bcd_to_int(value_hex) / 100.0
+                    print(f"  {name} ({code}): {value:,.2f}")
+                else:
+                    print(f"Error: Invalid BCD format for single meter '{name}': {value_hex}")
         else:
-            print("METER: get_meter timeout waiting for meter response")
-        print(f"METER: get_meter process completed in {datetime.datetime.now() - L_OperationStartDate_Meter}")
-        print("=== METER: get_meter end ===")
+            print(f"Warning: Received a short or unknown meter response: {tdata}")
+
+    def get_meter(self, isall=0, sender="Unknown", gameid=0):
+        """
+        Sends a meter request and waits for a response with a simple timeout.
+        This version avoids sending rapid, duplicate commands.
+        """
+        print(f"=== METER: Getting meters (isall={isall}, sender={sender}) ===")
+        start_time = datetime.datetime.now()
+        self.is_waiting_for_meter = True
+        self.meter_response_received = False
+        # Send the command once
+        self.komut_get_meter(isall, gameid)
+        # Wait for a response with a timeout
+        timeout_seconds = 5
+        while self.is_waiting_for_meter and (datetime.datetime.now() - start_time).total_seconds() < timeout_seconds:
+            time.sleep(0.1) # Poll for the response flag every 100ms
+        if not self.is_waiting_for_meter:
+            print("METER: Success! Meter response received.")
+        else:
+            # If we're still waiting, it's a timeout
+            self.is_waiting_for_meter = False # Ensure the loop terminates
+            print(f"METER: Timeout after {timeout_seconds} seconds waiting for meter response.")
+        duration = datetime.datetime.now() - start_time
+        print(f"=== METER: Process completed in {duration.total_seconds():.2f} seconds ===")
 
     def run_all_meters(self):
         print("DEBUG: run_all_meters START")
@@ -181,74 +279,4 @@ class SasMoney:
 
     def is_valid_bcd(self, hex_str):
         """Check if a hex string is valid BCD (only 0-9 digits)."""
-        return all(c in '0123456789' for c in hex_str)
-
-    # Mapping of meter codes to names and value lengths (in bytes)
-    METER_CODE_MAP = {
-        'A0': ('total_coin_in', 4),
-        'B8': ('total_coin_out', 4),
-        '02': ('total_jackpot', 4),
-        '03': ('total_handpay', 4),
-        '0B': ('bills_accepted', 4),
-        'A2': ('non_cashable_in', 4),
-        'BA': ('non_cashable_out', 4),
-        '1E': ('total_bonus', 4),
-        '04': ('total_cancelled_credits', 4),
-        '05': ('games_played', 4),
-        '06': ('games_won', 4),
-        '0C': ('current_credits', 4),
-        '7F': ('weighted_avg_payback', 4),
-        'FA': ('regular_cashable_keyed', 4),
-        'FB': ('restricted_keyed', 4),
-        'FC': ('nonrestricted_keyed', 4),
-        '1D': ('machine_paid_progressive', 4),
-        '17': ('total_electronic_in', 4),
-        '18': ('total_electronic_out', 4),
-        '15': ('total_ticket_in', 4),
-        '16': ('total_ticket_out', 4),
-        '23': ('total_handpaid_credits', 4),
-        # Add more as needed
-    }
-
-    def handle_single_meter_response(self, tdata):
-        """Dynamically parse and print a meter block or single meter response, robustly."""
-        # If the response is a block (long), parse by code/length
-        if len(tdata) > 40:
-            print("--- SAS Meter Block (Dynamic Parse) ---")
-            idx = 6  # skip address (2), code (2), length (2)
-            parsed = {}
-            while idx + 2 <= len(tdata):
-                code = tdata[idx:idx+2]
-                idx += 2
-                if code not in self.METER_CODE_MAP:
-                    # Unknown code, try to skip 4 bytes and continue
-                    print(f"Unknown meter code: {code}, skipping 4 bytes")
-                    idx += 8
-                    continue
-                name, nbytes = self.METER_CODE_MAP[code]
-                hex_len = nbytes * 2
-                value_hex = tdata[idx:idx+hex_len]
-                idx += hex_len
-                if len(value_hex) < hex_len:
-                    print(f"{name}: (no data)")
-                    continue
-                if self.is_valid_bcd(value_hex):
-                    value = int(value_hex, 16) / 100.0
-                    print(f"{name}: {value:,.2f}")
-                    parsed[name] = value
-                else:
-                    print(f"{name}: INVALID BCD ({value_hex})")
-            print("----------------------")
-        else:
-            # Fallback: single meter response
-            if len(tdata) < 10:
-                print(f"Response too short: {tdata}")
-                return
-            code = tdata[2:4]
-            value_hex = tdata[6:14]  # 4 bytes (8 hex chars) after len
-            name = self.METER_CODE_MAP.get(code, (f"meter_{code}", 4))[0]
-            if self.is_valid_bcd(value_hex):
-                value = int(value_hex, 16) / 100.0
-                print(f"{name}: {value:,.2f}")
-            else:
-                print(f"{name}: INVALID BCD ({value_hex})") 
+        return all(c in '0123456789' for c in hex_str) 

@@ -451,6 +451,8 @@ class SASCommunicator:
                     if block.startswith("012F") or block.startswith("01AF"):
                         print(f"[DEBUG] Parsing meter block: {block}")
                         self.sas_money.handle_single_meter_response(block)
+                        # Parse and print using the actual received block
+                        self.parse_and_print_sas_meter_block(block)
                 return
             # Handle single meter responses (codes 10-2C)
             if tdata[:4] in [f"01{code}" for code in self.sas_money.SINGLE_METER_CODES.values()]:
@@ -602,4 +604,29 @@ class SASCommunicator:
         else:
             print(f"[SAS TEST] Unknown meter_type: {meter_type}")
             return
-        self.sas_send_command_with_queue(f"TestReadMeters_{meter_type}", command, 0) 
+        self.sas_send_command_with_queue(f"TestReadMeters_{meter_type}", command, 0)
+
+    def parse_and_print_sas_meter_block(self, hex_block):
+        """
+        Parses a SAS meter block and prints code/value pairs formatted as money.
+        Assumes each code is 2 hex digits and each value is 8 hex digits (4 bytes).
+        """
+        hex_block = hex_block.replace(" ", "").upper()
+        # Skip header if present (012Fxx or 01AFxx)
+        if hex_block.startswith("012F") or hex_block.startswith("01AF"):
+            hex_block = hex_block[6:]
+        print("Parsed SAS Meter Block:")
+        i = 0
+        while i + 10 <= len(hex_block):
+            code = hex_block[i:i+2]
+            value_hex = hex_block[i+2:i+10]
+            try:
+                value = int(value_hex, 16) / 100.0
+                value_str = f"{value:,.2f} TL"
+            except Exception:
+                value_str = f"INVALID ({value_hex})"
+            print(f"  Code {code}: {value_str}")
+            i += 10
+        if i < len(hex_block):
+            print(f"  [END] Remaining: {hex_block[i:]}")
+        print("-" * 40) 
