@@ -131,9 +131,9 @@ class CardReader:
                         continue
                     tdata += out.hex().upper()
                 if tdata:
-                    print(f"[DEBUG] Raw card reader response: {tdata}")
+                    # print(f"[DEBUG] Raw card reader response: {tdata}")
                     if tdata == "06":
-                        print("[DEBUG] Received ACK (06), sending ENQ (05)...")
+                        # print("[DEBUG] Received ACK (06), sending ENQ (05)...")
                         self._send_command_hex("05")
                         tdata = ""
                         retry = 20
@@ -151,7 +151,8 @@ class CardReader:
                                 continue
                             tdata += out.hex().upper()
                         if tdata:
-                            print(f"[DEBUG] Card data after ENQ: {tdata}")
+                            # print(f"[DEBUG] Card data after ENQ: {tdata}")
+                            pass
                     card_no = self._extract_card_number(tdata)
                     if card_no and card_no != self.last_card_number:
                         print(f"Card detected: {card_no}")
