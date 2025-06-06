@@ -378,7 +378,6 @@ class SASCommunicator:
                 (lambda d: d.startswith("01FF6FED3E"), lambda d: print("Game locked")),
                 (lambda d: d[0:10] == "01FF5110E6", lambda d: print("Handpay is pending")),
                 (lambda d: d[0:10].startswith("01FF52"), lambda d: print("Handpay was reset")),
-                (lambda d: d[0:4] == "012F" or d[0:4] == "01AF", lambda d: print("MeterAll")),
                 (lambda d: d[0:4] == "0172", lambda d: print("AFT response")),
                 (lambda d: d[0:4] == "0174", lambda d: print("Balance query response")),
                 (lambda d: d.startswith("01FF54BDB1"), lambda d: print("Progressive win")),
