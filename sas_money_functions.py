@@ -131,7 +131,8 @@ class SasMoney:
         print(f"Balance received: cashable={self.yanit_bakiye_tutar}, restricted={self.yanit_restricted_amount}, nonrestricted={self.yanit_nonrestricted_amount}")
 
     def komut_get_meter(self, isall=0, gameid=0):
-        print(f"DEBUG: komut_get_meter START isall={isall}, gameid={gameid}")
+        print("=== METER: komut_get_meter called ===")
+        print(f"METER: komut_get_meter params: isall={isall}, gameid={gameid}")
         G_CasinoId = int(self.config.get('casino', 'casinoid', fallback=8))
         IsNewMeter = 1 if G_CasinoId in [8, 11, 7] else 0
         if isall == 0 and IsNewMeter == 0:
@@ -143,31 +144,32 @@ class SasMoney:
         elif isall == 2:
             command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
         else:
-            print(f"DEBUG: komut_get_meter unknown isall value: {isall}")
+            print(f"METER: komut_get_meter unknown isall value: {isall}")
             return
-        print(f"DEBUG: komut_get_meter sending command: {command}")
+        print(f"METER: komut_get_meter sending command: {command}")
         self.communicator.sas_send_command_with_queue("getmeter2", command, 0)
-        print(f"DEBUG: komut_get_meter END isall={isall}, gameid={gameid}")
+        print("=== METER: komut_get_meter end ===")
 
     def get_meter(self, isall=0, sender="Unknown", gameid=0):
-        print(f"DEBUG: get_meter START isall={isall}, sender={sender}, gameid={gameid}")
+        print("=== METER: get_meter called ===")
+        print(f"METER: get_meter params: isall={isall}, sender={sender}, gameid={gameid}")
         L_OperationStartDate_Meter = datetime.datetime.now()
         self.is_waiting_for_meter = True
         self.komut_get_meter(isall, gameid)
         retry_count = 0
         while self.is_waiting_for_meter and retry_count < 10:
-            print(f"DEBUG: get_meter waiting, retry_count={retry_count}")
+            print(f"METER: get_meter waiting, retry_count={retry_count}")
             time.sleep(0.5)
             retry_count += 1
             if self.is_waiting_for_meter:
-                print(f"DEBUG: get_meter retrying komut_get_meter, retry_count={retry_count}")
+                print(f"METER: get_meter retrying komut_get_meter, retry_count={retry_count}")
                 self.komut_get_meter(isall, gameid)
         if not self.is_waiting_for_meter:
-            print("DEBUG: get_meter meter is received")
+            print("METER: get_meter meter is received")
         else:
-            print("DEBUG: get_meter timeout waiting for meter response")
-        print(f"DEBUG: get_meter process completed in {datetime.datetime.now() - L_OperationStartDate_Meter}")
-        print(f"DEBUG: get_meter END isall={isall}, sender={sender}, gameid={gameid}")
+            print("METER: get_meter timeout waiting for meter response")
+        print(f"METER: get_meter process completed in {datetime.datetime.now() - L_OperationStartDate_Meter}")
+        print("=== METER: get_meter end ===")
 
     def run_all_meters(self):
         print("DEBUG: run_all_meters START")
