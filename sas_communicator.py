@@ -442,7 +442,36 @@ class SASCommunicator:
             if tdata.startswith("012F") or tdata.startswith("01AF"):
                 print("Meter response received.")
                 self.sas_money.is_waiting_for_meter = False
-                # Optionally, handle/parse the meter data here
+                # Parse and print key meter values
+                try:
+                    # Example parsing for 012F... response (adjust as needed for your protocol)
+                    # Skip address (2), command (2), length (2)
+                    idx = 6
+                    def get_meter_val(length):
+                        nonlocal idx
+                        val = tdata[idx:idx+length]
+                        idx += length
+                        return int(val, 16)
+                    print("--- SAS Meter Values ---")
+                    # Example: parse 8 meters of 8 hex chars (4 bytes) each
+                    meters = {}
+                    meter_names = [
+                        "Total Bet (Coin In)",
+                        "Total Won",
+                        "Total In",
+                        "Total Out",
+                        "Games Played",
+                        "Cancelled Credits",
+                        "Weighted Avg TRTP %",
+                        "Unknown"
+                    ]
+                    for name in meter_names:
+                        meters[name] = get_meter_val(8) / 100.0
+                    for name, value in meters.items():
+                        print(f"{name}: {value:,.2f}")
+                    print("------------------------")
+                except Exception as e:
+                    print(f"Error parsing meter response: {e}")
                 return
             print(f"DEBUG: Received SAS message: {tdata}")
         except Exception as e:
