@@ -10,6 +10,7 @@ from card_reader import CardReader  # Import the CardReader class
 from sas_money_functions import SasMoney
 from billacceptor_functions import BillAcceptorFunctions
 from utils import decode_to_hex, get_crc, read_asset_to_int, add_left_bcd
+import re
 
 # Helper functions
 
@@ -443,8 +444,16 @@ class SASCommunicator:
             if tdata.startswith("012F") or tdata.startswith("01AF"):
                 print("Meter response received.")
                 self.sas_money.is_waiting_for_meter = False
-                # Parse and print all meters using the dynamic parser
-                self.sas_money.handle_single_meter_response(tdata)
+                self.sas_money.meter_response_received = True  # Prevent further retries in get_meter
+                # Split concatenated meter blocks and parse each
+                blocks = re.findall(r'(012F|01AF)[0-9A-F]+?(?=(012F|01AF)|$)', tdata)
+                if blocks:
+                    for block_tuple in blocks:
+                        block = block_tuple[0] + block_tuple[1] if block_tuple[1] else block_tuple[0]
+                        self.sas_money.handle_single_meter_response(block)
+                else:
+                    # Fallback: try to parse the whole tdata
+                    self.sas_money.handle_single_meter_response(tdata)
                 return
             # Handle single meter responses (codes 10-2C)
             if tdata[:4] in [f"01{code}" for code in self.sas_money.SINGLE_METER_CODES.values()]:

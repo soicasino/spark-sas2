@@ -31,6 +31,7 @@ class SasMoney:
         self.is_waiting_for_para_yukle = 0
         self.is_waiting_for_bakiye_sifirla = 0
         self.is_waiting_for_meter = False
+        self.meter_response_received = False  # New flag to prevent multiple processing
         # ... add other state as needed
 
     def komut_cancel_aft_transfer(self):
@@ -133,6 +134,13 @@ class SasMoney:
     def komut_get_meter(self, isall=0, gameid=0):
         print("=== METER: komut_get_meter called ===")
         print(f"METER: komut_get_meter params: isall={isall}, gameid={gameid}")
+        # Clear serial input buffer before sending command
+        if hasattr(self.communicator, 'serial_port') and self.communicator.serial_port:
+            try:
+                self.communicator.serial_port.reset_input_buffer()
+                print("[DEBUG] Cleared serial input buffer before sending meter command.")
+            except Exception as e:
+                print(f"[DEBUG] Could not clear serial input buffer: {e}")
         G_CasinoId = int(self.config.get('casino', 'casinoid', fallback=8))
         IsNewMeter = 1 if G_CasinoId in [8, 11, 7] else 0
         if isall == 0 and IsNewMeter == 0:
@@ -155,13 +163,14 @@ class SasMoney:
         print(f"METER: get_meter params: isall={isall}, sender={sender}, gameid={gameid}")
         L_OperationStartDate_Meter = datetime.datetime.now()
         self.is_waiting_for_meter = True
+        self.meter_response_received = False  # New flag to prevent multiple processing
         self.komut_get_meter(isall, gameid)
         retry_count = 0
         while self.is_waiting_for_meter and retry_count < 10:
             print(f"METER: get_meter waiting, retry_count={retry_count}")
             time.sleep(1.5)
             retry_count += 1
-            if self.is_waiting_for_meter:
+            if self.is_waiting_for_meter and not self.meter_response_received:
                 print(f"METER: get_meter retrying komut_get_meter, retry_count={retry_count}")
                 self.komut_get_meter(isall, gameid)
         if not self.is_waiting_for_meter:
