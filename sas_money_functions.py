@@ -180,59 +180,59 @@ class SasMoney:
         """Check if a hex string is valid BCD (only 0-9 digits)."""
         return all(c in '0123456789' for c in hex_str)
 
-    # Mapping of meter names to SAS codes (hex)
-    SINGLE_METER_CODES = {
-        'total_cancelled_credits': '10',
-        'total_bet': '11',
-        'total_win': '12',
-        'total_in': '13',
-        'total_jackpot': '14',
-        'games_played': '15',
-        'games_won': '16',
-        'games_lost': '17',
-        'current_credits': '1A',
-        'true_coin_in': '2A',
-        'true_coin_out': '2B',
-        'curr_hopper_level': '2C',
+    # Mapping of meter codes to names and value lengths (in bytes)
+    METER_CODE_MAP = {
+        'A0': ('total_coin_in', 4),
+        'B8': ('total_coin_out', 4),
+        '02': ('total_jackpot', 4),
+        '03': ('total_handpay', 4),
+        '0B': ('bills_accepted', 4),
+        'A2': ('non_cashable_in', 4),
+        'BA': ('non_cashable_out', 4),
+        '1E': ('total_bonus', 4),
+        '04': ('total_cancelled_credits', 4),
+        '05': ('games_played', 4),
+        '06': ('games_won', 4),
+        '0C': ('current_credits', 4),
+        '7F': ('weighted_avg_payback', 4),
+        'FA': ('regular_cashable_keyed', 4),
+        'FB': ('restricted_keyed', 4),
+        'FC': ('nonrestricted_keyed', 4),
+        '1D': ('machine_paid_progressive', 4),
+        '17': ('total_electronic_in', 4),
+        '18': ('total_electronic_out', 4),
+        '15': ('total_ticket_in', 4),
+        '16': ('total_ticket_out', 4),
+        '23': ('total_handpaid_credits', 4),
         # Add more as needed
     }
 
-    def request_single_meter(self, meter_name):
-        """Send a single meter request for the given meter name."""
-        code = self.SINGLE_METER_CODES.get(meter_name)
-        if not code:
-            print(f"Unknown meter name: {meter_name}")
-            return
-        command = get_crc(f"01{code}")
-        print(f"Requesting single meter: {meter_name} (code {code}) -> {command}")
-        self.communicator.sas_send_command_with_queue(f"get_single_meter_{meter_name}", command, 0)
-
-    def request_all_single_meters(self):
-        """Request all single meters in sequence and print their values."""
-        for meter_name in self.SINGLE_METER_CODES:
-            self.request_single_meter(meter_name)
-            time.sleep(0.5)  # Wait for response before next request
-
     def handle_single_meter_response(self, tdata):
-        """Parse and print a single meter response or a meter block with BCD validation."""
-        # If the response is a block (long), parse all known meters in order
-        if len(tdata) > 40:  # block response
-            print("--- SAS Meter Block ---")
+        """Dynamically parse and print a meter block or single meter response, robustly."""
+        # If the response is a block (long), parse by code/length
+        if len(tdata) > 40:
+            print("--- SAS Meter Block (Dynamic Parse) ---")
             idx = 6  # skip address (2), code (2), length (2)
-            meter_names = [
-                'total_cancelled_credits', 'total_bet', 'total_win', 'total_in', 'total_jackpot',
-                'games_played', 'games_won', 'games_lost', 'current_credits', 'true_coin_in',
-                'true_coin_out', 'curr_hopper_level'
-            ]
-            for name in meter_names:
-                value_hex = tdata[idx:idx+8]
-                idx += 8
-                if len(value_hex) < 8:
+            parsed = {}
+            while idx + 2 <= len(tdata):
+                code = tdata[idx:idx+2]
+                idx += 2
+                if code not in self.METER_CODE_MAP:
+                    # Unknown code, try to skip 4 bytes and continue
+                    print(f"Unknown meter code: {code}, skipping 4 bytes")
+                    idx += 8
+                    continue
+                name, nbytes = self.METER_CODE_MAP[code]
+                hex_len = nbytes * 2
+                value_hex = tdata[idx:idx+hex_len]
+                idx += hex_len
+                if len(value_hex) < hex_len:
                     print(f"{name}: (no data)")
                     continue
                 if self.is_valid_bcd(value_hex):
                     value = int(value_hex, 16) / 100.0
                     print(f"{name}: {value:,.2f}")
+                    parsed[name] = value
                 else:
                     print(f"{name}: INVALID BCD ({value_hex})")
             print("----------------------")
@@ -243,8 +243,9 @@ class SasMoney:
                 return
             code = tdata[2:4]
             value_hex = tdata[6:14]  # 4 bytes (8 hex chars) after len
+            name = self.METER_CODE_MAP.get(code, (f"meter_{code}", 4))[0]
             if self.is_valid_bcd(value_hex):
                 value = int(value_hex, 16) / 100.0
-                print(f"Single Meter [{code}]: {value:,.2f}")
+                print(f"{name}: {value:,.2f}")
             else:
-                print(f"Single Meter [{code}]: INVALID BCD ({value_hex})") 
+                print(f"{name}: INVALID BCD ({value_hex})") 
