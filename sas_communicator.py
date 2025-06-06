@@ -411,6 +411,8 @@ class SASCommunicator:
                 reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                 asset_dec = int(reversed_hex, 16)
                 print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
+                # Call meter reading after asset number is read
+                self.sas_money.run_all_meters()
                 return
             # SAS Version response (0x54) (fallback)
             if tdata.startswith("0154"):

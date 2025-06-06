@@ -127,4 +127,45 @@ class SasMoney:
         self.yanit_bakiye_tutar = Decimal(current_cashable_amount) / 100
         self.yanit_restricted_amount = Decimal(current_restricted_amount) / 100
         self.yanit_nonrestricted_amount = Decimal(current_nonrestricted_amount) / 100
-        print(f"Balance received: cashable={self.yanit_bakiye_tutar}, restricted={self.yanit_restricted_amount}, nonrestricted={self.yanit_nonrestricted_amount}") 
+        print(f"Balance received: cashable={self.yanit_bakiye_tutar}, restricted={self.yanit_restricted_amount}, nonrestricted={self.yanit_nonrestricted_amount}")
+
+    def get_meter(self, meter_code, meter_name):
+        """
+        Send a SAS meter command and print the result in hex and decimal.
+        meter_code: hex string (e.g., '11' for total bet meter)
+        meter_name: descriptive name for logging
+        """
+        command = f"01{meter_code}"
+        command = get_crc(command)
+        # Send command and wait for response (assume communicator returns hex string response)
+        response = self.communicator.sas_send_command_with_queue(meter_name, command, 1, wait_response=True)
+        if response:
+            # Print full response in hex
+            print(f"{meter_name} response (hex): {response}")
+            # Parse value (skip header, get 4 bytes for value)
+            try:
+                value_hex = response[2:10]  # adjust if protocol differs
+                value_dec = int(value_hex, 16)
+                print(f"{meter_name}: {value_hex} (hex) = {value_dec} (decimal)")
+            except Exception as e:
+                print(f"Failed to parse {meter_name} meter value: {e}")
+        else:
+            print(f"No response for {meter_name} meter.")
+
+    def run_all_meters(self):
+        """
+        Run all main meter reads and print their results.
+        Call this after SAS connection is established and asset number is read.
+        """
+        meters = [
+            ("11", "Total Bet Meter"),
+            ("12", "Total Win Meter"),
+            ("13", "Total In Meter"),
+            ("14", "Total Jackpot Meter"),
+            ("15", "Games Played Meter"),
+            ("16", "Games Won Meter"),
+            ("17", "Games Lost Meter"),
+            ("1A", "Current Credits Meter"),
+        ]
+        for code, name in meters:
+            self.get_meter(code, name) 
