@@ -411,7 +411,7 @@ class SASCommunicator:
                 reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                 asset_dec = int(reversed_hex, 16)
                 print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
-                # Call robust batch meter reading after asset number is read
+                print("DEBUG: About to call get_meter")
                 self.sas_money.get_meter(isall=0)
                 return
             # SAS Version response (0x54) (fallback)
@@ -436,7 +436,7 @@ class SASCommunicator:
                 self.sas_money.is_waiting_for_meter = False
                 # Optionally, handle/parse the meter data here
                 return
-            print(f"Unhandled SAS message: {tdata}")
+            print(f"DEBUG: Received SAS message: {tdata}")
         except Exception as e:
             print(f"Error in handle_received_sas_command: {e}")
 
