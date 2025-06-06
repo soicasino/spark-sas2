@@ -445,15 +445,12 @@ class SASCommunicator:
                 print("Meter response received.")
                 self.sas_money.is_waiting_for_meter = False
                 self.sas_money.meter_response_received = True  # Prevent further retries in get_meter
-                # Split concatenated meter blocks and parse each
-                blocks = re.findall(r'(012F|01AF)[0-9A-F]+?(?=(012F|01AF)|$)', tdata)
-                if blocks:
-                    for block_tuple in blocks:
-                        block = block_tuple[0] + block_tuple[1] if block_tuple[1] else block_tuple[0]
+                # Improved: Split on every 012F or 01AF and parse each block
+                split_blocks = re.split(r'(?=012F|01AF)', tdata)
+                for block in split_blocks:
+                    if block.startswith("012F") or block.startswith("01AF"):
+                        print(f"[DEBUG] Parsing meter block: {block}")
                         self.sas_money.handle_single_meter_response(block)
-                else:
-                    # Fallback: try to parse the whole tdata
-                    self.sas_money.handle_single_meter_response(tdata)
                 return
             # Handle single meter responses (codes 10-2C)
             if tdata[:4] in [f"01{code}" for code in self.sas_money.SINGLE_METER_CODES.values()]:
