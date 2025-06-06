@@ -513,7 +513,7 @@ class SASCommunicator:
                     # Reverse by bytes
                     reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                     asset_dec = int(reversed_hex, 16)
-                    print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
+                    print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}  DEBUG: Port test asset number")
                     return
             print("[ASSET NO] Could not read asset number from SAS.")
         except Exception as e:
