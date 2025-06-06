@@ -217,6 +217,9 @@ class SasMoney:
         parsed_meters = {}
         received_all_meter = f"{tdata}|"
 
+        def money_fmt(val):
+            return f"{val:,.2f} TL"
+
         if command == "2F":
             # Parse as a block: [code][value]...[code][value]...
             while idx + 2 <= len(tdata):
@@ -235,7 +238,7 @@ class SasMoney:
                     value = self.bcd_to_int(meter_val) / 100.0
                     parsed_meters[name] = value
                     received_all_meter += f"{meter_code}-{meter_val}|"
-                    print(f"  {name} ({meter_code}): {value:,.2f}")
+                    print(f"  {name} ({meter_code}): {money_fmt(value)}")
                 except Exception as e:
                     print(f"Meter parse error: {meter_code} {meter_val} {e}")
                     break
@@ -261,7 +264,7 @@ class SasMoney:
                     name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
                     parsed_meters[name] = value
                     received_all_meter += f"{meter_code}-{meter_val}|"
-                    print(f"  {name} ({meter_code}): {value:,.2f}")
+                    print(f"  {name} ({meter_code}): {money_fmt(value)}")
                 except Exception as e:
                     print(f"AF Meter parse error: {meter_code} {meter_val} {e}")
                     break
