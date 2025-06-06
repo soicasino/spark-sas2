@@ -411,8 +411,8 @@ class SASCommunicator:
                 reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                 asset_dec = int(reversed_hex, 16)
                 print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
-                # Call meter reading after asset number is read
-                self.sas_money.run_all_meters()
+                # Call robust batch meter reading after asset number is read
+                self.sas_money.get_meter(isall=0)
                 return
             # SAS Version response (0x54) (fallback)
             if tdata.startswith("0154"):
@@ -429,6 +429,12 @@ class SASCommunicator:
             # Exception messages (01FF) (fallback)
             if tdata.startswith("01FF"):
                 self._handle_exception_message(tdata)
+                return
+            # Add this to handle meter responses and clear the waiting flag
+            if tdata.startswith("012F") or tdata.startswith("01AF"):
+                print("Meter response received.")
+                self.sas_money.is_waiting_for_meter = False
+                # Optionally, handle/parse the meter data here
                 return
             print(f"Unhandled SAS message: {tdata}")
         except Exception as e:
