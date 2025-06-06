@@ -174,4 +174,55 @@ class SasMoney:
     def run_all_meters(self):
         print("DEBUG: run_all_meters START")
         self.get_meter(isall=0)
-        print("DEBUG: run_all_meters END") 
+        print("DEBUG: run_all_meters END")
+
+    def is_valid_bcd(self, hex_str):
+        """Check if a hex string is valid BCD (only 0-9 digits)."""
+        return all(c in '0123456789' for c in hex_str)
+
+    # Mapping of meter names to SAS codes (hex)
+    SINGLE_METER_CODES = {
+        'total_cancelled_credits': '10',
+        'total_bet': '11',
+        'total_win': '12',
+        'total_in': '13',
+        'total_jackpot': '14',
+        'games_played': '15',
+        'games_won': '16',
+        'games_lost': '17',
+        'current_credits': '1A',
+        'true_coin_in': '2A',
+        'true_coin_out': '2B',
+        'curr_hopper_level': '2C',
+        # Add more as needed
+    }
+
+    def request_single_meter(self, meter_name):
+        """Send a single meter request for the given meter name."""
+        code = self.SINGLE_METER_CODES.get(meter_name)
+        if not code:
+            print(f"Unknown meter name: {meter_name}")
+            return
+        command = get_crc(f"01{code}")
+        print(f"Requesting single meter: {meter_name} (code {code}) -> {command}")
+        self.communicator.sas_send_command_with_queue(f"get_single_meter_{meter_name}", command, 0)
+
+    def request_all_single_meters(self):
+        """Request all single meters in sequence and print their values."""
+        for meter_name in self.SINGLE_METER_CODES:
+            self.request_single_meter(meter_name)
+            time.sleep(0.5)  # Wait for response before next request
+
+    def handle_single_meter_response(self, tdata):
+        """Parse and print a single meter response with BCD validation."""
+        # tdata: e.g. 0111.... (address+code+len+data+crc)
+        if len(tdata) < 10:
+            print(f"Response too short: {tdata}")
+            return
+        code = tdata[2:4]
+        value_hex = tdata[6:14]  # 4 bytes (8 hex chars) after len
+        if self.is_valid_bcd(value_hex):
+            value = int(value_hex, 16) / 100.0
+            print(f"Single Meter [{code}]: {value:,.2f}")
+        else:
+            print(f"Single Meter [{code}]: INVALID BCD ({value_hex})") 

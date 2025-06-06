@@ -86,6 +86,9 @@ class SlotMachineApplication:
                 time.sleep(1.0)
                 # Explicitly call run_all_meters after asset number is read
                 self.sas_comm.sas_money.run_all_meters()
+                # Request all single meters for testing
+                print("[TEST] Requesting all single meters...")
+                self.sas_comm.sas_money.request_all_single_meters()
                 # --- Card reader manager integration ---
                 if hasattr(self.port_mgr, 'get_all_ports'):
                     port_list = self.port_mgr.get_all_ports()

@@ -473,6 +473,10 @@ class SASCommunicator:
                 except Exception as e:
                     print(f"Error parsing meter response: {e}")
                 return
+            # Handle single meter responses (codes 10-2C)
+            if tdata[:4] in [f"01{code}" for code in self.sas_money.SINGLE_METER_CODES.values()]:
+                self.sas_money.handle_single_meter_response(tdata)
+                return
             print(f"DEBUG: Received SAS message: {tdata}")
         except Exception as e:
             print(f"Error in handle_received_sas_command: {e}")
