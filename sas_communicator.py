@@ -451,8 +451,6 @@ class SASCommunicator:
                     if block.startswith("012F") or block.startswith("01AF"):
                         print(f"[DEBUG] Parsing meter block: {block}")
                         self.sas_money.handle_single_meter_response(block)
-                        # Parse and print using the actual received block
-                        self.parse_and_print_sas_meter_block(block)
                 return
             # Handle single meter responses (codes 10-2C)
             if tdata[:4] in [f"01{code}" for code in self.sas_money.SINGLE_METER_CODES.values()]:

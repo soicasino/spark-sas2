@@ -193,6 +193,19 @@ class SasMoney:
         'FC': ('nonrestricted_keyed', 5),
     }
 
+    # Single meter command codes (for individual meter requests)
+    SINGLE_METER_CODES = {
+        'total_bet': '11',
+        'total_win': '12', 
+        'total_in': '13',
+        'total_jackpot': '14',
+        'games_played': '15',
+        'games_won': '16',
+        'total_cancelled': '10',
+        'current_credits': '1A',
+        'bills_total': '1E',
+    }
+
     def handle_single_meter_response(self, tdata):
         """
         Parses a SAS meter response using dynamic code/length logic, supporting both 2F and AF command types.
@@ -210,7 +223,6 @@ class SasMoney:
         idx += 2
         length = tdata[idx:idx+2]
         idx += 2
-        # For 2F, next 4 chars are GameNumber, for AF, next 4 are not used
         if command == "2F":
             game_number = tdata[idx:idx+4]
             idx += 4
@@ -220,16 +232,21 @@ class SasMoney:
         def money_fmt(val):
             return f"{val:,.2f} TL"
 
+        print(f"[DEBUG] Entered handle_single_meter_response with command: {command}")
+
         if command == "2F":
             # Parse as a block: [code][value]...[code][value]...
             while idx + 2 <= len(tdata):
                 meter_code = tdata[idx:idx+2].upper()
+                print(f"[DEBUG] Parsing meter code: {meter_code} at idx={idx}")
                 idx += 2
                 if meter_code == "" or meter_code not in self.METER_CODE_MAP:
+                    print(f"[DEBUG] Unknown or empty meter code: '{meter_code}' at idx={idx}. Breaking.")
                     break
                 name, nbytes = self.METER_CODE_MAP[meter_code]
                 hex_len = nbytes * 2
                 meter_val = tdata[idx:idx+hex_len]
+                print(f"[DEBUG] meter_code={meter_code}, name={name}, nbytes={nbytes}, hex_len={hex_len}, meter_val={meter_val}")
                 idx += hex_len
                 if len(meter_val) < hex_len:
                     print(f"Error: Incomplete data for meter '{name}' ({meter_code}).")
@@ -244,20 +261,23 @@ class SasMoney:
                     break
             print("--- End of 2F Meter Block ---")
         elif command == "AF":
-            # Parse as: [code][00][len][value]...
             try_count = 0
             while idx + 6 <= len(tdata) and try_count < 15:
                 try_count += 1
                 meter_code = tdata[idx:idx+2].upper()
+                print(f"[DEBUG] Parsing meter code: {meter_code} at idx={idx}")
                 idx += 4  # skip code + 00
                 if idx + 2 > len(tdata):
+                    print(f"[DEBUG] Not enough data for meter_length at idx={idx}. Breaking.")
                     break
                 meter_length = int(tdata[idx:idx+2], 16)
                 idx += 2
                 hex_len = meter_length * 2
                 if idx + hex_len > len(tdata):
+                    print(f"[DEBUG] Not enough data for meter_val at idx={idx}. Breaking.")
                     break
                 meter_val = tdata[idx:idx+hex_len]
+                print(f"[DEBUG] meter_code={meter_code}, meter_length={meter_length}, hex_len={hex_len}, meter_val={meter_val}")
                 idx += hex_len
                 try:
                     value = self.bcd_to_int(meter_val) / 100.0
@@ -271,6 +291,7 @@ class SasMoney:
             print("--- End of AF Meter Block ---")
         else:
             print(f"Unknown meter response command: {command}")
+        print(f"[DEBUG] handle_single_meter_response finished. Parsed meters: {parsed_meters}")
         return parsed_meters
 
     def get_meter(self, isall=0, sender="Unknown", gameid=0):
