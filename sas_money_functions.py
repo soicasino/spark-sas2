@@ -134,13 +134,7 @@ class SasMoney:
     def komut_get_meter(self, isall=0, gameid=0):
         print("=== METER: komut_get_meter called ===")
         print(f"METER: komut_get_meter params: isall={isall}, gameid={gameid}")
-        # Clear serial input buffer before sending command
-        if hasattr(self.communicator, 'serial_port') and self.communicator.serial_port:
-            try:
-                self.communicator.serial_port.reset_input_buffer()
-                print("[DEBUG] Cleared serial input buffer before sending meter command.")
-            except Exception as e:
-                print(f"[DEBUG] Could not clear serial input buffer: {e}")
+        # Removed buffer clear to avoid missing fast meter responses
         G_CasinoId = int(self.config.get('casino', 'casinoid', fallback=8))
         IsNewMeter = 1 if G_CasinoId in [8, 11, 7] else 0
         if isall == 0 and IsNewMeter == 0:
