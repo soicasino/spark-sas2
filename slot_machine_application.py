@@ -84,8 +84,9 @@ class SlotMachineApplication:
                 self.sas_comm.send_sas_command(self.sas_comm.sas_address + '7301FF')
                 # Wait for asset number response to be processed
                 time.sleep(1.0)
-                # [TEST] Requesting all single meters... (removed: use manual requests if needed)
-                # self.sas_comm.sas_money.request_all_single_meters()
+                # After reading asset number, request and print meters
+                print("[INFO] Requesting meters after asset number read...")
+                self.sas_comm.sas_money.get_meter(isall=0)
                 # --- Card reader manager integration ---
                 if hasattr(self.port_mgr, 'get_all_ports'):
                     port_list = self.port_mgr.get_all_ports()
