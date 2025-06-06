@@ -30,5 +30,6 @@
     "titleBar.inactiveBackground": "#330d0099",
     "titleBar.inactiveForeground": "#e7e7e799"
   },
-  "peacock.color": "#330d00"
+  "peacock.color": "#330d00",
+  "cursor.exclude": ["docs/**"]
 }

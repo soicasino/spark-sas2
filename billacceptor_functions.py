@@ -124,14 +124,14 @@ class BillAcceptorFunctions:
                     senddata = senddata.replace("CRC", "")
                     senddata = self.get_mei_msg_crc(senddata)
                     print("senddata", senddata)
-            except Exception as esql1:
+            except Exception as e:
                 print("Err")
             is_show_debug_sent = 0
             if is_show_debug_sent == 1:
                 print("Gonderilen mesaj", senddata)
             hex_data = self.decode2hex(senddata)
             self.billacceptorport.write(hex_data)
-        except Exception as esql:
+        except Exception as e:
             senddata = ""
 
     def send_bill_acceptor_command_is_exist(self):
@@ -153,7 +153,7 @@ class BillAcceptorFunctions:
                 print("Gonderilen mesaj", senddata)
             hex_data = self.decode2hex(senddata)
             self.billacceptorport.write(hex_data)
-        except Exception as esql:
+        except Exception as e:
             self.bill_acceptor_command_str = ""
         self.bill_acceptor_command_str = ""
 
