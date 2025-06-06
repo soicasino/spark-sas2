@@ -206,10 +206,23 @@ class SasMoney:
         'bills_total': '1E',
     }
 
+    def get_length_by_meter_code(self, meter_code):
+        """
+        Determine meter value length by code, exactly matching the reference implementation.
+        Some meters are 5 bytes, others are 4 bytes.
+        """
+        five_byte_codes = ["0D", "0E", "0F", "10", "80", "82", "84", "86", "88", "8A", "8C", "8E", 
+                          "90", "92", "A0", "A2", "A4", "A6", "A8", "AA", "AC", "AE", "B0", "B8", 
+                          "BA", "BC"]
+        
+        if meter_code.upper() in five_byte_codes:
+            return 5
+        return 4
+
     def handle_single_meter_response(self, tdata):
         """
-        Parses a SAS meter response using dynamic code/length logic, supporting both 2F and AF command types.
-        This matches the robust logic from the reference Yanit_MeterAll function.
+        Parses a SAS meter response using the exact logic from the working reference Yanit_MeterAll function.
+        Supports both 2F and AF command types with dynamic code/length parsing.
         """
         print(f"--- Parsing SAS Meter Response: {tdata} ---")
         if len(tdata) < 10:
@@ -223,9 +236,13 @@ class SasMoney:
         idx += 2
         length = tdata[idx:idx+2]
         idx += 2
+        
+        message_length = (int(tdata[4:6], 16) * 2) + 10
+        
         if command == "2F":
             game_number = tdata[idx:idx+4]
             idx += 4
+
         parsed_meters = {}
         received_all_meter = f"{tdata}|"
 
@@ -235,62 +252,85 @@ class SasMoney:
         print(f"[DEBUG] Entered handle_single_meter_response with command: {command}")
 
         if command == "2F":
-            # Parse as a block: [code][value]...[code][value]...
-            while idx + 2 <= len(tdata):
+            # Parse as block using reference logic: [code][value]...[code][value]...
+            meter_code = "XXXX"
+            while len(meter_code) > 0 and idx < len(tdata):
                 meter_code = tdata[idx:idx+2].upper()
-                print(f"[DEBUG] Parsing meter code: {meter_code} at idx={idx}")
+                if not meter_code or len(meter_code) < 2:
+                    break
                 idx += 2
-                if meter_code == "" or meter_code not in self.METER_CODE_MAP:
-                    print(f"[DEBUG] Unknown or empty meter code: '{meter_code}' at idx={idx}. Breaking.")
-                    break
-                name, nbytes = self.METER_CODE_MAP[meter_code]
-                hex_len = nbytes * 2
-                meter_val = tdata[idx:idx+hex_len]
-                print(f"[DEBUG] meter_code={meter_code}, name={name}, nbytes={nbytes}, hex_len={hex_len}, meter_val={meter_val}")
-                idx += hex_len
-                if len(meter_val) < hex_len:
-                    print(f"Error: Incomplete data for meter '{name}' ({meter_code}).")
-                    break
+                
+                next_length = self.get_length_by_meter_code(meter_code) * 2
+                meter_val = tdata[idx:idx+next_length]
+                idx += next_length
+                
+                print(f"[DEBUG] meter_code={meter_code}, length={next_length//2} bytes, meter_val={meter_val}")
+                
                 try:
-                    value = self.bcd_to_int(meter_val) / 100.0
-                    parsed_meters[name] = value
+                    meter_value = int(meter_val, 16) / 100.0
+                    
+                    # Store the parsed meter using the same variable names as reference
+                    meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, next_length//2))[0]
+                    parsed_meters[meter_name] = meter_value
                     received_all_meter += f"{meter_code}-{meter_val}|"
-                    print(f"  {name} ({meter_code}): {money_fmt(value)}")
+                    
+                    print(f"  {meter_name} ({meter_code}): {money_fmt(meter_value)}")
+                    
                 except Exception as e:
                     print(f"Meter parse error: {meter_code} {meter_val} {e}")
                     break
             print("--- End of 2F Meter Block ---")
+            
         elif command == "AF":
+            # Parse AF format: [code][00][len][value]...
             try_count = 0
-            while idx + 6 <= len(tdata) and try_count < 15:
+            while try_count < 15 and idx < len(tdata):
                 try_count += 1
+                
                 meter_code = tdata[idx:idx+2].upper()
-                print(f"[DEBUG] Parsing meter code: {meter_code} at idx={idx}")
                 idx += 4  # skip code + 00
+                
                 if idx + 2 > len(tdata):
-                    print(f"[DEBUG] Not enough data for meter_length at idx={idx}. Breaking.")
                     break
+                    
                 meter_length = int(tdata[idx:idx+2], 16)
                 idx += 2
                 hex_len = meter_length * 2
+                
                 if idx + hex_len > len(tdata):
-                    print(f"[DEBUG] Not enough data for meter_val at idx={idx}. Breaking.")
                     break
+                    
                 meter_val = tdata[idx:idx+hex_len]
-                print(f"[DEBUG] meter_code={meter_code}, meter_length={meter_length}, hex_len={hex_len}, meter_val={meter_val}")
                 idx += hex_len
+                
+                print(f"[DEBUG] AF meter_code={meter_code}, length={meter_length} bytes, meter_val={meter_val}")
+                
                 try:
-                    value = self.bcd_to_int(meter_val) / 100.0
-                    name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
-                    parsed_meters[name] = value
+                    meter_value = int(meter_val, 16) / 100.0
+                    meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
+                    parsed_meters[meter_name] = meter_value
                     received_all_meter += f"{meter_code}-{meter_val}|"
-                    print(f"  {name} ({meter_code}): {money_fmt(value)}")
+                    print(f"  {meter_name} ({meter_code}): {money_fmt(meter_value)}")
+                    
                 except Exception as e:
                     print(f"AF Meter parse error: {meter_code} {meter_val} {e}")
                     break
             print("--- End of AF Meter Block ---")
+            
         else:
             print(f"Unknown meter response command: {command}")
+
+        # Check message length like the reference
+        if len(tdata) < message_length:
+            print("********** METER RECEIVED BUT NOT ACCEPTED! ***************")
+            print(f"Expected length: {message_length}, actual: {len(tdata)}")
+            return
+            
+        # Clear waiting flag like the reference
+        self.is_waiting_for_meter = False
+        print(received_all_meter)
+        print("Meter is received")
+        
         print(f"[DEBUG] handle_single_meter_response finished. Parsed meters: {parsed_meters}")
         return parsed_meters
 
