@@ -195,58 +195,80 @@ class SasMoney:
 
     def handle_single_meter_response(self, tdata):
         """
-        Dynamically and robustly parses a meter block or single meter response.
-        Fixes BCD conversion by treating the hex string as a base-10 integer.
+        Parses a SAS meter response using dynamic code/length logic, supporting both 2F and AF command types.
+        This matches the robust logic from the reference Yanit_MeterAll function.
         """
-        print(f"--- Parsing Meter Response: {tdata} ---")
-        # Check for a long poll response (meter block)
-        if len(tdata) > 20:  # A typical single meter response is shorter
-            idx = 6  # Skip address (2), command code (2), and length (2)
-            parsed_meters = {}
-            while idx + 4 <= len(tdata): # Need at least a 2-byte code and 2-byte value
-                code = tdata[idx:idx+2].upper()
+        print(f"--- Parsing SAS Meter Response: {tdata} ---")
+        if len(tdata) < 10:
+            print(f"Response too short to be a valid meter block: {tdata}")
+            return
+
+        idx = 0
+        address = tdata[idx:idx+2]
+        idx += 2
+        command = tdata[idx:idx+2].upper()
+        idx += 2
+        length = tdata[idx:idx+2]
+        idx += 2
+        # For 2F, next 4 chars are GameNumber, for AF, next 4 are not used
+        if command == "2F":
+            game_number = tdata[idx:idx+4]
+            idx += 4
+        parsed_meters = {}
+        received_all_meter = f"{tdata}|"
+
+        if command == "2F":
+            # Parse as a block: [code][value]...[code][value]...
+            while idx + 2 <= len(tdata):
+                meter_code = tdata[idx:idx+2].upper()
                 idx += 2
-
-                if code not in self.METER_CODE_MAP:
-                    print(f"Warning: Unknown meter code '{code}'. Attempting to skip.")
-                    # As a fallback, assume a 4-byte value and skip
-                    idx += 8 
-                    continue
-
-                name, nbytes = self.METER_CODE_MAP[code]
+                if meter_code == "" or meter_code not in self.METER_CODE_MAP:
+                    break
+                name, nbytes = self.METER_CODE_MAP[meter_code]
                 hex_len = nbytes * 2
-                value_hex = tdata[idx:idx + hex_len]
+                meter_val = tdata[idx:idx+hex_len]
                 idx += hex_len
-
-                if len(value_hex) < hex_len:
-                    print(f"Error: Incomplete data for meter '{name}'. Expected {hex_len} chars, got {len(value_hex)}.")
-                    continue
-
-                if self.is_valid_bcd(value_hex):
-                    # CORRECTED BCD CONVERSION
-                    value = self.bcd_to_int(value_hex) / 100.0
+                if len(meter_val) < hex_len:
+                    print(f"Error: Incomplete data for meter '{name}' ({meter_code}).")
+                    break
+                try:
+                    value = self.bcd_to_int(meter_val) / 100.0
                     parsed_meters[name] = value
-                    print(f"  {name} ({code}): {value:,.2f}")
-                else:
-                    print(f"Error: Invalid BCD format for meter '{name}': {value_hex}")
-            print("--- End of Meter Block ---")
-            return parsed_meters
-        # Handle a single meter response as a fallback
-        elif len(tdata) >= 14: # Min length for a single response (e.g., 012F + len + code + 4-byte val + crc)
-            code = tdata[6:8].upper()
-            if code in self.METER_CODE_MAP:
-                name, nbytes = self.METER_CODE_MAP[code]
-                hex_len = nbytes * 2
-                value_hex = tdata[8:8 + hex_len]
-
-                if self.is_valid_bcd(value_hex):
-                    # CORRECTED BCD CONVERSION
-                    value = self.bcd_to_int(value_hex) / 100.0
-                    print(f"  {name} ({code}): {value:,.2f}")
-                else:
-                    print(f"Error: Invalid BCD format for single meter '{name}': {value_hex}")
+                    received_all_meter += f"{meter_code}-{meter_val}|"
+                    print(f"  {name} ({meter_code}): {value:,.2f}")
+                except Exception as e:
+                    print(f"Meter parse error: {meter_code} {meter_val} {e}")
+                    break
+            print("--- End of 2F Meter Block ---")
+        elif command == "AF":
+            # Parse as: [code][00][len][value]...
+            try_count = 0
+            while idx + 6 <= len(tdata) and try_count < 15:
+                try_count += 1
+                meter_code = tdata[idx:idx+2].upper()
+                idx += 4  # skip code + 00
+                if idx + 2 > len(tdata):
+                    break
+                meter_length = int(tdata[idx:idx+2], 16)
+                idx += 2
+                hex_len = meter_length * 2
+                if idx + hex_len > len(tdata):
+                    break
+                meter_val = tdata[idx:idx+hex_len]
+                idx += hex_len
+                try:
+                    value = self.bcd_to_int(meter_val) / 100.0
+                    name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
+                    parsed_meters[name] = value
+                    received_all_meter += f"{meter_code}-{meter_val}|"
+                    print(f"  {name} ({meter_code}): {value:,.2f}")
+                except Exception as e:
+                    print(f"AF Meter parse error: {meter_code} {meter_val} {e}")
+                    break
+            print("--- End of AF Meter Block ---")
         else:
-            print(f"Warning: Received a short or unknown meter response: {tdata}")
+            print(f"Unknown meter response command: {command}")
+        return parsed_meters
 
     def get_meter(self, isall=0, sender="Unknown", gameid=0):
         """
