@@ -214,15 +214,37 @@ class SasMoney:
             time.sleep(0.5)  # Wait for response before next request
 
     def handle_single_meter_response(self, tdata):
-        """Parse and print a single meter response with BCD validation."""
-        # tdata: e.g. 0111.... (address+code+len+data+crc)
-        if len(tdata) < 10:
-            print(f"Response too short: {tdata}")
-            return
-        code = tdata[2:4]
-        value_hex = tdata[6:14]  # 4 bytes (8 hex chars) after len
-        if self.is_valid_bcd(value_hex):
-            value = int(value_hex, 16) / 100.0
-            print(f"Single Meter [{code}]: {value:,.2f}")
+        """Parse and print a single meter response or a meter block with BCD validation."""
+        # If the response is a block (long), parse all known meters in order
+        if len(tdata) > 40:  # block response
+            print("--- SAS Meter Block ---")
+            idx = 6  # skip address (2), code (2), length (2)
+            meter_names = [
+                'total_cancelled_credits', 'total_bet', 'total_win', 'total_in', 'total_jackpot',
+                'games_played', 'games_won', 'games_lost', 'current_credits', 'true_coin_in',
+                'true_coin_out', 'curr_hopper_level'
+            ]
+            for name in meter_names:
+                value_hex = tdata[idx:idx+8]
+                idx += 8
+                if len(value_hex) < 8:
+                    print(f"{name}: (no data)")
+                    continue
+                if self.is_valid_bcd(value_hex):
+                    value = int(value_hex, 16) / 100.0
+                    print(f"{name}: {value:,.2f}")
+                else:
+                    print(f"{name}: INVALID BCD ({value_hex})")
+            print("----------------------")
         else:
-            print(f"Single Meter [{code}]: INVALID BCD ({value_hex})") 
+            # Fallback: single meter response
+            if len(tdata) < 10:
+                print(f"Response too short: {tdata}")
+                return
+            code = tdata[2:4]
+            value_hex = tdata[6:14]  # 4 bytes (8 hex chars) after len
+            if self.is_valid_bcd(value_hex):
+                value = int(value_hex, 16) / 100.0
+                print(f"Single Meter [{code}]: {value:,.2f}")
+            else:
+                print(f"Single Meter [{code}]: INVALID BCD ({value_hex})") 
