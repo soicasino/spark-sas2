@@ -84,8 +84,6 @@ class SlotMachineApplication:
                 self.sas_comm.send_sas_command(self.sas_comm.sas_address + '7301FF')
                 # Wait for asset number response to be processed
                 time.sleep(1.0)
-                # Explicitly call run_all_meters after asset number is read
-                self.sas_comm.sas_money.run_all_meters()
                 # Request all single meters for testing
                 print("[TEST] Requesting all single meters...")
                 self.sas_comm.sas_money.request_all_single_meters()
