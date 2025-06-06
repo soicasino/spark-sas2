@@ -173,16 +173,5 @@ class SasMoney:
 
     def run_all_meters(self):
         print("DEBUG: run_all_meters START")
-        meters = [
-            ("11", "Total Bet Meter"),
-            ("12", "Total Win Meter"),
-            ("13", "Total In Meter"),
-            ("14", "Total Jackpot Meter"),
-            ("15", "Games Played Meter"),
-            ("16", "Games Won Meter"),
-            ("17", "Games Lost Meter"),
-            ("1A", "Current Credits Meter"),
-        ]
-        for code, name in meters:
-            self.get_meter(code, name)
+        self.get_meter(isall=0)
         print("DEBUG: run_all_meters END") 
