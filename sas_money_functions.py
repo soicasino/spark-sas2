@@ -254,13 +254,24 @@ class SasMoney:
         if command == "2F":
             # Parse as block using reference logic: [code][value]...[code][value]...
             meter_code = "XXXX"
-            while len(meter_code) > 0 and idx < len(tdata):
+            # Calculate where meter data should end (exclude CRC)
+            meter_data_end = message_length - 4  # Subtract 4 for CRC
+            
+            while len(meter_code) > 0 and idx < meter_data_end:
+                if idx + 2 > meter_data_end:
+                    break
+                    
                 meter_code = tdata[idx:idx+2].upper()
                 if not meter_code or len(meter_code) < 2:
                     break
                 idx += 2
                 
                 next_length = self.get_length_by_meter_code(meter_code) * 2
+                
+                if idx + next_length > meter_data_end:
+                    print(f"[DEBUG] Would exceed meter data boundary, stopping at code {meter_code}")
+                    break
+                    
                 meter_val = tdata[idx:idx+next_length]
                 idx += next_length
                 
