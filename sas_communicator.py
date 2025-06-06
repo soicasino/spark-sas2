@@ -340,7 +340,9 @@ class SASCommunicator:
 
     def handle_received_sas_command(self, tdata):
         """Comprehensive SAS response handler, covering all message types from the reference."""
-        print(f"DEBUG: handle_received_sas_command called with tdata={tdata}")
+        # Only print debug for meter responses
+        if tdata.startswith("012F") or tdata.startswith("01AF"):
+            print(f"DEBUG: handle_received_sas_command called with tdata={tdata}")
         try:
             if not tdata:
                 return
