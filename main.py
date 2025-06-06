@@ -1,3 +1,4 @@
+print("main.py started")
 from slot_machine_application import SlotMachineApplication
 
 if __name__ == "__main__":

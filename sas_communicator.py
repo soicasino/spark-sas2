@@ -1,3 +1,4 @@
+print("sas_communicator.py loaded")
 import serial
 import time
 import datetime

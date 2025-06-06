@@ -1,5 +1,7 @@
 import time
 
+print("port_manager.py loaded")
+
 class PortManager:
     """Port detection and management"""
     

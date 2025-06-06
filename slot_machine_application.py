@@ -1,3 +1,4 @@
+print("slot_machine_application.py loaded")
 import threading
 import time
 from config_manager import ConfigManager
