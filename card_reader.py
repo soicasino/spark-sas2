@@ -14,7 +14,7 @@ class CardReader:
         self.polling_active = False
         self.last_card_number = None
         self.missed_polls = 0
-        self.max_missed_polls = 6  # Debounce: require 6 missed polls before ejection
+        self.max_missed_polls = 15  # Debounce: require 15 missed polls before ejection
 
     def find_port(self, port_list):
         """

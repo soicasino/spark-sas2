@@ -394,8 +394,8 @@ class SASCommunicator:
                 (lambda d: d[0:6] == "019400", lambda d: print("Handpay is reseted")),
                 (lambda d: d[0:4] == "0154", lambda d: self._handle_sas_version_response(d)),
                 (lambda d: d == "1F", lambda d: print("Simple ACK")),
-                # Remove or comment out real time reporting print
-                (lambda d: d == "01FF001CA5" or d == "01FF1F6A4D" or d == "01FF709BD6", lambda d: print("Real time reporting")),
+                # Suppress real time reporting print
+                (lambda d: d == "01FF001CA5" or d == "01FF1F6A4D" or d == "01FF709BD6", lambda d: None),
                 (lambda d: d[0:6] == "01FF88", lambda d: print("Reel N has stopped")),
                 (lambda d: d[0:4] == "01B5", lambda d: print("Game Info")),
                 (lambda d: d[0:6] == "01FF8C", lambda d: print("Game selected")),
