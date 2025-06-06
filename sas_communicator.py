@@ -41,7 +41,7 @@ class SASCommunicator:
             self.is_communication_by_windows = 0
 
         self.card_reader = None  # Will hold CardReader instance
-        self.sas_money = SasMoney(self.global_config)
+        self.sas_money = SasMoney(self.global_config, self)
         self.bill_acceptor = BillAcceptorFunctions()
 
     def open_port(self):

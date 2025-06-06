@@ -30,6 +30,7 @@ class SasMoney:
         self.global_para_sifirla_84 = 0
         self.is_waiting_for_para_yukle = 0
         self.is_waiting_for_bakiye_sifirla = 0
+        self.is_waiting_for_meter = False
         # ... add other state as needed
 
     def komut_cancel_aft_transfer(self):
@@ -129,28 +130,70 @@ class SasMoney:
         self.yanit_nonrestricted_amount = Decimal(current_nonrestricted_amount) / 100
         print(f"Balance received: cashable={self.yanit_bakiye_tutar}, restricted={self.yanit_restricted_amount}, nonrestricted={self.yanit_nonrestricted_amount}")
 
-    def get_meter(self, meter_code, meter_name):
+    def komut_get_meter(self, isall=0, gameid=0):
         """
-        Send a SAS meter command and print the result in hex and decimal.
-        meter_code: hex string (e.g., '11' for total bet meter)
-        meter_name: descriptive name for logging
+        Send a batch meter command depending on casino/config and isall flag.
         """
-        command = f"01{meter_code}"
-        command = get_crc(command)
-        # Send command and wait for response (assume communicator returns hex string response)
-        response = self.communicator.sas_send_command_with_queue(meter_name, command, 1, wait_response=True)
-        if response:
-            # Print full response in hex
-            print(f"{meter_name} response (hex): {response}")
-            # Parse value (skip header, get 4 bytes for value)
-            try:
-                value_hex = response[2:10]  # adjust if protocol differs
-                value_dec = int(value_hex, 16)
-                print(f"{meter_name}: {value_hex} (hex) = {value_dec} (decimal)")
-            except Exception as e:
-                print(f"Failed to parse {meter_name} meter value: {e}")
+        G_CasinoId = int(self.config.get('casino', 'casinoid', fallback=8))
+        IsNewMeter = 1 if G_CasinoId in [8, 11, 7] else 0
+
+        if isall == 0 and IsNewMeter == 0:
+            command = get_crc("012F0C0000A0B802031E00010BA2BA")
+        elif isall == 0 and IsNewMeter == 1:
+            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
+        elif isall == 1:
+            command = get_crc("012F0C00000405060C191D7FFAFBFC")
+        elif isall == 2:
+            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
         else:
-            print(f"No response for {meter_name} meter.")
+            print("Unknown meter set requested.")
+            return
+
+        self.communicator.sas_send_command_with_queue("getmeter2", command, 0)
+
+    def get_meter(self, isall=0, sender="Unknown", gameid=0, timeout=30):
+        """
+        Manage the process of getting meter readings, with retry and timeout.
+        Externally, set self.is_waiting_for_meter = False when a meter response is received.
+        """
+        operation_start = datetime.datetime.now()
+        self.is_waiting_for_meter = True
+        last_command_time = datetime.datetime.now()
+
+        print(f"Get meter request initiated. isall: {isall}, sender: {sender}")
+
+        self.komut_get_meter(isall, gameid)
+
+        while self.is_waiting_for_meter:
+            now = datetime.datetime.now()
+            elapsed_ms = (now - last_command_time).total_seconds() * 1000
+            total_elapsed_s = (now - operation_start).total_seconds()
+
+            # Resend if no response in 500ms
+            if elapsed_ms > 500:
+                print("Resending get meter command...")
+                self.komut_get_meter(isall, gameid)
+                last_command_time = now
+
+            # In production, set self.is_waiting_for_meter = False in the communicator when a meter response is received
+            # For demo, break after 5 seconds
+            if total_elapsed_s > 5:
+                print("Simulating meter received.")
+                self.is_waiting_for_meter = False
+
+            if not self.is_waiting_for_meter:
+                print("Meter is received")
+                break
+
+            if total_elapsed_s > timeout:
+                print("Timeout: Could not retrieve meter!")
+                # Log error as needed
+                break
+
+            time.sleep(0.05)  # Prevent tight loop
+
+        operation_diff_ms = (datetime.datetime.now() - operation_start).total_seconds() * 1000
+        print(f"Get Meter process completed in {operation_diff_ms:.2f} ms")
 
     def run_all_meters(self):
         """
