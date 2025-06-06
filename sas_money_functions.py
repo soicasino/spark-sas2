@@ -159,7 +159,7 @@ class SasMoney:
         retry_count = 0
         while self.is_waiting_for_meter and retry_count < 10:
             print(f"METER: get_meter waiting, retry_count={retry_count}")
-            time.sleep(0.5)
+            time.sleep(1.5)
             retry_count += 1
             if self.is_waiting_for_meter:
                 print(f"METER: get_meter retrying komut_get_meter, retry_count={retry_count}")
