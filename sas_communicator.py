@@ -340,6 +340,7 @@ class SASCommunicator:
 
     def handle_received_sas_command(self, tdata):
         """Comprehensive SAS response handler, covering all message types from the reference."""
+        print(f"DEBUG: handle_received_sas_command called with tdata={tdata}")
         try:
             if not tdata:
                 return
@@ -406,14 +407,17 @@ class SASCommunicator:
 
             # Asset number response (0x73)
             if tdata.startswith("0173"):
+                print("DEBUG: Asset number response detected")
                 asset_hex = tdata[8:16]
                 if len(asset_hex) % 2 != 0:
                     asset_hex = '0' + asset_hex
                 reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                 asset_dec = int(reversed_hex, 16)
                 print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
-                print("DEBUG: About to call get_meter")
+                print("DEBUG: About to call get_meter (main run)")
                 self.sas_money.get_meter(isall=0)
+                print("DEBUG: get_meter call finished")
+                print("DEBUG: Returning after asset number handling")
                 return
             # SAS Version response (0x54) (fallback)
             if tdata.startswith("0154"):
@@ -440,6 +444,7 @@ class SASCommunicator:
             print(f"DEBUG: Received SAS message: {tdata}")
         except Exception as e:
             print(f"Error in handle_received_sas_command: {e}")
+        print("DEBUG: handle_received_sas_command end")
 
     def _handle_sas_version_response(self, tdata):
         """Handle SAS version response"""

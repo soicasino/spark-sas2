@@ -131,7 +131,7 @@ class SasMoney:
         print(f"Balance received: cashable={self.yanit_bakiye_tutar}, restricted={self.yanit_restricted_amount}, nonrestricted={self.yanit_nonrestricted_amount}")
 
     def komut_get_meter(self, isall=0, gameid=0):
-        print(f"DEBUG: komut_get_meter called with isall={isall}, gameid={gameid}")
+        print(f"DEBUG: komut_get_meter START isall={isall}, gameid={gameid}")
         G_CasinoId = int(self.config.get('casino', 'casinoid', fallback=8))
         IsNewMeter = 1 if G_CasinoId in [8, 11, 7] else 0
         if isall == 0 and IsNewMeter == 0:
@@ -147,9 +147,10 @@ class SasMoney:
             return
         print(f"DEBUG: komut_get_meter sending command: {command}")
         self.communicator.sas_send_command_with_queue("getmeter2", command, 0)
+        print(f"DEBUG: komut_get_meter END isall={isall}, gameid={gameid}")
 
     def get_meter(self, isall=0, sender="Unknown", gameid=0):
-        print(f"DEBUG: get_meter called with isall={isall}, sender={sender}, gameid={gameid}")
+        print(f"DEBUG: get_meter START isall={isall}, sender={sender}, gameid={gameid}")
         L_OperationStartDate_Meter = datetime.datetime.now()
         self.is_waiting_for_meter = True
         self.komut_get_meter(isall, gameid)
@@ -166,12 +167,10 @@ class SasMoney:
         else:
             print("DEBUG: get_meter timeout waiting for meter response")
         print(f"DEBUG: get_meter process completed in {datetime.datetime.now() - L_OperationStartDate_Meter}")
+        print(f"DEBUG: get_meter END isall={isall}, sender={sender}, gameid={gameid}")
 
     def run_all_meters(self):
-        """
-        Run all main meter reads and print their results.
-        Call this after SAS connection is established and asset number is read.
-        """
+        print("DEBUG: run_all_meters START")
         meters = [
             ("11", "Total Bet Meter"),
             ("12", "Total Win Meter"),
@@ -183,4 +182,5 @@ class SasMoney:
             ("1A", "Current Credits Meter"),
         ]
         for code, name in meters:
-            self.get_meter(code, name) 
+            self.get_meter(code, name)
+        print("DEBUG: run_all_meters END") 
