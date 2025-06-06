@@ -82,6 +82,10 @@ class SlotMachineApplication:
                 print("SAS communication initialized successfully!")
                 # Trigger asset number read so main handler processes it and meters are called
                 self.sas_comm.send_sas_command(self.sas_comm.sas_address + '7301FF')
+                # Wait for asset number response to be processed
+                time.sleep(1.0)
+                # Explicitly call run_all_meters after asset number is read
+                self.sas_comm.sas_money.run_all_meters()
                 # --- Card reader manager integration ---
                 if hasattr(self.port_mgr, 'get_all_ports'):
                     port_list = self.port_mgr.get_all_ports()
