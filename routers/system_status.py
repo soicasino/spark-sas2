@@ -1,12 +1,13 @@
 """
 System Status Router - Health checks, port status, and system information
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from datetime import datetime
 from typing import Dict, Any
 
 from models.responses import SystemStatusResponse, AssetNumberResponse, SASVersionResponse, ErrorResponse
 from sas_web_service import SASWebService
+from middleware.ip_access_control import verify_ip_access
 
 router = APIRouter(prefix="/api/system", tags=["System Status"])
 
@@ -19,7 +20,10 @@ async def get_sas_service() -> SASWebService:
 
 
 @router.get("/status", response_model=SystemStatusResponse)
-async def get_system_status(sas_service: SASWebService = Depends(get_sas_service)):
+async def get_system_status(
+    sas_service: SASWebService = Depends(get_sas_service),
+    client_ip: str = Depends(verify_ip_access)
+):
     """
     Get comprehensive system status including SAS connection, port info, and service health
     """
@@ -52,7 +56,10 @@ async def get_system_status(sas_service: SASWebService = Depends(get_sas_service
 
 
 @router.get("/health")
-async def health_check(sas_service: SASWebService = Depends(get_sas_service)):
+async def health_check(
+    sas_service: SASWebService = Depends(get_sas_service),
+    client_ip: str = Depends(verify_ip_access)
+):
     """
     Simple health check endpoint for load balancers and monitoring
     """
@@ -82,7 +89,10 @@ async def health_check(sas_service: SASWebService = Depends(get_sas_service)):
 
 
 @router.get("/asset-number", response_model=AssetNumberResponse)
-async def get_asset_number(sas_service: SASWebService = Depends(get_sas_service)):
+async def get_asset_number(
+    sas_service: SASWebService = Depends(get_sas_service),
+    client_ip: str = Depends(verify_ip_access)
+):
     """
     Get the slot machine asset number
     """
@@ -114,7 +124,10 @@ async def get_asset_number(sas_service: SASWebService = Depends(get_sas_service)
 
 
 @router.get("/sas-version", response_model=SASVersionResponse)
-async def get_sas_version(sas_service: SASWebService = Depends(get_sas_service)):
+async def get_sas_version(
+    sas_service: SASWebService = Depends(get_sas_service),
+    client_ip: str = Depends(verify_ip_access)
+):
     """
     Get the SAS protocol version from the slot machine
     """
@@ -146,7 +159,10 @@ async def get_sas_version(sas_service: SASWebService = Depends(get_sas_service))
 
 
 @router.get("/ports")
-async def get_port_information(sas_service: SASWebService = Depends(get_sas_service)):
+async def get_port_information(
+    sas_service: SASWebService = Depends(get_sas_service),
+    client_ip: str = Depends(verify_ip_access)
+):
     """
     Get information about available and used ports
     """

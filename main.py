@@ -10,9 +10,11 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 
 from sas_web_service import SASWebService
-from routers import system_status, meters, bill_acceptor, machine_control, auth, websocket_routes, card_reader
+from routers import system_status, meters, bill_acceptor, machine_control, websocket_routes, card_reader, ip_management, event_management
 from websocket_manager import connection_manager
 from routers.websocket_routes import broadcast_sas_updates
+from database.db_manager import db_manager
+from services.event_service import event_service
 
 # Configure logging
 logging.basicConfig(
@@ -36,6 +38,14 @@ async def lifespan(app: FastAPI):
     logger.info("Starting SAS FastAPI application...")
     
     try:
+        # Initialize database first
+        logger.info("Initializing database...")
+        # Database is initialized automatically when db_manager is imported
+        logger.info("Database initialized successfully")
+        
+        # Initialize event service 
+        logger.info("Event service initialized and background sync started")
+        
         # Initialize SAS service
         sas_service = SASWebService()
         
@@ -113,13 +123,15 @@ async def global_exception_handler(request, exc):
 
 
 # Include routers
-app.include_router(auth.router)  # Authentication endpoints
+# IP-based access control - no authentication needed
 app.include_router(websocket_routes.router)  # WebSocket endpoints
 app.include_router(system_status.router)
 app.include_router(meters.router)
 app.include_router(bill_acceptor.router)
 app.include_router(machine_control.router)
 app.include_router(card_reader.router)  # Card reader endpoints
+app.include_router(ip_management.router)  # IP access control management
+app.include_router(event_management.router)  # Event management and sync status
 
 
 @app.get("/")
@@ -170,14 +182,14 @@ async def api_overview():
         "version": "1.0.0",
         "timestamp": datetime.now().isoformat(),
         "endpoints": {
-            "auth": {
-                "login": "POST /api/auth/login",
-                "logout": "POST /api/auth/logout",
-                "refresh": "POST /api/auth/refresh",
-                "profile": "GET /api/auth/me"
+            "access_control": {
+                "my_ip": "GET /api/access/my-ip",
+                "allowed_ips": "GET /api/access/allowed-ips",
+                "add_ip": "POST /api/access/allowed-ips",
+                "remove_ip": "DELETE /api/access/allowed-ips/{ip}"
             },
             "websocket": {
-                "live_updates": "WS /ws/live-updates?token=your_jwt_token",
+                "live_updates": "WS /ws/live-updates",
                 "info": "GET /ws/info"
             },
             "system": {
@@ -213,6 +225,16 @@ async def api_overview():
                 "status": "GET /api/machine/status",
                 "restart": "POST /api/machine/restart",
                 "emergency_stop": "POST /api/machine/emergency-stop"
+            },
+            "events": {
+                "stats": "GET /api/events/stats",
+                "unsynced": "GET /api/events/unsynced?event_type=game&limit=100",
+                "sync_status": "GET /api/events/sync-status",
+                "force_sync": "POST /api/events/force-sync",
+                "test_connection": "POST /api/events/test-nextjs-connection",
+                "cleanup": "POST /api/events/cleanup-old-events?days_old=7",
+                "test_game": "POST /api/events/test-game-event?event_type=test_game_started",
+                "test_card": "POST /api/events/test-card-event?event_type=card_inserted"
             }
         }
     }
