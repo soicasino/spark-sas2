@@ -32,6 +32,7 @@ class SasMoney:
         self.is_waiting_for_bakiye_sifirla = 0
         self.is_waiting_for_meter = False
         self.meter_response_received = False  # New flag to prevent multiple processing
+        self.last_parsed_meters = {}  # Store parsed meters for API access
         # ... add other state as needed
 
     def komut_cancel_aft_transfer(self):
@@ -345,6 +346,10 @@ class SasMoney:
         print("Meter is received")
         
         print(f"[DEBUG] handle_single_meter_response finished. Parsed meters: {parsed_meters}")
+        
+        # Store parsed meters for API access
+        self.last_parsed_meters = parsed_meters
+        
         return parsed_meters
 
     def get_meter(self, isall=0, sender="Unknown", gameid=0):

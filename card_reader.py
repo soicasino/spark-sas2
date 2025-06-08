@@ -2,6 +2,8 @@ import serial
 import time
 import threading
 import platform
+import asyncio
+from datetime import datetime
 
 class CardReader:
     def __init__(self):
@@ -160,20 +162,77 @@ class CardReader:
                         self.is_card_inside = True
                         card_detected = True
                         self.missed_polls = 0  # Reset missed poll counter
+                        
+                        # Broadcast card insertion event
+                        self._broadcast_card_event("card_inserted", card_no)
+                        
                 # Card eject detection with debounce
                 if not card_detected and self.is_card_inside:
                     self.missed_polls += 1
                     if self.missed_polls >= self.max_missed_polls:
                         print("Card ejected!")
+                        ejected_card = self.last_card_number
                         self.is_card_inside = False
                         self.last_card_number = None
                         self.missed_polls = 0
+                        
+                        # Broadcast card removal event
+                        self._broadcast_card_event("card_removed", ejected_card)
                 else:
                     self.missed_polls = 0
                 # REMARK: Place card removal/session cleanup logic here (see SQL_CardExit(sender) in legacy code)
             except Exception as e:
                 print(f"Polling error: {e}")
             time.sleep(self.card_reader_interval)
+
+    def _broadcast_card_event(self, event_type: str, card_number: str):
+        """Broadcast card events via WebSocket (non-blocking)"""
+        try:
+            # Create a new event loop in a separate thread if needed
+            def broadcast_async():
+                try:
+                    # Try to get the current event loop
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If we're in an async context, schedule the coroutine
+                        asyncio.create_task(self._send_websocket_event(event_type, card_number))
+                    else:
+                        # If no loop is running, run the coroutine
+                        loop.run_until_complete(self._send_websocket_event(event_type, card_number))
+                except RuntimeError:
+                    # No event loop in current thread, create one
+                    asyncio.run(self._send_websocket_event(event_type, card_number))
+                except Exception as e:
+                    print(f"[CardReader] Error broadcasting card event: {e}")
+            
+            # Run in a separate thread to avoid blocking
+            thread = threading.Thread(target=broadcast_async, daemon=True)
+            thread.start()
+            
+        except Exception as e:
+            print(f"[CardReader] Error starting broadcast thread: {e}")
+
+    async def _send_websocket_event(self, event_type: str, card_number: str):
+        """Send WebSocket event for card insertion/removal"""
+        try:
+            from websocket_manager import websocket_manager
+            
+            formatted_display = {
+                "event": f"🎴 Card {'Inserted' if event_type == 'card_inserted' else 'Removed'}",
+                "card_number": card_number if card_number else "Unknown",
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "status": "🟢 Active" if event_type == "card_inserted" else "🔴 Removed"
+            }
+            
+            await websocket_manager.broadcast_to_subscribers("card_events", {
+                "event_type": event_type,
+                "card_number": card_number,
+                "formatted_display": formatted_display,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            print(f"[CardReader] Error sending WebSocket event: {e}")
 
     def _send_command_hex(self, hex_string):
         try:
