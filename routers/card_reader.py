@@ -3,7 +3,7 @@ from datetime import datetime
 from models.responses import CardReaderStatusResponse, CardEventResponse, ErrorResponse
 from sas_web_service import SASWebService
 from middleware.ip_access_control import verify_ip_access
-from websocket_manager import websocket_manager
+from websocket_manager import connection_manager
 import asyncio
 
 router = APIRouter(prefix="/api/card-reader", tags=["Card Reader"])
@@ -87,7 +87,7 @@ async def eject_card(client_ip: str = Depends(verify_ip_access)):
         }
         
         # Broadcast card eject event
-        await websocket_manager.broadcast_to_subscribers("card_events", {
+        await connection_manager.broadcast_to_subscribed("card_events", {
             "event_type": "card_ejected",
             "formatted_display": formatted_display,
             "timestamp": datetime.now().isoformat()

@@ -215,7 +215,7 @@ class CardReader:
     async def _send_websocket_event(self, event_type: str, card_number: str):
         """Send WebSocket event for card insertion/removal"""
         try:
-            from websocket_manager import websocket_manager
+            from websocket_manager import connection_manager
             
             formatted_display = {
                 "event": f"🎴 Card {'Inserted' if event_type == 'card_inserted' else 'Removed'}",
@@ -224,7 +224,7 @@ class CardReader:
                 "status": "🟢 Active" if event_type == "card_inserted" else "🔴 Removed"
             }
             
-            await websocket_manager.broadcast_to_subscribers("card_events", {
+            await connection_manager.broadcast_to_subscribed("card_events", {
                 "event_type": event_type,
                 "card_number": card_number,
                 "formatted_display": formatted_display,
