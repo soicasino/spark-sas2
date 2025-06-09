@@ -20,6 +20,11 @@ class BaseResponse(BaseModel):
     message: str = Field(description="Human-readable message about the operation")
     timestamp: datetime = Field(default_factory=datetime.now, description="When the response was generated")
     execution_time_ms: Optional[float] = Field(None, description="Execution time in milliseconds")
+    
+    class Config:
+        # Disable validation during development
+        validate_assignment = False
+        extra = "allow"
 
 
 class SystemStatusResponse(BaseResponse):
@@ -73,7 +78,7 @@ class MetersResponse(BaseResponse):
 
 class BalanceResponse(BaseResponse):
     """Response model for balance information"""
-    data: Dict[str, float] = Field(description="Balance amounts")
+    data: Dict[str, Any] = Field(description="Balance amounts")
     
     class Config:
         schema_extra = {
@@ -93,7 +98,7 @@ class BalanceResponse(BaseResponse):
 
 class MachineControlResponse(BaseResponse):
     """Response model for machine control operations"""
-    data: Dict[str, str] = Field(description="Control operation result")
+    data: Dict[str, Any] = Field(description="Control operation result")
     
     class Config:
         schema_extra = {
@@ -112,7 +117,7 @@ class MachineControlResponse(BaseResponse):
 
 class BillAcceptorResponse(BaseResponse):
     """Response model for bill acceptor operations"""
-    data: Dict[str, str] = Field(description="Bill acceptor operation result")
+    data: Dict[str, Any] = Field(description="Bill acceptor operation result")
     
     class Config:
         schema_extra = {
@@ -195,17 +200,27 @@ class CardReaderStatusResponse(BaseModel):
     card_number: Optional[str] = None
     port_name: Optional[str] = None
     reader_connected: bool
-    formatted_display: Dict[str, str]
+    formatted_display: Dict[str, Any]
     error_code: Optional[str] = None
     message: Optional[str] = None
     timestamp: str
+    
+    class Config:
+        # Disable validation during development
+        validate_assignment = False
+        extra = "allow"
 
 
 class CardEventResponse(BaseModel):
     success: bool
     event_type: str  # "card_inserted" or "card_removed"
     card_number: Optional[str] = None
-    formatted_display: Dict[str, str]
+    formatted_display: Dict[str, Any]
     error_code: Optional[str] = None
     message: Optional[str] = None
-    timestamp: str 
+    timestamp: str
+    
+    class Config:
+        # Disable validation during development
+        validate_assignment = False
+        extra = "allow" 
