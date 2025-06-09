@@ -32,9 +32,9 @@ async def get_card_reader_status(client_ip: str = Depends(verify_ip_access)):
         
         formatted_display = {
             "card_status": f"🟢 Card Inserted" if result.get("card_inserted") else "🔴 No Card",
-            "card_number": result.get("card_number", "None"),
+            "card_number": result.get("card_number") or "None",
             "reader_status": f"🟢 Connected" if result.get("reader_connected") else "🔴 Disconnected", 
-            "port_name": result.get("port_name", "Not configured")
+            "port_name": result.get("port_name") or "Not configured"
         }
         
         return CardReaderStatusResponse(
