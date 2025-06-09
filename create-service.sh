@@ -15,6 +15,14 @@ CURRENT_DIR="$(pwd)"
 CURRENT_USER="$(whoami)"
 SERVICE_FILE="/etc/systemd/system/spark-sas2.service"
 
+# If running as root, get the actual owner of the current directory
+if [ "$CURRENT_USER" = "root" ]; then
+    ACTUAL_USER=$(stat -c '%U' "$CURRENT_DIR")
+    echo -e "${YELLOW}Running as root, but directory is owned by: $ACTUAL_USER${NC}"
+    echo -e "${YELLOW}Service will run as: $ACTUAL_USER${NC}"
+    CURRENT_USER="$ACTUAL_USER"
+fi
+
 echo -e "${YELLOW}Service will be created for:${NC}"
 echo "  User: $CURRENT_USER"
 echo "  Directory: $CURRENT_DIR"
@@ -81,6 +89,14 @@ fi
 echo -e "${GREEN}Using:${NC}"
 echo "  Python: $PYTHON_EXEC"
 echo "  Uvicorn: $UVICORN_EXEC"
+
+# Fix permissions on virtual environment if needed
+if [ -d ".venv" ]; then
+    echo -e "${YELLOW}Ensuring proper permissions on virtual environment...${NC}"
+    sudo chown -R $CURRENT_USER:$CURRENT_USER .venv
+    chmod +x .venv/bin/*
+fi
+
 echo
 
 # Create the service file
@@ -99,6 +115,7 @@ RestartSec=5
 User=$CURRENT_USER
 Group=$CURRENT_USER
 WorkingDirectory=$CURRENT_DIR
+Environment=PATH=$CURRENT_DIR/.venv/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONPATH=$CURRENT_DIR
 Environment=NEXTJS_BASE_URL=
 Environment=LOG_LEVEL=INFO
