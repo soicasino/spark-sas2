@@ -93,7 +93,13 @@ app = FastAPI(
 # Add CORS middleware for Next.js integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # Add your Next.js URLs
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://localhost:3001",
+        "http://10.0.0.200:3000",  # Pi's own IP
+        "http://10.0.0.200:3001",  # Pi's own IP alternate port
+        "*"  # Allow all origins during development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
