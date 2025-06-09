@@ -1,20 +1,25 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from datetime import datetime
 from models.responses import CardReaderStatusResponse, CardEventResponse, ErrorResponse
-from sas_web_service import SASWebService
 from middleware.ip_access_control import verify_ip_access
 from websocket_manager import connection_manager
 import asyncio
 
 router = APIRouter(prefix="/api/card-reader", tags=["Card Reader"])
 
-# Shared SAS service instance
-sas_service = SASWebService()
+def get_sas_service():
+    """Get the global SAS service instance from main.py"""
+    import main
+    return main.sas_service
 
 @router.get("/status", response_model=CardReaderStatusResponse)
 async def get_card_reader_status(client_ip: str = Depends(verify_ip_access)):
     """Get current card reader status and card information."""
     try:
+        sas_service = get_sas_service()
+        if not sas_service:
+            raise HTTPException(status_code=503, detail="SAS service not available")
+            
         result = await asyncio.get_event_loop().run_in_executor(
             None, sas_service.get_card_reader_status
         )
@@ -65,6 +70,10 @@ async def get_card_reader_status(client_ip: str = Depends(verify_ip_access)):
 async def eject_card(client_ip: str = Depends(verify_ip_access)):
     """Send eject command to remove inserted card."""
     try:
+        sas_service = get_sas_service()
+        if not sas_service:
+            raise HTTPException(status_code=503, detail="SAS service not available")
+            
         result = await asyncio.get_event_loop().run_in_executor(
             None, sas_service.eject_card
         )
@@ -117,6 +126,10 @@ async def eject_card(client_ip: str = Depends(verify_ip_access)):
 async def get_last_card(client_ip: str = Depends(verify_ip_access)):
     """Get information about the last detected card."""
     try:
+        sas_service = get_sas_service()
+        if not sas_service:
+            raise HTTPException(status_code=503, detail="SAS service not available")
+            
         result = await asyncio.get_event_loop().run_in_executor(
             None, sas_service.get_last_card_info
         )
@@ -159,4 +172,6 @@ async def get_last_card(client_ip: str = Depends(verify_ip_access)):
                 "message": f"Failed to get last card info: {str(e)}",
                 "timestamp": datetime.now().isoformat()
             }
-        ) 
+        )
+
+ 
