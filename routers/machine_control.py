@@ -107,14 +107,53 @@ async def control_machine(
         start_time = datetime.now()
         
         # Validate action
-        valid_actions = ["lock", "unlock", "restart"]
+        valid_actions = ["lock", "unlock", "restart", "add_credits", "subtract_credits"]
         if request.action.lower() not in valid_actions:
             raise HTTPException(
                 status_code=400,
                 detail=f"Action must be one of: {', '.join(valid_actions)}"
             )
         
-        # Map action to command
+        # Handle credit operations differently
+        if request.action.lower() in ["add_credits", "subtract_credits"]:
+            # Handle credit transfer operations
+            try:
+                amount = request.amount if request.amount else 0
+                if amount <= 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Amount must be greater than 0 for credit operations"
+                    )
+                
+                # Convert to credits (assuming amount is in dollars, multiply by 100 for cents)
+                credits = int(amount * 100)
+                
+                if request.action.lower() == "add_credits":
+                    # For now, return a placeholder response
+                    # TODO: Implement actual AFT credit transfer
+                    return MachineControlResponse(
+                        success=True,
+                        message=f"Credit addition of {amount} simulated (not implemented yet)",
+                        execution_time_ms=0,
+                        data={"action": "add_credits", "amount": amount, "credits": credits}
+                    )
+                else:  # subtract_credits
+                    # For now, return a placeholder response
+                    # TODO: Implement actual AFT credit transfer
+                    return MachineControlResponse(
+                        success=True,
+                        message=f"Credit subtraction of {amount} simulated (not implemented yet)",
+                        execution_time_ms=0,
+                        data={"action": "subtract_credits", "amount": amount, "credits": credits}
+                    )
+                    
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Credit operation error: {str(e)}"
+                )
+        
+        # Map action to command for lock/unlock/restart
         command_type = f"machine_{request.action.lower()}"
         
         # Prepare parameters

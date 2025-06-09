@@ -14,24 +14,48 @@ export class SASApiClient {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
-    const response = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-      ...options,
-    });
+    console.log(`Making API request to: ${url}`);
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: "Network error" }));
-      throw new Error(errorData.message || `HTTP ${response.status}`);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+        ...options,
+      });
+
+      console.log(`Response status: ${response.status} ${response.statusText}`);
+
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorData.detail || errorMessage;
+          console.error("API Error Response:", errorData);
+        } catch (parseError) {
+          // If we can't parse the error response, try to get text
+          try {
+            const errorText = await response.text();
+            console.error("API Error Text:", errorText);
+            errorMessage = errorText || errorMessage;
+          } catch {
+            console.error("Could not parse error response");
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error(`API request failed for ${url}:`, error);
+      throw error;
     }
-
-    return response.json();
   }
 
   // Card Reader API
   async getCardReaderStatus() {
+    console.log(`Card Reader API - Base URL: ${this.baseUrl}`);
     return this.request("/api/card-reader/status");
   }
 
@@ -233,10 +257,17 @@ export class SASWebSocketClient {
 export interface CardReaderStatus {
   success: boolean;
   data: {
-    status: string;
-    card_present: boolean;
+    card_inserted: boolean;
     card_number?: string;
-    last_event?: string;
+    port_name?: string;
+    reader_connected: boolean;
+    formatted_display: {
+      card_status: string;
+      card_number: string;
+      reader_status: string;
+      port_name: string;
+    };
+    error_code?: string;
     timestamp: string;
   };
   message: string;

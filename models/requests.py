@@ -64,16 +64,18 @@ class BillAcceptorRequest(BaseModel):
 
 class MachineControlRequest(BaseModel):
     """Request model for machine control operations"""
-    action: str = Field(description="Action to perform: 'lock', 'unlock', or 'restart'")
+    action: str = Field(description="Action to perform: 'lock', 'unlock', 'restart', 'add_credits', or 'subtract_credits'")
     lock_code: Optional[str] = Field("00", description="Lock code for machine operations")
     timeout: Optional[int] = Field(9000, description="Timeout for the operation in BCD format")
+    amount: Optional[float] = Field(None, description="Amount for credit operations (required for add_credits/subtract_credits)")
     
     class Config:
         schema_extra = {
             "example": {
                 "action": "lock",
                 "lock_code": "00",
-                "timeout": 9000
+                "timeout": 9000,
+                "amount": 25.50
             }
         }
 
