@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Raspberry Pi Application Runner Script (Service Mode)
-# This script runs the Python application in the background using nohup or screen
+# Service Management Script for Spark SAS2
+# Usage: ./run-spark-service.sh [start|stop|restart|status|logs|install]
 
 # Colors for output
 RED='\033[0;31m'
@@ -10,221 +10,158 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Function to print colored output
-print_status() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-print_step() {
-    echo -e "${BLUE}[STEP]${NC} $1"
-}
-
-# Get the directory where this script is located
+SERVICE_NAME="spark-sas2"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
 
-PID_FILE="$SCRIPT_DIR/spark-sas2.pid"
-LOG_FILE="$SCRIPT_DIR/spark-sas2.log"
+# Function to print usage
+print_usage() {
+    echo -e "${BLUE}Spark SAS2 Service Manager${NC}"
+    echo ""
+    echo "Usage: $0 [COMMAND]"
+    echo ""
+    echo "Commands:"
+    echo -e "  ${GREEN}start${NC}     - Start the SAS service"
+    echo -e "  ${GREEN}stop${NC}      - Stop the SAS service"
+    echo -e "  ${GREEN}restart${NC}   - Restart the SAS service"
+    echo -e "  ${GREEN}status${NC}    - Show service status"
+    echo -e "  ${GREEN}logs${NC}      - Show service logs (real-time)"
+    echo -e "  ${GREEN}logs -f${NC}   - Follow logs in real-time"
+    echo -e "  ${GREEN}install${NC}   - Install the systemd service"
+    echo -e "  ${GREEN}uninstall${NC} - Remove the systemd service"
+    echo ""
+}
 
-# Function to check if service is running
-is_running() {
-    if [ -f "$PID_FILE" ]; then
-        local pid=$(cat "$PID_FILE")
-        if ps -p "$pid" > /dev/null 2>&1; then
-            return 0
+# Function to check if service exists
+check_service_exists() {
+    if ! systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"; then
+        echo -e "${RED}❌ Service '${SERVICE_NAME}' is not installed${NC}"
+        echo -e "${YELLOW}💡 Run: $0 install${NC}"
+        return 1
+    fi
+    return 0
+}
+
+# Function to start service
+start_service() {
+    echo -e "${YELLOW}🚀 Starting ${SERVICE_NAME} service...${NC}"
+    
+    if check_service_exists; then
+        sudo systemctl start $SERVICE_NAME
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Service started successfully${NC}"
+            sleep 2
+            show_status
         else
-            rm -f "$PID_FILE"
+            echo -e "${RED}❌ Failed to start service${NC}"
             return 1
         fi
     fi
-    return 1
 }
 
-# Function to start the service
-start_service() {
-    print_step "Starting Spark SAS2 service..."
-    
-    # Check if already running
-    if is_running; then
-        local pid=$(cat "$PID_FILE")
-        print_warning "Service is already running (PID: $pid)"
-        return 1
-    fi
-    
-    # Check if virtual environment exists
-    if [ ! -d ".venv" ]; then
-        print_error "Virtual environment (.venv) not found!"
-        print_warning "Please run the install script first or create venv manually"
-        return 1
-    fi
-    
-    # Check if Python application exists
-    if [ ! -f "main.py" ]; then
-        print_error "main.py not found!"
-        return 1
-    fi
-    
-    # Activate virtual environment
-    print_status "Activating virtual environment..."
-    source .venv/bin/activate
-    
-    # Check if activation was successful
-    if [ "$VIRTUAL_ENV" = "" ]; then
-        print_error "Failed to activate virtual environment!"
-        return 1
-    fi
-    
-    # Install/update requirements if requirements file exists
-    if [ -f "requirements.txt" ]; then
-        print_status "Installing/updating requirements..."
-        pip install -r requirements.txt > /dev/null 2>&1
-    fi
-    
-    # Start the application in background
-    print_status "Starting application in background..."
-    print_status "Log file: $LOG_FILE"
-    
-    # Set environment variables
-    export DISPLAY=:0.0
-    export PYTHONUNBUFFERED=1
-    
-    # Start with nohup and redirect output to log file
-    nohup python main.py > "$LOG_FILE" 2>&1 &
-    local pid=$!
-    
-    # Save PID to file
-    echo "$pid" > "$PID_FILE"
-    
-    # Wait a moment and check if process is still running
-    sleep 2
-    if ps -p "$pid" > /dev/null 2>&1; then
-        print_status "Service started successfully (PID: $pid)"
-        print_status "View logs with: tail -f $LOG_FILE"
-        return 0
-    else
-        print_error "Service failed to start"
-        rm -f "$PID_FILE"
-        return 1
-    fi
-}
-
-# Function to stop the service
+# Function to stop service
 stop_service() {
-    print_step "Stopping Spark SAS2 service..."
+    echo -e "${YELLOW}🛑 Stopping ${SERVICE_NAME} service...${NC}"
     
-    if ! is_running; then
-        print_warning "Service is not running"
-        return 1
-    fi
-    
-    local pid=$(cat "$PID_FILE")
-    print_status "Stopping service (PID: $pid)..."
-    
-    # Try graceful shutdown first
-    kill "$pid"
-    
-    # Wait up to 10 seconds for graceful shutdown
-    local count=0
-    while [ $count -lt 10 ] && ps -p "$pid" > /dev/null 2>&1; do
-        sleep 1
-        count=$((count + 1))
-    done
-    
-    # Force kill if still running
-    if ps -p "$pid" > /dev/null 2>&1; then
-        print_warning "Graceful shutdown failed, forcing kill..."
-        kill -9 "$pid"
-        sleep 1
-    fi
-    
-    # Clean up PID file
-    rm -f "$PID_FILE"
-    
-    if ! ps -p "$pid" > /dev/null 2>&1; then
-        print_status "Service stopped successfully"
-        return 0
-    else
-        print_error "Failed to stop service"
-        return 1
+    if check_service_exists; then
+        sudo systemctl stop $SERVICE_NAME
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Service stopped successfully${NC}"
+        else
+            echo -e "${RED}❌ Failed to stop service${NC}"
+            return 1
+        fi
     fi
 }
 
-# Function to restart the service
+# Function to restart service
 restart_service() {
-    print_step "Restarting Spark SAS2 service..."
-    stop_service
-    sleep 2
-    start_service
+    echo -e "${YELLOW}🔄 Restarting ${SERVICE_NAME} service...${NC}"
+    
+    if check_service_exists; then
+        sudo systemctl restart $SERVICE_NAME
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Service restarted successfully${NC}"
+            sleep 2
+            show_status
+        else
+            echo -e "${RED}❌ Failed to restart service${NC}"
+            return 1
+        fi
+    fi
 }
 
 # Function to show service status
 show_status() {
-    print_step "Spark SAS2 Service Status"
-    
-    if is_running; then
-        local pid=$(cat "$PID_FILE")
-        print_status "Service is running (PID: $pid)"
-        
-        # Show process details
-        echo "Process details:"
-        ps -p "$pid" -o pid,ppid,cmd,etime,pcpu,pmem
-        
-        # Show log tail if log file exists
-        if [ -f "$LOG_FILE" ]; then
-            echo
-            print_status "Recent log entries:"
-            tail -10 "$LOG_FILE"
-        fi
-    else
-        print_warning "Service is not running"
-        
-        # Show last few log entries if available
-        if [ -f "$LOG_FILE" ]; then
-            echo
-            print_status "Last log entries:"
-            tail -10 "$LOG_FILE"
-        fi
+    if check_service_exists; then
+        echo -e "${BLUE}📊 Service Status:${NC}"
+        sudo systemctl status $SERVICE_NAME --no-pager -l
+        echo ""
+        echo -e "${BLUE}🌐 API Endpoints:${NC}"
+        echo "  Main API: http://localhost:8000"
+        echo "  Documentation: http://localhost:8000/docs" 
+        echo "  WebSocket: ws://localhost:8000/ws/live-updates"
     fi
 }
 
 # Function to show logs
 show_logs() {
-    if [ -f "$LOG_FILE" ]; then
-        if [ "$1" = "-f" ]; then
-            print_status "Following log file (Ctrl+C to exit)..."
-            tail -f "$LOG_FILE"
+    if check_service_exists; then
+        if [ "$2" = "-f" ] || [ "$2" = "--follow" ]; then
+            echo -e "${BLUE}📋 Following logs (Ctrl+C to stop):${NC}"
+            sudo journalctl -u $SERVICE_NAME -f --no-pager
         else
-            print_status "Showing log file:"
-            cat "$LOG_FILE"
+            echo -e "${BLUE}📋 Recent logs:${NC}"
+            sudo journalctl -u $SERVICE_NAME --no-pager -l --since "10 minutes ago"
+            echo ""
+            echo -e "${YELLOW}💡 Use '$0 logs -f' to follow logs in real-time${NC}"
         fi
-    else
-        print_warning "Log file not found: $LOG_FILE"
     fi
 }
 
-# Function to show usage
-show_usage() {
-    echo "Usage: $0 {start|stop|restart|status|logs|logs -f}"
-    echo
-    echo "Commands:"
-    echo "  start    - Start the service in background"
-    echo "  stop     - Stop the running service"
-    echo "  restart  - Restart the service"
-    echo "  status   - Show service status and recent logs"
-    echo "  logs     - Show all logs"
-    echo "  logs -f  - Follow logs in real-time"
-    echo
-    echo "Files:"
-    echo "  PID file: $PID_FILE"
-    echo "  Log file: $LOG_FILE"
+# Function to install service
+install_service() {
+    echo -e "${YELLOW}📦 Installing ${SERVICE_NAME} service...${NC}"
+    
+    if [ -f "${SCRIPT_DIR}/create-service.sh" ]; then
+        cd "$SCRIPT_DIR"
+        chmod +x create-service.sh
+        sudo ./create-service.sh
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Service installed successfully${NC}"
+            echo -e "${YELLOW}💡 Use '$0 start' to start the service${NC}"
+        else
+            echo -e "${RED}❌ Failed to install service${NC}"
+            return 1
+        fi
+    else
+        echo -e "${RED}❌ create-service.sh not found in ${SCRIPT_DIR}${NC}"
+        return 1
+    fi
+}
+
+# Function to uninstall service
+uninstall_service() {
+    echo -e "${YELLOW}🗑️  Uninstalling ${SERVICE_NAME} service...${NC}"
+    
+    if check_service_exists; then
+        # Stop service first
+        sudo systemctl stop $SERVICE_NAME 2>/dev/null
+        
+        # Disable service
+        sudo systemctl disable $SERVICE_NAME
+        
+        # Remove service file
+        sudo rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+        
+        # Reload systemd
+        sudo systemctl daemon-reload
+        
+        echo -e "${GREEN}✅ Service uninstalled successfully${NC}"
+    fi
 }
 
 # Main script logic
@@ -242,12 +179,22 @@ case "$1" in
         show_status
         ;;
     logs)
-        show_logs "$2"
+        show_logs "$@"
         ;;
-    *)
-        show_usage
+    install)
+        install_service
+        ;;
+    uninstall)
+        uninstall_service
+        ;;
+    "")
+        print_usage
         exit 1
         ;;
-esac
-
-exit $? 
+    *)
+        echo -e "${RED}❌ Unknown command: $1${NC}"
+        echo ""
+        print_usage
+        exit 1
+        ;;
+esac 

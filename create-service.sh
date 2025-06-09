@@ -52,7 +52,10 @@ Group=$CURRENT_USER
 WorkingDirectory=$CURRENT_DIR
 Environment=PATH=$CURRENT_DIR/.venv/bin
 Environment=PYTHONPATH=$CURRENT_DIR
-ExecStart=$CURRENT_DIR/.venv/bin/python $CURRENT_DIR/main.py
+Environment=NEXTJS_BASE_URL=
+Environment=LOG_LEVEL=INFO
+Environment=ENVIRONMENT=production
+ExecStart=$CURRENT_DIR/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=spark-sas2
