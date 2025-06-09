@@ -99,6 +99,13 @@ fi
 
 echo
 
+# Create wrapper script for reliable execution
+WRAPPER_SCRIPT="$CURRENT_DIR/start-service.sh"
+echo -e "${YELLOW}Creating wrapper script: $WRAPPER_SCRIPT${NC}"
+
+# Make sure wrapper script is executable
+chmod +x "$WRAPPER_SCRIPT"
+
 # Create the service file
 echo -e "${YELLOW}Creating systemd service file...${NC}"
 
@@ -115,12 +122,10 @@ RestartSec=5
 User=$CURRENT_USER
 Group=$CURRENT_USER
 WorkingDirectory=$CURRENT_DIR
-Environment=PATH=$CURRENT_DIR/.venv/bin:/usr/local/bin:/usr/bin:/bin
-Environment=PYTHONPATH=$CURRENT_DIR
 Environment=NEXTJS_BASE_URL=
 Environment=LOG_LEVEL=INFO
 Environment=ENVIRONMENT=production
-ExecStart=$UVICORN_EXEC main:app --host 0.0.0.0 --port 8000 --workers 1
+ExecStart=$WRAPPER_SCRIPT
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=spark-sas2
