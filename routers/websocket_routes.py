@@ -63,25 +63,25 @@ async def broadcast_sas_updates(sas_service):
         try:
             # Get current meter data
             try:
-                meter_result = await sas_service.execute_command("get_meters", {"meter_type": "basic"})
-                if meter_result and meter_result.get("status") == "success":
-                    await connection_manager.broadcast_to_subscribed("meters", meter_result)
+                meter_result = await sas_service.execute_command_async("get_meters", {"meter_type": "basic"})
+                if meter_result and meter_result.get("result", {}).get("status") == "success":
+                    await connection_manager.broadcast_to_subscribed("meters", meter_result.get("result"))
             except Exception as e:
                 print(f"Error getting meters for WebSocket broadcast: {e}")
             
             # Get system status
             try:
-                status_result = await sas_service.execute_command("system_status", {})
-                if status_result:
-                    await connection_manager.broadcast_to_subscribed("system_status", status_result)
+                status_result = await sas_service.execute_command_async("system_status", {})
+                if status_result and status_result.get("result"):
+                    await connection_manager.broadcast_to_subscribed("system_status", status_result.get("result"))
             except Exception as e:
                 print(f"Error getting system status for WebSocket broadcast: {e}")
             
             # Wait before next update
-            await asyncio.sleep(5)  # Update every 5 seconds
+            await asyncio.sleep(10)  # Update every 10 seconds (less frequent to reduce load)
             
         except asyncio.CancelledError:
             break
         except Exception as e:
             print(f"Error in WebSocket broadcast loop: {e}")
-            await asyncio.sleep(5)  # Wait before retrying 
+            await asyncio.sleep(10)  # Wait before retrying 
