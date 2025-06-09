@@ -27,12 +27,61 @@ if [ ! -f "main.py" ]; then
     exit 1
 fi
 
-# Check if virtual environment exists
-if [ ! -d ".venv" ]; then
-    echo -e "${RED}Error: Virtual environment (.venv) not found!${NC}"
-    echo -e "${YELLOW}Please run the install script first or create venv manually${NC}"
-    exit 1
+# Check virtual environment and determine Python path
+PYTHON_EXEC=""
+UVICORN_EXEC=""
+
+if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then
+    echo -e "${GREEN}✓ Virtual environment found${NC}"
+    
+    # Test if virtual environment works
+    if .venv/bin/python -c "import sys; print('Python works')" 2>/dev/null; then
+        echo -e "${GREEN}✓ Virtual environment Python is working${NC}"
+        
+        # Check if uvicorn is installed in venv
+        if [ -f ".venv/bin/uvicorn" ]; then
+            echo -e "${GREEN}✓ Uvicorn found in virtual environment${NC}"
+            PYTHON_EXEC="$CURRENT_DIR/.venv/bin/python"
+            UVICORN_EXEC="$CURRENT_DIR/.venv/bin/uvicorn"
+        else
+            echo -e "${YELLOW}⚠️  Uvicorn not found in venv, installing...${NC}"
+            .venv/bin/pip install uvicorn
+            if [ -f ".venv/bin/uvicorn" ]; then
+                PYTHON_EXEC="$CURRENT_DIR/.venv/bin/python"
+                UVICORN_EXEC="$CURRENT_DIR/.venv/bin/uvicorn"
+            fi
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Virtual environment Python not working${NC}"
+    fi
 fi
+
+# Fall back to system Python if virtual environment doesn't work
+if [ -z "$PYTHON_EXEC" ]; then
+    echo -e "${YELLOW}Using system Python as fallback...${NC}"
+    
+    # Check if system uvicorn exists
+    if command -v uvicorn >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ System uvicorn found${NC}"
+        PYTHON_EXEC="$(which python3)"
+        UVICORN_EXEC="$(which uvicorn)"
+    else
+        echo -e "${YELLOW}⚠️  Installing uvicorn system-wide...${NC}"
+        pip3 install uvicorn fastapi
+        if command -v uvicorn >/dev/null 2>&1; then
+            PYTHON_EXEC="$(which python3)"
+            UVICORN_EXEC="$(which uvicorn)"
+        else
+            echo -e "${RED}Error: Cannot install or find uvicorn!${NC}"
+            exit 1
+        fi
+    fi
+fi
+
+echo -e "${GREEN}Using:${NC}"
+echo "  Python: $PYTHON_EXEC"
+echo "  Uvicorn: $UVICORN_EXEC"
+echo
 
 # Create the service file
 echo -e "${YELLOW}Creating systemd service file...${NC}"
@@ -50,12 +99,11 @@ RestartSec=5
 User=$CURRENT_USER
 Group=$CURRENT_USER
 WorkingDirectory=$CURRENT_DIR
-Environment=PATH=$CURRENT_DIR/.venv/bin
 Environment=PYTHONPATH=$CURRENT_DIR
 Environment=NEXTJS_BASE_URL=
 Environment=LOG_LEVEL=INFO
 Environment=ENVIRONMENT=production
-ExecStart=$CURRENT_DIR/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+ExecStart=$UVICORN_EXEC main:app --host 0.0.0.0 --port 8000 --workers 1
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=spark-sas2
