@@ -223,19 +223,19 @@ class SASWebService:
     def _get_meters(self, meter_type: str = "basic") -> Dict[str, Any]:
         """Get meter readings from the slot machine"""
         try:
-            if not self.slot_machine_app or not self.slot_machine_app.sas_money_functions:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm or not self.slot_machine_app.sas_comm.sas_money:
                 raise Exception("SAS money functions not available")
                 
-            money_funcs = self.slot_machine_app.sas_money_functions
+            money_funcs = self.slot_machine_app.sas_comm.sas_money
             
             # Trigger meter reading
             if meter_type == "extended":
-                money_funcs.request_extended_meters()
+                money_funcs.get_meter(isall=1)  # Extended meters
             else:
-                money_funcs.request_basic_meters()
+                money_funcs.get_meter(isall=0)  # Basic meters
                 
             # Wait a moment for response
-            time.sleep(1)
+            time.sleep(2)
             
             # Get parsed meters
             meters = money_funcs.last_parsed_meters if hasattr(money_funcs, 'last_parsed_meters') else {}
@@ -274,14 +274,14 @@ class SASWebService:
     def _get_balance(self) -> Dict[str, Any]:
         """Get current machine balance/credits"""
         try:
-            if not self.slot_machine_app or not self.slot_machine_app.sas_money_functions:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm or not self.slot_machine_app.sas_comm.sas_money:
                 raise Exception("SAS money functions not available")
                 
-            money_funcs = self.slot_machine_app.sas_money_functions
+            money_funcs = self.slot_machine_app.sas_comm.sas_money
             
-            # Request current balance
-            money_funcs.request_current_balance()
-            time.sleep(1)
+            # Request current balance by getting meters first
+            money_funcs.get_meter(isall=0)
+            time.sleep(2)
             
             # Get the balance from last parsed meters
             meters = money_funcs.last_parsed_meters if hasattr(money_funcs, 'last_parsed_meters') else {}
