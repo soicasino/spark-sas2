@@ -3,26 +3,17 @@ WebSocket Router - Real-time SAS data streaming
 """
 import asyncio
 import json
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from datetime import datetime
-from typing import Optional
 
 from websocket_manager import connection_manager
-from auth.security import verify_token
 
 router = APIRouter(prefix="/ws", tags=["WebSocket"])
 
 @router.websocket("/live-updates")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    token: Optional[str] = Query(None, description="JWT token for authentication")
-):
+async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for real-time SAS data updates
-    
-    **Authentication:** 
-    - Include JWT token in query parameter: `?token=your_jwt_token`
-    - Or skip authentication for development/testing
     
     **Subscription Events:**
     - `meters`: Real-time meter updates 
@@ -37,19 +28,8 @@ async def websocket_endpoint(
     - `{"type": "request_current_data"}`: Get latest data immediately
     """
     
-    # Optional authentication
-    user_info = {"authenticated": False}
-    if token:
-        token_data = verify_token(token)
-        if token_data and token_data.username:
-            from auth.security import get_user
-            user = get_user(token_data.username)
-            if user:
-                user_info = {
-                    "authenticated": True,
-                    "username": user.username,
-                    "scopes": user.scopes
-                }
+    # Simple connection without authentication
+    user_info = {"authenticated": False, "connection_type": "websocket"}
     
     # Accept connection
     await connection_manager.connect(websocket, user_info)
