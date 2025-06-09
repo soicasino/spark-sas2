@@ -557,25 +557,50 @@ class SASWebService:
     def get_card_reader_status(self):
         """Get current card reader status and card information."""
         try:
-            if not self.slot_machine_app or not self.slot_machine_app.card_reader_mgr or not self.slot_machine_app.card_reader_mgr.card_reader:
+            # First try to get from dedicated card reader if available
+            if (self.slot_machine_app and 
+                self.slot_machine_app.card_reader_mgr and 
+                self.slot_machine_app.card_reader_mgr.card_reader and
+                self.slot_machine_app.card_reader_mgr.card_reader.is_card_reader_opened):
+                
+                card_reader = self.slot_machine_app.card_reader_mgr.card_reader
                 return {
                     "success": True,
-                    "card_inserted": False,
-                    "card_number": None,
-                    "port_name": None,
-                    "reader_connected": False,
-                    "message": "Card reader not initialized"
+                    "card_inserted": card_reader.is_card_inside,
+                    "card_number": card_reader.last_card_number,
+                    "port_name": card_reader.port_name,
+                    "reader_connected": card_reader.is_card_reader_opened,
+                    "message": "Card reader status retrieved successfully"
                 }
             
-            card_reader = self.slot_machine_app.card_reader_mgr.card_reader
+            # Fallback to checking card reader manager (even if no dedicated card reader)
+            if (self.slot_machine_app and 
+                self.slot_machine_app.card_reader_mgr):
+                
+                # Check if card reader manager has any card reader with data
+                card_mgr = self.slot_machine_app.card_reader_mgr
+                if (hasattr(card_mgr, 'card_reader') and 
+                    card_mgr.card_reader and 
+                    hasattr(card_mgr.card_reader, 'last_card_number')):
+                    
+                    card_reader = card_mgr.card_reader
+                    return {
+                        "success": True,
+                        "card_inserted": card_reader.is_card_inside if hasattr(card_reader, 'is_card_inside') else False,
+                        "card_number": card_reader.last_card_number,
+                        "port_name": card_reader.port_name if hasattr(card_reader, 'port_name') else self.system_status.get("port_info"),
+                        "reader_connected": card_reader.is_card_reader_opened if hasattr(card_reader, 'is_card_reader_opened') else False,
+                        "message": "Card status retrieved from card reader manager"
+                    }
             
+            # No card reader available
             return {
                 "success": True,
-                "card_inserted": card_reader.is_card_inside,
-                "card_number": card_reader.last_card_number,
-                "port_name": card_reader.port_name,
-                "reader_connected": card_reader.is_card_reader_opened,
-                "message": "Card reader status retrieved successfully"
+                "card_inserted": False,
+                "card_number": None,
+                "port_name": self.system_status.get("port_info"),
+                "reader_connected": False,
+                "message": "No card reader detected"
             }
             
         except Exception as e:
