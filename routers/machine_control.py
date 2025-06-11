@@ -127,25 +127,104 @@ async def control_machine(
                 
                 # Convert to credits (assuming amount is in dollars, multiply by 100 for cents)
                 credits = int(amount * 100)
+                execution_time = (datetime.now() - start_time).total_seconds() * 1000
                 
                 if request.action.lower() == "add_credits":
-                    # For now, return a placeholder response
-                    # TODO: Implement actual AFT credit transfer
-                    return MachineControlResponse(
-                        success=True,
-                        message=f"Credit addition of {amount} simulated (not implemented yet)",
-                        execution_time_ms=0,
-                        data={"action": "add_credits", "amount": amount, "credits": credits}
-                    )
+                    # Implement actual AFT credit transfer
+                    if (sas_service.slot_machine_app and 
+                        sas_service.slot_machine_app.sas_comm and 
+                        sas_service.slot_machine_app.sas_comm.sas_money):
+                        
+                        sas_comm = sas_service.slot_machine_app.sas_comm
+                        
+                        # AFT parameters - using defaults from working code
+                        doincreasetransactionid = 1
+                        transfertype = 0  # Cashable transfer (00)
+                        customerbalance = amount  # Amount in dollars
+                        customerpromo = 0  # No promotional amount
+                        transactionid = int(datetime.now().timestamp())  # Generate unique transaction ID
+                        assetnumber = sas_comm.sas_address  # SAS address
+                        registrationkey = "0000"  # Default registration key
+                        
+                        # Execute AFT credit transfer
+                        try:
+                            result = sas_comm.money_cash_in(
+                                doincreasetransactionid,
+                                transfertype,
+                                customerbalance,
+                                customerpromo,
+                                transactionid,
+                                assetnumber,
+                                registrationkey
+                            )
+                            
+                            return MachineControlResponse(
+                                success=True,
+                                message=f"Credit addition of ${amount:.2f} initiated successfully",
+                                execution_time_ms=execution_time,
+                                data={
+                                    "action": "add_credits", 
+                                    "amount": amount, 
+                                    "credits": credits,
+                                    "transaction_id": transactionid,
+                                    "transfer_type": "cashable"
+                                }
+                            )
+                        except Exception as aft_error:
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"AFT credit transfer failed: {str(aft_error)}"
+                            )
+                    else:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="SAS communication not available for credit transfer"
+                        )
+                        
                 else:  # subtract_credits
-                    # For now, return a placeholder response
-                    # TODO: Implement actual AFT credit transfer
-                    return MachineControlResponse(
-                        success=True,
-                        message=f"Credit subtraction of {amount} simulated (not implemented yet)",
-                        execution_time_ms=0,
-                        data={"action": "subtract_credits", "amount": amount, "credits": credits}
-                    )
+                    # Implement actual AFT cashout
+                    if (sas_service.slot_machine_app and 
+                        sas_service.slot_machine_app.sas_comm and 
+                        sas_service.slot_machine_app.sas_comm.sas_money):
+                        
+                        sas_comm = sas_service.slot_machine_app.sas_comm
+                        
+                        # AFT cashout parameters
+                        doincreaseid = 1
+                        transactionid = int(datetime.now().timestamp())
+                        assetnumber = sas_comm.sas_address
+                        registrationkey = "0000"
+                        
+                        try:
+                            result = sas_comm.money_cash_out(
+                                doincreaseid,
+                                transactionid,
+                                assetnumber,
+                                registrationkey
+                            )
+                            
+                            return MachineControlResponse(
+                                success=True,
+                                message=f"Credit subtraction initiated successfully",
+                                execution_time_ms=execution_time,
+                                data={
+                                    "action": "subtract_credits", 
+                                    "amount": amount, 
+                                    "credits": credits,
+                                    "transaction_id": transactionid,
+                                    "transfer_type": "cashout"
+                                }
+                            )
+                        except Exception as aft_error:
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"AFT cashout failed: {str(aft_error)}"
+                            )
+                    else:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="SAS communication not available for cashout"
+                        )
                     
             except Exception as e:
                 raise HTTPException(

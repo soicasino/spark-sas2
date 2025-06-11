@@ -136,6 +136,8 @@ class PortManager:
         print("</FIND SAS PORT>-----------------------------------------------------------------")
         return None, None
 
-    # ... class code unchanged, copy from original file ...
-    # (Copy the entire PortManager class definition here)
-    # ... existing code ... 
+    def get_all_ports(self):
+        """Return all available ports for use by other components like card reader"""
+        if not self.available_ports:
+            self.find_ports_linux()
+        return self.available_ports 

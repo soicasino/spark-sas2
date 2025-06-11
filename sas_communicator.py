@@ -341,7 +341,7 @@ class SASCommunicator:
 
     def handle_received_sas_command(self, tdata):
         """Comprehensive SAS response handler, covering all message types from the reference."""
-        print(f"[DEBUG] RAW SAS DATA: {tdata}")
+        # print(f"[DEBUG] RAW SAS DATA: {tdata}")  # Disabled: too verbose
         # Only print debug for meter responses
         if tdata.startswith("012F") or tdata.startswith("01AF"):
             print(f"DEBUG: handle_received_sas_command called with tdata={tdata}")
@@ -486,8 +486,48 @@ class SASCommunicator:
     def _handle_aft_response(self, tdata):
         """Handle AFT response"""
         try:
-            print("AFT response received")
-            # TODO: Use self.sas_money for AFT parsing/logic
+            print(f"AFT response received: {tdata}")
+            
+            if len(tdata) < 10:
+                print("AFT response too short")
+                return
+                
+            # Parse AFT response structure (simplified)
+            # Address (2) + Command (2) + Length (2) + Data...
+            address = tdata[0:2]
+            command = tdata[2:4]
+            length = int(tdata[4:6], 16)
+            
+            print(f"AFT Response - Address: {address}, Command: {command}, Length: {length}")
+            
+            if len(tdata) >= 18:
+                # Extract transfer status (usually at offset 6-8)
+                transfer_status = tdata[6:8]
+                receipt_status = tdata[8:10]
+                
+                print(f"Transfer Status: {transfer_status}, Receipt Status: {receipt_status}")
+                
+                # Common AFT status codes
+                status_messages = {
+                    "00": "Transfer successful",
+                    "01": "Transfer pending",
+                    "40": "Transfer amount exceeds transfer limit", 
+                    "41": "Transfer amount not even multiple of gaming machine denomination",
+                    "42": "Transfer amount not an even multiple of the accounting denomination",
+                    "43": "Transfer amount exceeds the gaming machine transfer limit",
+                    "80": "Gaming machine not registered for AFT transfers",
+                    "81": "Gaming machine registration key does not match",
+                    "82": "No POS ID",
+                    "83": "No won amount available for cashout"
+                }
+                
+                status_msg = status_messages.get(transfer_status, f"Unknown status: {transfer_status}")
+                print(f"AFT Transfer Status: {status_msg}")
+                
+                # Set flags for the money system
+                if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
+                    self.sas_money.global_para_yukleme_transfer_status = transfer_status
+                    
         except Exception as e:
             print(f"Error parsing AFT response: {e}")
 
