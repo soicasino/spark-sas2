@@ -1,22 +1,38 @@
 import serial
 import time
 import threading
-import platform
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
 class CardReader:
+    """
+    An improved CardReader class with a state machine to handle
+    transient communication errors and prevent false 'card removed' events.
+    """
     def __init__(self):
+        # --- Configuration ---
         self.serial_port = serial.Serial()
         self.port_name = None
-        self.is_card_reader_opened = False
-        self.is_card_inside = False
-        self.card_reader_interval = 0.05
-        self.polling_thread = None
+        self.card_reader_interval = 0.1  # Normal polling interval (seconds)
+        self.recovery_interval = 0.05    # Faster polling during recovery (seconds)
+        self.recovery_duration = timedelta(seconds=2.0)  # How long to try recovery
+
+        # --- State Management ---
         self.polling_active = False
+        self.polling_thread = None
+        self.is_card_reader_opened = False
         self.last_card_number = None
-        self.missed_polls = 0
-        self.max_missed_polls = 150  # Debounce: require 150 missed polls before ejection (more stable)
+
+        # State machine states
+        self.STATE_NO_CARD = "NO_CARD"
+        self.STATE_CARD_PRESENT = "CARD_PRESENT"
+        self.STATE_COMM_LOST = "COMM_LOST"
+        self.current_state = self.STATE_NO_CARD
+
+        self.comm_lost_time = None
+
+        # Legacy compatibility
+        self.is_card_inside = False  # For compatibility with existing code
 
     def find_port(self, port_list):
         """
@@ -83,6 +99,7 @@ class CardReader:
         return False
 
     def start_polling(self):
+        """Starts the background polling thread."""
         if not self.is_card_reader_opened:
             print("Card reader not opened, cannot start polling.")
             return
@@ -90,104 +107,150 @@ class CardReader:
             print("Polling already running.")
             return
         self.polling_active = True
-        self.polling_thread = threading.Thread(target=self._poll_card_reader, daemon=True)
+        self.polling_thread = threading.Thread(target=self._polling_loop, daemon=True)
         self.polling_thread.start()
         print("Card reader polling started.")
 
     def stop_polling(self):
+        """Stops the background polling thread."""
         self.polling_active = False
         if self.polling_thread:
             self.polling_thread.join(timeout=1)
             print("Card reader polling stopped.")
+
+    def _send_command_hex(self, hex_string):
+        """Sends a command to the serial port."""
+        try:
+            cmd = bytearray.fromhex(hex_string)
+            self.serial_port.write(cmd)
+            return True
+        except Exception as e:
+            print(f"[CardReader] Error sending command: {e}")
+            return False
+
+    def _read_response(self):
+        """Reads a response from the serial port with enhanced protocol handling."""
+        try:
+            time.sleep(self.card_reader_interval)
+            tdata = ""
+            retry = 5
+            while True:
+                if self.serial_port.in_waiting == 0:
+                    retry -= 1
+                    if retry <= 0:
+                        break
+                    time.sleep(0.02)
+                    continue
+                out = b''
+                while self.serial_port.in_waiting > 0:
+                    out += self.serial_port.read(1)
+                if not out:
+                    continue
+                tdata += out.hex().upper()
+            
+            if tdata:
+                if tdata == "06":
+                    # Handle ACK response - send ENQ
+                    self._send_command_hex("05")
+                    tdata = ""
+                    retry = 20
+                    while True:
+                        if self.serial_port.in_waiting == 0:
+                            retry -= 1
+                            if retry <= 0:
+                                break
+                            time.sleep(0.05)
+                            continue
+                        out = b''
+                        while self.serial_port.in_waiting > 0:
+                            out += self.serial_port.read(1)
+                        if not out:
+                            continue
+                        tdata += out.hex().upper()
+            
+            return tdata
+        except Exception as e:
+            print(f"[CardReader] Error reading response: {e}")
+            return None
 
     def _extract_card_number(self, tdata):
         """
         Extracts the card number from the raw hex response.
         Adjust this logic if your card reader protocol changes.
         """
-        if tdata.startswith("020007"):
+        if tdata and tdata.startswith("020007"):
             idx = tdata.find("353159")
             if idx != -1:
                 return tdata[idx+6:idx+14]
         return None
 
-    def _poll_card_reader(self):
+    def _handle_successful_poll(self, card_number):
+        """Handles the logic for a successful poll that detects a card."""
+        if self.current_state == self.STATE_NO_CARD:
+            # --- State Transition: NO_CARD -> CARD_PRESENT ---
+            self.last_card_number = card_number
+            self.current_state = self.STATE_CARD_PRESENT
+            self.is_card_inside = True  # Legacy compatibility
+            print(f"[CardReader] State: {self.current_state}. Card inserted: {card_number}")
+            self._broadcast_card_event("card_inserted", card_number)
+        
+        elif self.current_state == self.STATE_COMM_LOST:
+            # --- State Transition: COMM_LOST -> CARD_PRESENT ---
+            elapsed = datetime.now() - self.comm_lost_time if self.comm_lost_time else timedelta(0)
+            print(f"[CardReader] State: COMM_LOST -> CARD_PRESENT. Communication restored for card {self.last_card_number} after {elapsed.total_seconds():.1f}s.")
+            self.current_state = self.STATE_CARD_PRESENT
+            self.comm_lost_time = None
+        
+        # If already in CARD_PRESENT and same card, do nothing (normal operation)
+
+    def _handle_failed_poll(self):
+        """Handles the logic for a poll that does not detect a card."""
+        if self.current_state == self.STATE_CARD_PRESENT:
+            # --- State Transition: CARD_PRESENT -> COMM_LOST ---
+            self.current_state = self.STATE_COMM_LOST
+            self.comm_lost_time = datetime.now()
+            print(f"[CardReader] State: CARD_PRESENT -> COMM_LOST. Communication lost with card {self.last_card_number}. Starting recovery...")
+
+        elif self.current_state == self.STATE_COMM_LOST:
+            # --- Check for Timeout in COMM_LOST state ---
+            elapsed = datetime.now() - self.comm_lost_time
+            if elapsed > self.recovery_duration:
+                # --- State Transition: COMM_LOST -> NO_CARD (Confirmed Removal) ---
+                ejected_card = self.last_card_number
+                print(f"[CardReader] State: COMM_LOST -> NO_CARD. Recovery timed out after {elapsed.total_seconds():.1f}s. Card removed: {ejected_card}")
+                self.current_state = self.STATE_NO_CARD
+                self.last_card_number = None
+                self.is_card_inside = False  # Legacy compatibility
+                self.comm_lost_time = None
+                self._broadcast_card_event("card_removed", ejected_card)
+            else:
+                # Still in recovery period
+                remaining = self.recovery_duration - elapsed
+                if int(remaining.total_seconds() * 10) % 10 == 0:  # Log every 0.1s during recovery
+                    print(f"[CardReader] Recovery in progress... {remaining.total_seconds():.1f}s remaining")
+        
+        # If already in NO_CARD, do nothing.
+
+    def _polling_loop(self):
+        """The main loop for polling the card reader."""
         while self.polling_active:
-            card_detected = False  # Initialize at the start of each loop
-            try:
-                self._send_command_hex("02000235310307")
-                time.sleep(self.card_reader_interval)
-                tdata = ""
-                retry = 5
-                while True:
-                    if self.serial_port.in_waiting == 0:
-                        retry -= 1
-                        if retry <= 0:
-                            break
-                        time.sleep(0.02)
-                        continue
-                    out = b''
-                    while self.serial_port.in_waiting > 0:
-                        out += self.serial_port.read(1)
-                    if not out:
-                        continue
-                    tdata += out.hex().upper()
-                if tdata:
-                    # print(f"[DEBUG] Raw card reader response: {tdata}")
-                    if tdata == "06":
-                        # print("[DEBUG] Received ACK (06), sending ENQ (05)...")
-                        self._send_command_hex("05")
-                        tdata = ""
-                        retry = 20
-                        while True:
-                            if self.serial_port.in_waiting == 0:
-                                retry -= 1
-                                if retry <= 0:
-                                    break
-                                time.sleep(0.05)
-                                continue
-                            out = b''
-                            while self.serial_port.in_waiting > 0:
-                                out += self.serial_port.read(1)
-                            if not out:
-                                continue
-                            tdata += out.hex().upper()
-                        if tdata:
-                            # print(f"[DEBUG] Card data after ENQ: {tdata}")
-                            pass
-                    card_no = self._extract_card_number(tdata)
-                    if card_no and card_no != self.last_card_number:
-                        print(f"Card detected: {card_no}")
-                        self.last_card_number = card_no
-                        self.is_card_inside = True
-                        card_detected = True
-                        self.missed_polls = 0  # Reset missed poll counter
-                        
-                        # Broadcast card insertion event
-                        self._broadcast_card_event("card_inserted", card_no)
-                        
-                # Card eject detection with debounce
-                if not card_detected and self.is_card_inside:
-                    self.missed_polls += 1
-                    if self.missed_polls % 30 == 0:  # Log every 30 missed polls
-                        print(f"[CardReader] Missed {self.missed_polls}/{self.max_missed_polls} polls for card {self.last_card_number}")
-                    if self.missed_polls >= self.max_missed_polls:
-                        print("Card ejected!")
-                        ejected_card = self.last_card_number
-                        self.is_card_inside = False
-                        self.last_card_number = None
-                        self.missed_polls = 0
-                        
-                        # Broadcast card removal event
-                        self._broadcast_card_event("card_removed", ejected_card)
+            # Determine polling interval based on state
+            interval = self.recovery_interval if self.current_state == self.STATE_COMM_LOST else self.card_reader_interval
+            
+            # Send the poll command
+            if self._send_command_hex("02000235310307"):
+                response = self._read_response()
+                card_number = self._extract_card_number(response) if response else None
+
+                if card_number:
+                    self._handle_successful_poll(card_number)
                 else:
-                    if self.missed_polls > 0:
-                        # Reset missed polls counter when card is detected again
-                        self.missed_polls = 0
-                # REMARK: Place card removal/session cleanup logic here (see SQL_CardExit(sender) in legacy code)
-            except Exception as e:
-                print(f"Polling error: {e}")
-            time.sleep(self.card_reader_interval)
+                    self._handle_failed_poll()
+            else:
+                # Command send failed - treat as failed poll
+                self._handle_failed_poll()
+            
+            time.sleep(interval)
 
     def _broadcast_card_event(self, event_type: str, card_number: str):
         """Broadcast card events via WebSocket (non-blocking)"""
@@ -238,13 +301,6 @@ class CardReader:
         except Exception as e:
             print(f"[CardReader] Error sending WebSocket event: {e}")
 
-    def _send_command_hex(self, hex_string):
-        try:
-            cmd = bytearray.fromhex(hex_string)
-            self.serial_port.write(cmd)
-        except Exception as e:
-            print(f"[rCloud] Error sending command: {e}")
-
     def card_eject(self):
         if not self.is_card_reader_opened:
             print("Card reader port not open.")
@@ -260,11 +316,12 @@ class CardReader:
             return False
 
     def close(self):
+        """Stops polling and closes the serial port."""
+        self.stop_polling()
         if self.serial_port and self.serial_port.is_open:
             self.serial_port.close()
             print(f"Card reader port {self.port_name} closed.")
         self.is_card_reader_opened = False
-        self.polling_active = False
 
     def send_command(self, hex_string):
         """
