@@ -183,6 +183,43 @@ export class SASApiClient {
   async testCardEvent(eventType = "card_inserted") {
     return this.request(`/api/events/test-card-event?event_type=${eventType}`, { method: "POST" });
   }
+
+  // Money Transfer API
+  async getMoneyBalance() {
+    return this.request("/api/money/balance");
+  }
+
+  async addCredits(amount: number, transferType: string = "10", transactionId?: string) {
+    const body: any = {
+      amount,
+      transfer_type: transferType,
+    };
+    if (transactionId) {
+      body.transaction_id = transactionId;
+    }
+    return this.request("/api/money/add-credits", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async cashout(amount?: number, transactionId?: string) {
+    const body: any = {};
+    if (amount !== undefined) {
+      body.amount = amount;
+    }
+    if (transactionId) {
+      body.transaction_id = transactionId;
+    }
+    return this.request("/api/money/cashout", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async cancelTransfer() {
+    return this.request("/api/money/cancel-transfer", { method: "POST" });
+  }
 }
 
 // Global API client instance
@@ -323,4 +360,38 @@ export interface EventStats {
     sync_status: any;
   };
   message: string;
+}
+
+export interface MoneyBalanceResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  execution_time_ms: number;
+  data: {
+    cashable_balance: number;
+    restricted_balance: number;
+    nonrestricted_balance: number;
+    total_balance: number;
+    currency: string;
+  };
+}
+
+export interface MoneyTransferResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  execution_time_ms: number;
+  data: {
+    action: string;
+    amount?: number;
+    credits?: number;
+    transaction_id: number;
+    transfer_type?: string;
+    transfer_type_name?: string;
+    requested_amount?: number;
+    total_balance?: number;
+    cashable_balance?: number;
+    restricted_balance?: number;
+    nonrestricted_balance?: number;
+  };
 }

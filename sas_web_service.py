@@ -2,15 +2,18 @@
 SAS Web Service - Thread-safe wrapper for SAS communication
 Provides a bridge between FastAPI endpoints and the core SAS system
 """
+import asyncio
+import logging
 import threading
 import time
-import asyncio
-from typing import Dict, Any, Optional, Callable
-from dataclasses import dataclass
-from enum import Enum
-import json
-from datetime import datetime
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from queue import Queue, Empty, PriorityQueue
+from threading import Lock
+from typing import Dict, Any, Callable, Optional
+import json
 import queue
 
 from slot_machine_application import SlotMachineApplication
@@ -499,10 +502,10 @@ class SASWebService:
             assetnumber = getattr(sas_comm, 'sas_address', "01000000")
             registrationkey = "00000000000000000000000000000000000000000000"
             
-            # Execute money transfer using sas_money functions
+            # Execute money transfer using sas_money instance methods
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                from sas_money_functions import komut_para_yukle
-                result = komut_para_yukle(
+                sas_money = sas_comm.sas_money
+                result = sas_money.komut_para_yukle(
                     doincreasetransactionid,
                     transfertype, 
                     customerbalance,
@@ -512,16 +515,7 @@ class SASWebService:
                     registrationkey
                 )
             else:
-                # Fallback implementation
-                result = sas_comm.money_cash_in(
-                    doincreasetransactionid,
-                    transfertype,
-                    customerbalance, 
-                    customerpromo,
-                    transactionid,
-                    assetnumber,
-                    registrationkey
-                )
+                raise Exception("SAS money functions not available")
             
             return {
                 "status": "success", 
@@ -553,38 +547,72 @@ class SASWebService:
             amount = command_data.get("amount")  # None means cashout all
             transaction_id = command_data.get("transaction_id")
             
-            # AFT parameters based on para_commands.py.ref
+            # Check if sas_money is available
+            if not (hasattr(sas_comm, 'sas_money') and sas_comm.sas_money):
+                raise Exception("SAS money functions not available")
+                
+            sas_money = sas_comm.sas_money
+            
+            # First query balance to check available funds
+            try:
+                balance_result = sas_money.komut_bakiye_sorgulama(
+                    sender=2,  # Cashout operation
+                    isforinfo=0,  # Required for operation
+                    sendertext="API-Cashout"
+                )
+                
+                # Wait briefly for balance response
+                time.sleep(0.5)
+                
+                # Get current balance from sas_money instance
+                current_balance = sas_money.yanit_bakiye_tutar
+                restricted_balance = sas_money.yanit_restricted_amount
+                nonrestricted_balance = sas_money.yanit_nonrestricted_amount
+                
+                total_balance = current_balance + restricted_balance + nonrestricted_balance
+                
+                if total_balance <= 0:
+                    raise Exception("No balance available to cashout")
+                
+                # Check if requested amount is available
+                if amount and amount > total_balance:
+                    raise Exception(f"Requested amount ${amount:.2f} exceeds available balance ${total_balance:.2f}")
+                
+            except Exception as balance_error:
+                raise Exception(f"Failed to query balance: {str(balance_error)}")
+            
+            # AFT Cashout Parameters (based on para_commands.py.ref)
             doincreaseid = 1
             transactionid = transaction_id if transaction_id else int(datetime.now().timestamp()) % 10000
             assetnumber = getattr(sas_comm, 'sas_address', "01000000")
             registrationkey = "00000000000000000000000000000000000000000000"
             
-            # Execute cashout using sas_money functions
-            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                from sas_money_functions import komut_para_sifirla
-                result = komut_para_sifirla(
+            # Execute cashout using sas_money instance method
+            try:
+                result = sas_money.komut_para_sifirla(
                     doincreaseid,
                     transactionid,
                     assetnumber,
                     registrationkey
                 )
-            else:
-                # Fallback implementation
-                result = sas_comm.money_cash_out(
-                    doincreaseid,
-                    transactionid,
-                    assetnumber,
-                    registrationkey
-                )
-            
-            return {
-                "status": "success",
-                "action": "cashout",
-                "requested_amount": amount,
-                "transaction_id": transactionid,
-                "timestamp": datetime.now().isoformat(),
-                "message": f"Cashout initiated"
-            }
+                
+                cashout_amount = amount if amount else total_balance
+                
+                return {
+                    "status": "success",
+                    "action": "cashout",
+                    "requested_amount": amount,
+                    "total_balance": float(total_balance),
+                    "cashable_balance": float(current_balance),
+                    "restricted_balance": float(restricted_balance),
+                    "nonrestricted_balance": float(nonrestricted_balance),
+                    "transaction_id": transactionid,
+                    "timestamp": datetime.now().isoformat(),
+                    "message": f"Cashout of ${cashout_amount:.2f} initiated"
+                }
+                
+            except Exception as cashout_error:
+                raise Exception(f"AFT cashout failed: {str(cashout_error)}")
             
         except Exception as e:
             logger.error(f"Money cashout error: {e}")
@@ -602,20 +630,22 @@ class SASWebService:
                 
             sas_comm = self.slot_machine_app.sas_comm
             
-            # Execute balance query using sas_money functions
+            # Execute balance query using sas_money instance method
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                from sas_money_functions import komut_bakiye_sorgulama
-                result = komut_bakiye_sorgulama(
+                sas_money = sas_comm.sas_money
+                result = sas_money.komut_bakiye_sorgulama(
                     sender=1,
                     isforinfo=1,
                     sendertext="API-Balance-Query"
                 )
                 
+                # Wait briefly for balance response
+                time.sleep(0.5)
+                
                 # Get balance values from sas_money instance
-                sas_money = sas_comm.sas_money
-                cashable_balance = getattr(sas_money, 'yanit_bakiye_tutar', 0)
-                restricted_balance = getattr(sas_money, 'yanit_restricted_amount', 0)
-                nonrestricted_balance = getattr(sas_money, 'yanit_nonrestricted_amount', 0)
+                cashable_balance = sas_money.yanit_bakiye_tutar
+                restricted_balance = sas_money.yanit_restricted_amount
+                nonrestricted_balance = sas_money.yanit_nonrestricted_amount
                 total_balance = cashable_balance + restricted_balance + nonrestricted_balance
                 
                 return {
@@ -647,13 +677,12 @@ class SASWebService:
                 
             sas_comm = self.slot_machine_app.sas_comm
             
-            # Execute cancel transfer using sas_money functions
+            # Execute cancel transfer using sas_money instance method
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                from sas_money_functions import komut_cancel_aft_transfer
-                result = komut_cancel_aft_transfer()
+                sas_money = sas_comm.sas_money
+                result = sas_money.komut_cancel_aft_transfer()
             else:
-                # Fallback implementation
-                result = sas_comm.money_cancel_aft_transfer()
+                raise Exception("SAS money functions not available")
             
             return {
                 "status": "success",
