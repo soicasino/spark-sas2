@@ -214,6 +214,18 @@ class SASWebService:
         elif command_type == "bill_acceptor_reset":
             return self._bill_acceptor_reset()
             
+        elif command_type == "money_add_credits":
+            return self._money_add_credits(params)
+            
+        elif command_type == "money_cashout":
+            return self._money_cashout(params)
+            
+        elif command_type == "money_balance_query":
+            return self._money_balance_query()
+            
+        elif command_type == "money_cancel_transfer":
+            return self._money_cancel_transfer()
+            
         elif command_type == "machine_lock":
             return self._machine_lock()
             
@@ -460,6 +472,203 @@ class SASWebService:
             
         except Exception as e:
             raise Exception(f"Failed to reset bill acceptor: {e}")
+            
+    def _money_add_credits(self, command_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add credits to machine using AFT"""
+        try:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
+                raise Exception("SAS communication not available")
+                
+            sas_comm = self.slot_machine_app.sas_comm
+            
+            # Extract parameters from command_data
+            amount = command_data.get("amount", 0)
+            transfer_type = command_data.get("transfer_type", "10")  # Default to cashable
+            transaction_id = command_data.get("transaction_id")
+            
+            if amount <= 0:
+                raise Exception("Amount must be greater than 0")
+            
+            # AFT parameters based on para_commands.py.ref
+            doincreasetransactionid = 1
+            transfertype = int(transfer_type)
+            customerbalance = float(amount)
+            customerpromo = 0.0
+            
+            transactionid = transaction_id if transaction_id else int(datetime.now().timestamp()) % 10000
+            assetnumber = getattr(sas_comm, 'sas_address', "01000000")
+            registrationkey = "00000000000000000000000000000000000000000000"
+            
+            # Execute money transfer using sas_money functions
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                from sas_money_functions import komut_para_yukle
+                result = komut_para_yukle(
+                    doincreasetransactionid,
+                    transfertype, 
+                    customerbalance,
+                    customerpromo,
+                    transactionid,
+                    assetnumber,
+                    registrationkey
+                )
+            else:
+                # Fallback implementation
+                result = sas_comm.money_cash_in(
+                    doincreasetransactionid,
+                    transfertype,
+                    customerbalance, 
+                    customerpromo,
+                    transactionid,
+                    assetnumber,
+                    registrationkey
+                )
+            
+            return {
+                "status": "success", 
+                "action": "add_credits",
+                "amount": amount,
+                "transfer_type": transfer_type,
+                "transaction_id": transactionid,
+                "timestamp": datetime.now().isoformat(),
+                "message": f"Credit addition of ${amount:.2f} initiated"
+            }
+            
+        except Exception as e:
+            logger.error(f"Money add credits error: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+
+    def _money_cashout(self, command_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Cashout credits from machine using AFT"""
+        try:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
+                raise Exception("SAS communication not available")
+                
+            sas_comm = self.slot_machine_app.sas_comm
+            
+            # Extract parameters from command_data
+            amount = command_data.get("amount")  # None means cashout all
+            transaction_id = command_data.get("transaction_id")
+            
+            # AFT parameters based on para_commands.py.ref
+            doincreaseid = 1
+            transactionid = transaction_id if transaction_id else int(datetime.now().timestamp()) % 10000
+            assetnumber = getattr(sas_comm, 'sas_address', "01000000")
+            registrationkey = "00000000000000000000000000000000000000000000"
+            
+            # Execute cashout using sas_money functions
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                from sas_money_functions import komut_para_sifirla
+                result = komut_para_sifirla(
+                    doincreaseid,
+                    transactionid,
+                    assetnumber,
+                    registrationkey
+                )
+            else:
+                # Fallback implementation
+                result = sas_comm.money_cash_out(
+                    doincreaseid,
+                    transactionid,
+                    assetnumber,
+                    registrationkey
+                )
+            
+            return {
+                "status": "success",
+                "action": "cashout",
+                "requested_amount": amount,
+                "transaction_id": transactionid,
+                "timestamp": datetime.now().isoformat(),
+                "message": f"Cashout initiated"
+            }
+            
+        except Exception as e:
+            logger.error(f"Money cashout error: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+
+    def _money_balance_query(self) -> Dict[str, Any]:
+        """Query current balance on machine"""
+        try:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
+                raise Exception("SAS communication not available")
+                
+            sas_comm = self.slot_machine_app.sas_comm
+            
+            # Execute balance query using sas_money functions
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                from sas_money_functions import komut_bakiye_sorgulama
+                result = komut_bakiye_sorgulama(
+                    sender=1,
+                    isforinfo=1,
+                    sendertext="API-Balance-Query"
+                )
+                
+                # Get balance values from sas_money instance
+                sas_money = sas_comm.sas_money
+                cashable_balance = getattr(sas_money, 'yanit_bakiye_tutar', 0)
+                restricted_balance = getattr(sas_money, 'yanit_restricted_amount', 0)
+                nonrestricted_balance = getattr(sas_money, 'yanit_nonrestricted_amount', 0)
+                total_balance = cashable_balance + restricted_balance + nonrestricted_balance
+                
+                return {
+                    "status": "success",
+                    "action": "balance_query",
+                    "cashable_balance": float(cashable_balance),
+                    "restricted_balance": float(restricted_balance),
+                    "nonrestricted_balance": float(nonrestricted_balance),
+                    "total_balance": float(total_balance),
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "Balance retrieved successfully"
+                }
+            else:
+                raise Exception("SAS money functions not available")
+                
+        except Exception as e:
+            logger.error(f"Money balance query error: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+
+    def _money_cancel_transfer(self) -> Dict[str, Any]:
+        """Cancel pending AFT transfer"""
+        try:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
+                raise Exception("SAS communication not available")
+                
+            sas_comm = self.slot_machine_app.sas_comm
+            
+            # Execute cancel transfer using sas_money functions
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                from sas_money_functions import komut_cancel_aft_transfer
+                result = komut_cancel_aft_transfer()
+            else:
+                # Fallback implementation
+                result = sas_comm.money_cancel_aft_transfer()
+            
+            return {
+                "status": "success",
+                "action": "cancel_transfer",
+                "timestamp": datetime.now().isoformat(),
+                "message": "AFT transfer cancellation initiated"
+            }
+            
+        except Exception as e:
+            logger.error(f"Money cancel transfer error: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
             
     def _machine_lock(self) -> Dict[str, Any]:
         """Lock the machine"""

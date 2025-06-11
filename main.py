@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 
 from sas_web_service import SASWebService
-from routers import system_status, meters, bill_acceptor, machine_control, websocket_routes, card_reader, ip_management, event_management
+from routers import system_status, meters, bill_acceptor, machine_control, websocket_routes, card_reader, ip_management, event_management, money_transfer
 from websocket_manager import connection_manager
 from routers.websocket_routes import broadcast_sas_updates
 from database.db_manager import db_manager
@@ -138,6 +138,7 @@ app.include_router(machine_control.router)
 app.include_router(card_reader.router)  # Card reader endpoints
 app.include_router(ip_management.router)  # IP access control management
 app.include_router(event_management.router)  # Event management and sync status
+app.include_router(money_transfer.router)  # Money transfer endpoints
 
 
 @app.get("/")
