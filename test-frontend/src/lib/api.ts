@@ -204,6 +204,12 @@ export class SASWebSocketClient {
       this.ws.onopen = () => {
         console.log("WebSocket connected");
         this.reconnectAttempts = 0;
+
+        // Subscribe to card events and other important events
+        this.send({
+          type: "subscribe",
+          events: ["card_events", "meters", "machine_events", "bill_events"],
+        });
       };
 
       this.ws.onmessage = (event) => {
@@ -250,6 +256,12 @@ export class SASWebSocketClient {
 
   isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  send(data: any) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    }
   }
 }
 

@@ -46,7 +46,8 @@ export default function SASDashboard() {
         setWsConnected(true);
 
         // Handle different event types
-        if (data.type === "card_event") {
+        if (data.type === "card_events") {
+          console.log("Card event received:", data);
           setLiveEvents((prev) => [data, ...prev.slice(0, 49)]); // Keep last 50 events
           refreshCardStatus(); // Refresh card status on card events
         } else if (data.type === "game_event") {
@@ -97,7 +98,15 @@ export default function SASDashboard() {
   };
 
   // Refresh functions
-  const refreshCardStatus = () => handleApiCall("cardStatus", () => sasApi.getCardReaderStatus(), setCardStatus);
+  const refreshCardStatus = () =>
+    handleApiCall(
+      "cardStatus",
+      () => sasApi.getCardReaderStatus(),
+      (data) => {
+        console.log("Card status refreshed:", data);
+        setCardStatus(data);
+      }
+    );
 
   const refreshMeters = () => handleApiCall("meters", () => sasApi.getAllMeters(), setMeters);
 
@@ -217,6 +226,7 @@ export default function SASDashboard() {
                 <CardContent>
                   <div className="text-2xl font-bold">{cardStatus?.data?.card_inserted ? "Card Present" : "No Card"}</div>
                   <p className="text-xs text-muted-foreground">{cardStatus?.data?.card_number || "No card detected"}</p>
+                  <p className="text-xs text-gray-500">Debug: {JSON.stringify(cardStatus?.data)}</p>
                 </CardContent>
               </Card>
 
@@ -311,6 +321,8 @@ export default function SASDashboard() {
                     <span>Card Present:</span>
                     <Badge variant={cardStatus?.data?.card_inserted ? "default" : "outline"}>{cardStatus?.data?.card_inserted ? "Yes" : "No"}</Badge>
                   </div>
+
+                  <div className="text-xs text-gray-500 mt-2">Debug: {JSON.stringify(cardStatus?.data, null, 2)}</div>
 
                   {cardStatus?.data?.card_number && (
                     <div className="flex items-center justify-between">

@@ -105,6 +105,27 @@ class EventService:
         
         print(f"🎴 Processing card event: {event_data.get('event_type')} (ID: {event_data.get('event_id')})")
         
+        # Broadcast via WebSocket first (for real-time frontend updates)
+        try:
+            from websocket_manager import connection_manager
+            
+            formatted_display = {
+                "event": f"🎴 Card {'Inserted' if event_data.get('event_type') == 'card_inserted' else 'Removed' if event_data.get('event_type') == 'card_removed' else 'Ejected'}",
+                "card_number": event_data.get('card_number', 'Unknown'),
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "status": "🟢 Active" if event_data.get('event_type') == 'card_inserted' else "🔴 Removed"
+            }
+            
+            await connection_manager.broadcast_to_subscribed("card_events", {
+                "event_type": event_data.get('event_type'),
+                "card_number": event_data.get('card_number'),
+                "formatted_display": formatted_display,
+                "timestamp": event_data.get('timestamp')
+            })
+            print(f"📡 Card event broadcasted via WebSocket: {event_data.get('event_type')}")
+        except Exception as e:
+            print(f"⚠️ Failed to broadcast card event via WebSocket: {e}")
+        
         # Try to send to Next.js app
         if await self._send_to_nextjs('/api/events/card', event_data):
             return True

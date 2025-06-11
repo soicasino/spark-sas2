@@ -16,7 +16,7 @@ class CardReader:
         self.polling_active = False
         self.last_card_number = None
         self.missed_polls = 0
-        self.max_missed_polls = 50  # Debounce: require 50 missed polls before ejection
+        self.max_missed_polls = 150  # Debounce: require 150 missed polls before ejection (more stable)
 
     def find_port(self, port_list):
         """
@@ -169,6 +169,8 @@ class CardReader:
                 # Card eject detection with debounce
                 if not card_detected and self.is_card_inside:
                     self.missed_polls += 1
+                    if self.missed_polls % 30 == 0:  # Log every 30 missed polls
+                        print(f"[CardReader] Missed {self.missed_polls}/{self.max_missed_polls} polls for card {self.last_card_number}")
                     if self.missed_polls >= self.max_missed_polls:
                         print("Card ejected!")
                         ejected_card = self.last_card_number
@@ -179,7 +181,9 @@ class CardReader:
                         # Broadcast card removal event
                         self._broadcast_card_event("card_removed", ejected_card)
                 else:
-                    self.missed_polls = 0
+                    if self.missed_polls > 0:
+                        # Reset missed polls counter when card is detected again
+                        self.missed_polls = 0
                 # REMARK: Place card removal/session cleanup logic here (see SQL_CardExit(sender) in legacy code)
             except Exception as e:
                 print(f"Polling error: {e}")
