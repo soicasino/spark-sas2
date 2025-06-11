@@ -205,6 +205,15 @@ class SASWebService:
         elif command_type == "bill_acceptor_disable":
             return self._bill_acceptor_control(False)
             
+        elif command_type == "bill_acceptor_stack":
+            return self._bill_acceptor_stack()
+            
+        elif command_type == "bill_acceptor_reject":
+            return self._bill_acceptor_reject()
+            
+        elif command_type == "bill_acceptor_reset":
+            return self._bill_acceptor_reset()
+            
         elif command_type == "machine_lock":
             return self._machine_lock()
             
@@ -358,24 +367,99 @@ class SASWebService:
                 
             sas_comm = self.slot_machine_app.sas_comm
             
-            # Send bill acceptor control command
-            command = 0x1A if enable else 0x1B  # SAS commands for enable/disable
-            
-            # This would send the actual SAS command
-            # sas_comm.send_command(command)
-            
-            action = "enabled" if enable else "disabled"
-            
-            return {
-                "status": "success",
-                "action": action,
-                "command_sent": f"0x{command:02X}",
-                "timestamp": datetime.now().isoformat(),
-                "message": f"Bill acceptor {action} successfully"
-            }
+            # Use the actual bill acceptor functions
+            if hasattr(sas_comm, 'bill_acceptor'):
+                bill_acceptor = sas_comm.bill_acceptor
+                if enable:
+                    bill_acceptor.bill_acceptor_inhibit_open()
+                    action = "enabled"
+                else:
+                    bill_acceptor.bill_acceptor_inhibit_close()
+                    action = "disabled"
+                    
+                return {
+                    "status": "success",
+                    "action": action,
+                    "timestamp": datetime.now().isoformat(),
+                    "message": f"Bill acceptor {action} successfully"
+                }
+            else:
+                raise Exception("Bill acceptor not available")
             
         except Exception as e:
             raise Exception(f"Failed to control bill acceptor: {e}")
+            
+    def _bill_acceptor_stack(self) -> Dict[str, Any]:
+        """Stack bill in bill acceptor"""
+        try:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
+                raise Exception("SAS communication not available")
+                
+            sas_comm = self.slot_machine_app.sas_comm
+            
+            if hasattr(sas_comm, 'bill_acceptor'):
+                bill_acceptor = sas_comm.bill_acceptor
+                bill_acceptor.bill_acceptor_stack1()
+                
+                return {
+                    "status": "success",
+                    "action": "stack",
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "Bill stacking command sent successfully"
+                }
+            else:
+                raise Exception("Bill acceptor not available")
+            
+        except Exception as e:
+            raise Exception(f"Failed to stack bill: {e}")
+            
+    def _bill_acceptor_reject(self) -> Dict[str, Any]:
+        """Reject bill in bill acceptor"""
+        try:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
+                raise Exception("SAS communication not available")
+                
+            sas_comm = self.slot_machine_app.sas_comm
+            
+            if hasattr(sas_comm, 'bill_acceptor'):
+                bill_acceptor = sas_comm.bill_acceptor
+                bill_acceptor.bill_acceptor_reject("API_command")
+                
+                return {
+                    "status": "success",
+                    "action": "reject",
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "Bill rejection command sent successfully"
+                }
+            else:
+                raise Exception("Bill acceptor not available")
+            
+        except Exception as e:
+            raise Exception(f"Failed to reject bill: {e}")
+            
+    def _bill_acceptor_reset(self) -> Dict[str, Any]:
+        """Reset bill acceptor"""
+        try:
+            if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
+                raise Exception("SAS communication not available")
+                
+            sas_comm = self.slot_machine_app.sas_comm
+            
+            if hasattr(sas_comm, 'bill_acceptor'):
+                bill_acceptor = sas_comm.bill_acceptor
+                bill_acceptor.bill_acceptor_reset()
+                
+                return {
+                    "status": "success",
+                    "action": "reset",
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "Bill acceptor reset command sent successfully"
+                }
+            else:
+                raise Exception("Bill acceptor not available")
+            
+        except Exception as e:
+            raise Exception(f"Failed to reset bill acceptor: {e}")
             
     def _machine_lock(self) -> Dict[str, Any]:
         """Lock the machine"""

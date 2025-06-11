@@ -99,20 +99,37 @@ async def control_bill_acceptor(
     """
     Control bill acceptor with specific action
     
-    - **action**: "enable" or "disable"
+    - **action**: "enable", "disable", "start", "stop", "stack", or "return"
+      - "enable"/"start": Enable bill acceptor to accept bills
+      - "disable"/"stop": Disable bill acceptor 
+      - "stack": Stack bill that is currently escrowed
+      - "return": Reject/return bill that is currently escrowed
     """
     try:
         start_time = datetime.now()
         
         # Validate action
-        if request.action.lower() not in ["enable", "disable"]:
+        valid_actions = ["enable", "disable", "start", "stop", "stack", "return"]
+        if request.action.lower() not in valid_actions:
             raise HTTPException(
                 status_code=400,
-                detail="Action must be either 'enable' or 'disable'"
+                detail=f"Action must be one of: {', '.join(valid_actions)}"
             )
         
         # Map action to command
-        command_type = f"bill_acceptor_{request.action.lower()}"
+        action = request.action.lower()
+        
+        # Map frontend actions to backend commands
+        command_mapping = {
+            "enable": "bill_acceptor_enable",
+            "disable": "bill_acceptor_disable", 
+            "start": "bill_acceptor_enable",    # "start" maps to enable
+            "stop": "bill_acceptor_disable",    # "stop" maps to disable
+            "stack": "bill_acceptor_stack",     # Stack bill
+            "return": "bill_acceptor_reject"    # "return" maps to reject
+        }
+        
+        command_type = command_mapping.get(action, f"bill_acceptor_{action}")
         
         result = await sas_service.execute_command_async(
             command_type,

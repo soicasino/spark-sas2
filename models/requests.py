@@ -52,7 +52,7 @@ class MoneyTransferRequest(BaseModel):
 
 class BillAcceptorRequest(BaseModel):
     """Request model for bill acceptor operations"""
-    action: str = Field(description="Action to perform: 'enable' or 'disable'")
+    action: str = Field(description="Action to perform: 'enable', 'disable', 'start', 'stop', 'stack', or 'return'")
     
     class Config:
         schema_extra = {

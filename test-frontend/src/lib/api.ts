@@ -297,13 +297,16 @@ export interface MeterData {
 export interface BillAcceptorStatus {
   success: boolean;
   data: {
+    available: boolean;
     enabled: boolean;
-    status: string;
-    last_bill_amount?: number;
-    total_inserted?: number;
-    timestamp: string;
+    last_command_time?: string;
+    type_id?: number;
+    pooling_started: boolean;
+    last_bill_amount?: number; // Future field
+    total_inserted?: number; // Future field
   };
   message: string;
+  timestamp: string;
 }
 
 export interface EventStats {

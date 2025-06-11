@@ -252,7 +252,9 @@ export default function SASDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{billAcceptorStatus?.data.enabled ? "Enabled" : "Disabled"}</div>
-                  <p className="text-xs text-muted-foreground">Status: {billAcceptorStatus?.data.status || "Unknown"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Available: {billAcceptorStatus?.data.available ? "Yes" : "No"} | Pooling: {billAcceptorStatus?.data.pooling_started ? "Started" : "Stopped"}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -474,7 +476,9 @@ export default function SASDashboard() {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span>Status:</span>
-                    <Badge variant={billAcceptorStatus?.data.enabled ? "default" : "secondary"}>{billAcceptorStatus?.data.status || "Unknown"}</Badge>
+                    <Badge variant={billAcceptorStatus?.data.enabled ? "default" : "secondary"}>
+                      {billAcceptorStatus?.data.available ? (billAcceptorStatus.data.enabled ? "Enabled" : "Disabled") : "Not Available"}
+                    </Badge>
                   </div>
 
                   <div className="flex items-center justify-between">
@@ -498,6 +502,32 @@ export default function SASDashboard() {
                     <div className="flex items-center justify-between">
                       <span>Total Inserted:</span>
                       <span className="font-mono">{formatCurrency(billAcceptorStatus.data.total_inserted)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <span>Available:</span>
+                    <Badge variant={billAcceptorStatus?.data.available ? "default" : "secondary"}>{billAcceptorStatus?.data.available ? "Yes" : "No"}</Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span>Pooling Status:</span>
+                    <Badge variant={billAcceptorStatus?.data.pooling_started ? "default" : "secondary"}>
+                      {billAcceptorStatus?.data.pooling_started ? "Started" : "Stopped"}
+                    </Badge>
+                  </div>
+
+                  {billAcceptorStatus?.data.last_command_time && (
+                    <div className="flex items-center justify-between">
+                      <span>Last Command:</span>
+                      <span className="text-sm text-muted-foreground">{formatTimestamp(billAcceptorStatus.data.last_command_time)}</span>
+                    </div>
+                  )}
+
+                  {billAcceptorStatus?.data.type_id && (
+                    <div className="flex items-center justify-between">
+                      <span>Type ID:</span>
+                      <span className="font-mono">{billAcceptorStatus.data.type_id}</span>
                     </div>
                   )}
 
