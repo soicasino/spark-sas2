@@ -268,21 +268,19 @@ export class SASWebSocketClient {
 // Types for API responses
 export interface CardReaderStatus {
   success: boolean;
-  data: {
-    card_inserted: boolean;
-    card_number?: string;
-    port_name?: string;
-    reader_connected: boolean;
-    formatted_display: {
-      card_status: string;
-      card_number: string;
-      reader_status: string;
-      port_name: string;
-    };
-    error_code?: string;
-    timestamp: string;
+  card_inserted: boolean;
+  card_number?: string;
+  port_name?: string;
+  reader_connected: boolean;
+  formatted_display: {
+    card_status: string;
+    card_number: string;
+    reader_status: string;
+    port_name: string;
   };
-  message: string;
+  error_code?: string;
+  message?: string;
+  timestamp: string;
 }
 
 export interface MeterData {

@@ -224,9 +224,9 @@ export default function SASDashboard() {
                   <CreditCard className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{cardStatus?.data?.card_inserted ? "Card Present" : "No Card"}</div>
-                  <p className="text-xs text-muted-foreground">{cardStatus?.data?.card_number || "No card detected"}</p>
-                  <p className="text-xs text-gray-500">Debug: {JSON.stringify(cardStatus?.data)}</p>
+                  <div className="text-2xl font-bold">{cardStatus?.card_inserted ? "Card Present" : "No Card"}</div>
+                  <p className="text-xs text-muted-foreground">{cardStatus?.card_number || "No card detected"}</p>
+                  <p className="text-xs text-gray-500">Debug: {JSON.stringify(cardStatus)}</p>
                 </CardContent>
               </Card>
 
@@ -312,28 +312,26 @@ export default function SASDashboard() {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span>Status:</span>
-                    <Badge variant={cardStatus?.data?.card_inserted ? "default" : "secondary"}>
-                      {cardStatus?.data?.formatted_display?.card_status || "Unknown"}
-                    </Badge>
+                    <Badge variant={cardStatus?.card_inserted ? "default" : "secondary"}>{cardStatus?.formatted_display?.card_status || "Unknown"}</Badge>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <span>Card Present:</span>
-                    <Badge variant={cardStatus?.data?.card_inserted ? "default" : "outline"}>{cardStatus?.data?.card_inserted ? "Yes" : "No"}</Badge>
+                    <Badge variant={cardStatus?.card_inserted ? "default" : "outline"}>{cardStatus?.card_inserted ? "Yes" : "No"}</Badge>
                   </div>
 
-                  <div className="text-xs text-gray-500 mt-2">Debug: {JSON.stringify(cardStatus?.data, null, 2)}</div>
+                  <div className="text-xs text-gray-500 mt-2">Debug: {JSON.stringify(cardStatus, null, 2)}</div>
 
-                  {cardStatus?.data?.card_number && (
+                  {cardStatus?.card_number && (
                     <div className="flex items-center justify-between">
                       <span>Card Number:</span>
-                      <code className="text-sm bg-muted px-2 py-1 rounded">{cardStatus.data?.card_number}</code>
+                      <code className="text-sm bg-muted px-2 py-1 rounded">{cardStatus.card_number}</code>
                     </div>
                   )}
 
                   <div className="flex items-center justify-between">
                     <span>Last Updated:</span>
-                    <span className="text-sm text-muted-foreground">{cardStatus?.data?.timestamp ? formatTimestamp(cardStatus.data.timestamp) : "Never"}</span>
+                    <span className="text-sm text-muted-foreground">{cardStatus?.timestamp ? formatTimestamp(cardStatus.timestamp) : "Never"}</span>
                   </div>
 
                   <Separator />
@@ -343,7 +341,7 @@ export default function SASDashboard() {
                       {loading.cardStatus ? <RefreshCcw className="h-4 w-4 animate-spin" /> : "Refresh"}
                     </Button>
 
-                    <Button onClick={handleEjectCard} disabled={loading.ejectCard || !cardStatus?.data?.card_inserted} variant="destructive" className="flex-1">
+                    <Button onClick={handleEjectCard} disabled={loading.ejectCard || !cardStatus?.card_inserted} variant="destructive" className="flex-1">
                       Eject Card
                     </Button>
                   </div>
