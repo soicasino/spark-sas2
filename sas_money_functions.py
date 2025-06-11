@@ -5,7 +5,7 @@
 import datetime
 import time
 from decimal import Decimal
-from threading import Thread
+from threading import Thread, Event
 from utils import get_crc, add_left_bcd
 
 class SasMoney:
@@ -15,29 +15,64 @@ class SasMoney:
     def __init__(self, config, communicator):
         self.config = config
         self.communicator = communicator  # Should provide send_sas_command or sas_send_command_with_queue
+        
+        # Timestamps for throttling commands
         self.last_para_yukle_date = datetime.datetime.now()
         self.last_para_sifirla_date = datetime.datetime.now()
-        self.yanit_bakiye_tutar = 0
-        self.yanit_restricted_amount = 0
-        self.yanit_nonrestricted_amount = 0
+        
+        # Machine state variables
+        self.yanit_bakiye_tutar = Decimal('0.0')
+        self.yanit_restricted_amount = Decimal('0.0')
+        self.yanit_nonrestricted_amount = Decimal('0.0')
         self.yanit_restricted_pool_id = "0030"
+        
+        # Transaction state
         self.sifirla_first_transaction = 0
         self.sifirla_last_transaction = 0
         self.yukle_first_transaction = 0
         self.yukle_last_transaction = 0
+        
+        # AFT Status Flags
         self.global_para_yukleme_transfer_status = None
         self.global_para_silme_transfer_status = None
         self.global_para_sifirla_84 = 0
-        self.is_waiting_for_para_yukle = 0
-        self.is_waiting_for_bakiye_sifirla = 0
+        
+        # Synchronization using threading.Event for waiting on AFT completion
+        self.aft_completion_event = Event()
+        self.is_waiting_for_para_yukle = False
+        self.is_waiting_for_bakiye_sifirla = False
         self.is_waiting_for_meter = False
         self.meter_response_received = False  # New flag to prevent multiple processing
         self.last_parsed_meters = {}  # Store parsed meters for API access
         # ... add other state as needed
 
     def komut_cancel_aft_transfer(self):
-        command = "017201800BB4"
+        """Sends the command to cancel a pending AFT transfer."""
+        print("[SasMoney] Sending AFT Cancel command.")
+        command = "017201800BB4"  # Hardcoded command for AFT cancel
         self.communicator.sas_send_command_with_queue("CancelAFT", command, 1)
+
+    def wait_for_aft_completion(self, timeout=10.0):
+        """
+        FIX: Waits for the AFT transfer to be confirmed by the machine.
+        This is the core of the fix. It blocks the execution of the web request
+        until the SAS response for the transfer is processed.
+        """
+        print("[SasMoney] Waiting for AFT completion confirmation from machine...")
+        self.aft_completion_event.clear()  # Reset the event flag before waiting
+        success = self.aft_completion_event.wait(timeout)  # Wait for the event to be set
+        if not success:
+            print("[SasMoney] Timeout waiting for AFT completion.")
+            return False, "Timeout waiting for AFT response from the machine."
+        
+        print(f"[SasMoney] AFT completion signal received. Final Status: {self.global_para_yukleme_transfer_status}")
+        
+        # Check the final status of the transfer
+        if self.global_para_yukleme_transfer_status == "00":
+            return True, "AFT transfer completed successfully."
+        else:
+            error_message = f"AFT failed with status code: {self.global_para_yukleme_transfer_status}"
+            return False, error_message
 
     def komut_bakiye_sorgulama(self, sender, isforinfo, sendertext='UndefinedBakiyeSorgulama'):
         command = "017400000000"
@@ -46,34 +81,49 @@ class SasMoney:
         return command
 
     def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey):
+        """Constructs and sends the AFT command to add credits."""
         self.last_para_yukle_date = datetime.datetime.now()
         if doincreasetransactionid:
             transactionid += 1
-        command_header = assetnumber + "72"
+        
+        # This part remains the same as it correctly constructs the SAS command
+        command_header = self.communicator.sas_address + "72"
         command = "00"  # transfer code
         command += "00"  # transfer index
+        
+        # Correctly set the transfer type based on the input
         if transfertype == 10:
-            command += "10"
+            command += "10"  # Restricted
         elif transfertype == 11:
-            command += "11"
+            command += "11"  # Non-Restricted
         else:
-            command += "00"
-        customerbalanceint = int(customerbalance * 100)
+            command += "00"  # Cashable
+            
+        customerbalanceint = int(Decimal(customerbalance) * 100)
         command += add_left_bcd(str(customerbalanceint), 5)
-        command += add_left_bcd(str(int(customerpromo * 100)), 5)
-        command += "0000000000"  # nonrestricted amount
+        command += add_left_bcd(str(int(Decimal(customerpromo) * 100)), 5)
+        command += "0000000000"  # nonrestricted amount (handled in restricted for type 11)
+        
         command += "07"  # transfer flag (hard mode)
         command += assetnumber
         command += registrationkey
+        
         transaction_id_hex = ''.join(f"{ord(c):02x}" for c in str(transactionid))
         command += add_left_bcd(str(len(transaction_id_hex) // 2), 1)
         command += transaction_id_hex
+        
         command += "00000000"  # expiration date
         command += "0000"  # pool id
         command += "00"  # receipt data length
-        command_header += hex(len(command) // 2).replace("0x", "")
+        
+        # The length calculation should be on the command body, not header
+        command_header += f'{len(command) // 2:02x}'
+        
         full_command = get_crc(command_header + command)
+        
+        print(f"[SasMoney] Sending AFT command: {full_command}")
         self.communicator.sas_send_command_with_queue("ParaYukle", full_command, 1)
+        return transactionid
 
     def komut_para_sifirla(self, doincreaseid, transactionid, assetnumber, registrationkey):
         self.last_para_sifirla_date = datetime.datetime.now()
@@ -383,4 +433,27 @@ class SasMoney:
 
     def is_valid_bcd(self, hex_str):
         """Check if a hex string is valid BCD (only 0-9 digits)."""
-        return all(c in '0123456789' for c in hex_str) 
+        return all(c in '0123456789' for c in hex_str)
+
+    def yanit_para_yukle(self, yanit):
+        """
+        FIX: Handles the response for AFT credit/debit, setting the completion event.
+        """
+        print(f"[SasMoney] Processing AFT Response: {yanit}")
+        # Simplified parsing to get the status
+        try:
+            transfer_status = yanit[10:12]
+            self.global_para_yukleme_transfer_status = transfer_status
+            print(f"[SasMoney] AFT Transfer Status received: {transfer_status}")
+
+            # Signal that the AFT process has received a definitive response.
+            self.aft_completion_event.set()
+
+        except IndexError:
+            print("[SasMoney] Error: AFT response was too short to parse.")
+            self.global_para_yukleme_transfer_status = "FF"  # Use a failure code
+            self.aft_completion_event.set()  # Signal completion even on error to unblock waiter
+        except Exception as e:
+            print(f"[SasMoney] Unhandled error parsing AFT response: {e}")
+            self.global_para_yukleme_transfer_status = "FF"
+            self.aft_completion_event.set() 

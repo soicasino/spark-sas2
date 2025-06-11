@@ -33,10 +33,11 @@ class ConnectionManager:
         # Update counters for metrics
         self.update_counters = {
             "meters": 0,
-            "system_status": 0, 
+            "system_status": 0,
             "machine_events": 0,
             "bill_events": 0,
-            "card_events": 0
+            "card_events": 0,
+            "money_events": 0
         }
 
     async def connect(self, websocket: WebSocket, client_info: Dict[str, Any] = None):
@@ -53,7 +54,7 @@ class ConnectionManager:
         
         # Default subscriptions (all events)
         self.subscriptions[websocket] = {
-            "meters", "system_status", "machine_events", "bill_events", "card_events", "heartbeat"
+            "meters", "system_status", "machine_events", "bill_events", "card_events", "money_events", "heartbeat"
         }
         
         logger.info(f"WebSocket client connected. Total connections: {len(self.active_connections)}")
@@ -141,6 +142,8 @@ class ConnectionManager:
             self.update_counters["bill_events"] += 1
         elif event_type == "card_events":
             self.update_counters["card_events"] += 1
+        elif event_type == "money_events":
+            self.update_counters["money_events"] += 1
 
         # Send to subscribed connections
         disconnected_connections = []
@@ -159,7 +162,7 @@ class ConnectionManager:
 
     async def update_subscription(self, websocket: WebSocket, event_types: Set[str]):
         """Update event subscriptions for a connection"""
-        valid_events = {"meters", "system_status", "machine_events", "bill_events", "card_events", "heartbeat"}
+        valid_events = {"meters", "system_status", "machine_events", "bill_events", "card_events", "money_events", "heartbeat"}
         
         # Filter to valid event types
         filtered_events = event_types.intersection(valid_events)

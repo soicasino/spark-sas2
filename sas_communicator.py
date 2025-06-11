@@ -527,6 +527,12 @@ class SASCommunicator:
                 # Set flags for the money system
                 if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
                     self.sas_money.global_para_yukleme_transfer_status = transfer_status
+                
+                # FIX: Call the yanit_para_yukle method to signal completion
+                if hasattr(self.sas_money, 'yanit_para_yukle'):
+                    self.sas_money.yanit_para_yukle(tdata)
+                else:
+                    print("Warning: sas_money.yanit_para_yukle method not found")
                     
         except Exception as e:
             print(f"Error parsing AFT response: {e}")
