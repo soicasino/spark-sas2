@@ -101,7 +101,7 @@ class PortManager:
                 
                 # Try different device types like working code
                 for device_type in [8, 1, 2]:  # Try default first, then Novomatic types
-                    config.config.set('machine', 'devicetypeid', str(device_type))
+                    config.set('machine', 'devicetypeid', str(device_type))
                     
                     from sas_communicator import SASCommunicator
                     sas_comm = SASCommunicator(port_name, config)
