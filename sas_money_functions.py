@@ -141,11 +141,11 @@ class SasMoney:
         if isall == 0 and IsNewMeter == 0:
             command = get_crc("012F0C0000A0B802031E00010BA2BA")
         elif isall == 0 and IsNewMeter == 1:
-            command = get_crc("01AF1E000000A000B800020003001E00000001000B00A200BA00050006000C00")
+            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
         elif isall == 1:
             command = get_crc("012F0C00000405060C191D7FFAFBFC")
         elif isall == 2:
-            command = get_crc("01AF1E000000A000B800020003001E00000001000B00A200BA00050006000C00")
+            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
         else:
             print(f"METER: komut_get_meter unknown isall value: {isall}")
             return
