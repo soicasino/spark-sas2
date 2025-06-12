@@ -86,9 +86,16 @@ async def add_credits(
         else:
             transactionid = int(datetime.now().timestamp()) % 10000
         
-        # SAS configuration parameters
-        assetnumber = sas_comm.sas_address if hasattr(sas_comm, 'sas_address') else "01000000"
-        registrationkey = "00000000000000000000000000000000000000000000"  # 20 bytes of zeros
+        # Get AFT parameters from configuration and machine
+        assetnumber = sas_comm.get_asset_number_for_aft()
+        
+        # Get registration key from config
+        try:
+            from config_manager import config_manager
+            registrationkey = config_manager.get_registration_key()
+        except Exception as e:
+            print(f"[MoneyTransfer] Warning: Could not load registration key from config: {e}")
+            registrationkey = "00000000000000000000000000000000000000000000"  # Fallback
         
         # Execute AFT credit loading using SAS money functions
         try:
@@ -111,8 +118,8 @@ async def add_credits(
                 customerbalance=float(amount),
                 customerpromo=0.0,
                 transactionid=int(datetime.now().timestamp()) % 10000,
-                assetnumber=sas_comm.sas_address,
-                registrationkey="0000000000000000000000000000000000000000"
+                assetnumber=assetnumber,
+                registrationkey=registrationkey
             )
 
             # 2. Wait for the transfer to complete
@@ -286,9 +293,16 @@ async def cashout_credits(
         else:
             transactionid = int(datetime.now().timestamp()) % 10000
         
-        # SAS configuration parameters
-        assetnumber = sas_comm.sas_address if hasattr(sas_comm, 'sas_address') else "01000000"
-        registrationkey = "00000000000000000000000000000000000000000000"  # 20 bytes of zeros
+        # Get AFT parameters from configuration and machine
+        assetnumber = sas_comm.get_asset_number_for_aft()
+        
+        # Get registration key from config
+        try:
+            from config_manager import config_manager
+            registrationkey = config_manager.get_registration_key()
+        except Exception as e:
+            print(f"[MoneyTransfer] Warning: Could not load registration key from config: {e}")
+            registrationkey = "00000000000000000000000000000000000000000000"  # Fallback
         
         # Execute AFT cashout using SAS money functions
         try:

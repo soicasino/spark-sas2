@@ -4,6 +4,7 @@ import time
 import datetime
 import platform
 import termios  # For Linux parity control
+from typing import Optional
 from crccheck.crc import CrcKermit
 from decimal import Decimal
 from card_reader import CardReader  # Import the CardReader class
@@ -559,10 +560,19 @@ class SASCommunicator:
 
     def read_and_print_asset_number(self):
         """Read asset number from SAS and print it to screen."""
+        asset_number = self.read_asset_number_from_machine()
+        if asset_number is not None:
+            print(f"[ASSET NO] Asset number: {asset_number}")
+        else:
+            print("[ASSET NO] Could not read asset number from SAS.")
+    
+    def read_asset_number_from_machine(self) -> Optional[int]:
+        """Read asset number from SAS machine and return as integer."""
         try:
             command = self.sas_address + '7301FF'
             command_crc = get_crc(command)
             self.sas_send_command_with_queue('ReadAssetNo', command_crc, 0)
+            
             for _ in range(10):
                 time.sleep(0.2)
                 response = self.get_data_from_sas_port()
@@ -573,11 +583,43 @@ class SASCommunicator:
                     # Reverse by bytes
                     reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                     asset_dec = int(reversed_hex, 16)
-                    print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}  DEBUG: Port test asset number")
-                    return
+                    print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}  DEBUG: Asset number read from machine")
+                    
+                    # Update config with the actual asset number from machine
+                    try:
+                        from config_manager import config_manager
+                        config_manager.set_asset_number(asset_dec)
+                        print(f"[ASSET NO] Updated config.ini with asset number: {asset_dec}")
+                    except Exception as config_error:
+                        print(f"[ASSET NO] Warning: Could not update config: {config_error}")
+                    
+                    return asset_dec
+            
             print("[ASSET NO] Could not read asset number from SAS.")
+            return None
+            
         except Exception as e:
             print(f"[ASSET NO] Error reading from SAS: {e}")
+            return None
+    
+    def get_asset_number_for_aft(self) -> str:
+        """Get asset number for AFT operations, trying machine first, then config."""
+        try:
+            from config_manager import config_manager
+            
+            # First try to read from machine
+            machine_asset = self.read_asset_number_from_machine()
+            if machine_asset is not None:
+                return config_manager.get_asset_number_hex()
+            
+            # Fall back to config file
+            print(f"[ASSET NO] Using asset number from config: {config_manager.get_asset_number()}")
+            return config_manager.get_asset_number_hex()
+            
+        except Exception as e:
+            print(f"[ASSET NO] Error getting asset number: {e}")
+            # Ultimate fallback
+            return "0000006C"  # 108 in hex
 
     def find_ports_with_card_reader(self, port_list):
         """
