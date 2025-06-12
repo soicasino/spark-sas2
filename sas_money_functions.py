@@ -302,29 +302,39 @@ class SasMoney:
             # Calculate where meter data should end (exclude CRC)
             meter_data_end = message_length - 4  # Subtract 4 for CRC
             
+            # Skip initial padding zeros
+            while idx < meter_data_end and tdata[idx:idx+2] == "00":
+                idx += 2
+            
+            known_meter_codes = set(self.METER_CODE_MAP.keys())
+            
             while try_count < 15 and idx < meter_data_end:
                 try_count += 1
                 
-                # Get meter code - exactly like reference
-                if idx + 2 > meter_data_end:
-                    break
-                meter_code = tdata[idx:idx+2].upper()
+                # Look for next meter code - scan ahead if needed
+                found_meter = False
+                original_idx = idx
                 
-                # Check if we have a valid meter code, skip padding zeros
-                if meter_code == "00":
-                    idx += 2
-                    continue
-                    
-                # Check if this looks like a valid meter code from our map
-                if meter_code not in self.METER_CODE_MAP and len(meter_code) == 2:
-                    # Might be encountering end of data or invalid structure
-                    print(f"[DEBUG] Unknown meter code {meter_code} at index {idx}, stopping")
+                # Search for next valid meter code within reasonable range
+                for search_idx in range(idx, min(idx + 50, meter_data_end), 2):
+                    if search_idx + 2 <= meter_data_end:
+                        potential_code = tdata[search_idx:search_idx+2].upper()
+                        if potential_code in known_meter_codes:
+                            print(f"[DEBUG] Found meter code {potential_code} at index {search_idx}")
+                            idx = search_idx
+                            found_meter = True
+                            break
+                
+                if not found_meter:
+                    print(f"[DEBUG] No more meter codes found after index {original_idx}")
                     break
-                    
+                
+                meter_code = tdata[idx:idx+2].upper()
                 idx += 4  # Skip meter code + 00 (matches reference: index=index+4)
                 
                 # Get meter length - exactly like reference  
                 if idx + 2 > meter_data_end:
+                    print(f"[DEBUG] Not enough data for meter length at index {idx}")
                     break
                 meter_length = int(tdata[idx:idx+2], 16)
                 idx += 2
@@ -332,12 +342,12 @@ class SasMoney:
                 
                 # Validate meter length makes sense
                 if meter_length == 0 or hex_len == 0:
-                    print(f"[DEBUG] Invalid meter length {meter_length} for code {meter_code}, stopping")
-                    break
+                    print(f"[DEBUG] Invalid meter length {meter_length} for code {meter_code}")
+                    continue  # Skip this meter and continue looking
                 
                 # Get meter value - exactly like reference
                 if idx + hex_len > meter_data_end:
-                    print(f"[DEBUG] Meter value would exceed data boundary for code {meter_code}, stopping")
+                    print(f"[DEBUG] Meter value would exceed data boundary for code {meter_code}")
                     break
                 meter_val = tdata[idx:idx+hex_len]
                 idx += hex_len
@@ -372,7 +382,7 @@ class SasMoney:
                     
                 except Exception as e:
                     print(f"AF Meter parse error: {meter_code} {meter_val} {e}")
-                    break
+                    continue  # Continue to next meter instead of breaking
             print("--- End of AF Meter Block ---")
             
         else:
