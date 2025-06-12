@@ -192,6 +192,15 @@ class SasMoney:
         'FA': ('regular_cashable_keyed', 5),
         'FB': ('restricted_keyed', 5),
         'FC': ('nonrestricted_keyed', 5),
+        # Additional common SAS meter codes
+        '10': ('total_cancelled_credits_meter', 5),
+        '11': ('total_bet_meter', 5),
+        '12': ('total_win_meter', 5),
+        '13': ('total_in_meter', 5),
+        '14': ('total_jackpot_meter', 5),
+        '15': ('games_played_meter', 4),
+        '16': ('games_won_meter', 4),
+        '1A': ('current_credits_meter', 5),
     }
 
     # Single meter command codes (for individual meter requests)
@@ -316,7 +325,7 @@ class SasMoney:
                 original_idx = idx
                 
                 # Search for next valid meter code within reasonable range
-                for search_idx in range(idx, min(idx + 50, meter_data_end), 2):
+                for search_idx in range(idx, min(idx + 100, meter_data_end), 2):
                     if search_idx + 2 <= meter_data_end:
                         potential_code = tdata[search_idx:search_idx+2].upper()
                         if potential_code in known_meter_codes:
@@ -375,8 +384,7 @@ class SasMoney:
                         parsed_meters[meter_name] = meter_value
                         print(f"  {meter_name} ({meter_code}): {meter_value} games")
                         print("MeterCode", meter_code, "MeterLength", meter_length, "MeterVal", meter_val, "MeterValue", meter_value)
-                        print("Break")
-                        break  # Reference breaks after games won
+                        # Continue parsing instead of breaking to get all meters
                     else:
                         print(f"  {meter_name} ({meter_code}): {money_fmt(meter_value)}")
                     
