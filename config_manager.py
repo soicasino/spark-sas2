@@ -104,6 +104,23 @@ class ConfigManager:
     def get_timeout(self) -> float:
         """Get communication timeout"""
         return self.config.getfloat('SAS_MACHINE', 'timeout', fallback=0.1)
+    
+    # Backward compatibility methods for old interface
+    def get(self, section: str, option: str, fallback=None):
+        """Backward compatibility method for old config interface"""
+        return self.config.get(section, option, fallback=fallback)
+    
+    def getint(self, section: str, option: str, fallback=0):
+        """Backward compatibility method for old config interface"""
+        return self.config.getint(section, option, fallback=fallback)
+    
+    def getfloat(self, section: str, option: str, fallback=0.0):
+        """Backward compatibility method for old config interface"""
+        return self.config.getfloat(section, option, fallback=fallback)
+    
+    def getboolean(self, section: str, option: str, fallback=False):
+        """Backward compatibility method for old config interface"""
+        return self.config.getboolean(section, option, fallback=fallback)
 
 # Global config manager instance
 config_manager = ConfigManager() 
