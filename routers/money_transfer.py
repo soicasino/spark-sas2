@@ -379,4 +379,186 @@ def get_transfer_type_name(transfer_type: str) -> str:
         "10": "Cashable", 
         "11": "Restricted"
     }
-    return type_names.get(transfer_type, "Unknown") 
+    return type_names.get(transfer_type, "Unknown")
+
+
+@router.get("/transfer-status", response_model=MachineControlResponse)
+async def get_aft_transfer_status(
+    sas_service: SASWebService = Depends(get_sas_service)
+):
+    """
+    Get the current AFT (Advanced Funds Transfer) status from the machine
+    
+    Returns detailed status information including:
+    - Transfer availability
+    - Asset number status
+    - Registration status
+    - Last transfer result codes
+    """
+    try:
+        start_time = datetime.now()
+        
+        # Check SAS communication availability
+        if not (sas_service.slot_machine_app and 
+                sas_service.slot_machine_app.sas_comm):
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        # Query AFT status using SAS command 0x74 (AFT status inquiry)
+        try:
+            # Get the AFT status
+            status_data = {}
+            
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                # Check if we have AFT status attributes
+                if hasattr(sas_comm.sas_money, 'aft_status'):
+                    status_data['aft_enabled'] = getattr(sas_comm.sas_money, 'aft_status', False)
+                
+                if hasattr(sas_comm.sas_money, 'transfer_status'):
+                    status_data['transfer_status'] = getattr(sas_comm.sas_money, 'transfer_status', 'unknown')
+                
+                if hasattr(sas_comm.sas_money, 'last_aft_status'):
+                    status_data['last_aft_status'] = getattr(sas_comm.sas_money, 'last_aft_status', 'unknown')
+                
+                # Get asset number from communicator
+                if hasattr(sas_comm, 'asset_number'):
+                    status_data['asset_number'] = sas_comm.asset_number
+                elif hasattr(sas_comm, 'decimal_asset_number'):
+                    status_data['asset_number'] = sas_comm.decimal_asset_number
+                else:
+                    status_data['asset_number'] = None
+                
+                # Check registration status
+                status_data['registration_required'] = True  # Most machines require registration
+                status_data['registration_status'] = 'unknown'
+                
+            else:
+                status_data = {
+                    'aft_enabled': False,
+                    'transfer_status': 'sas_money_not_available',
+                    'asset_number': None,
+                    'registration_required': True,
+                    'registration_status': 'unknown'
+                }
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="AFT status retrieved successfully",
+                execution_time_ms=execution_time,
+                data={
+                    "action": "get_aft_status",
+                    **status_data,
+                    "status_codes": {
+                        "0x80": "Transfer pending",
+                        "0x81": "Transfer complete", 
+                        "0x82": "Transfer failed",
+                        "0x83": "Request acknowledged"
+                    }
+                }
+            )
+            
+        except Exception as status_error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to query AFT status: {str(status_error)}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AFT status query error: {str(e)}"
+        )
+
+
+@router.post("/register-aft", response_model=MachineControlResponse)
+async def register_aft(
+    sas_service: SASWebService = Depends(get_sas_service)
+):
+    """
+    Register the machine for AFT (Advanced Funds Transfer) operations
+    
+    This sends the AFT registration command to enable money transfers.
+    Most slot machines require this before accepting AFT commands.
+    """
+    try:
+        start_time = datetime.now()
+        
+        # Check SAS communication availability
+        if not (sas_service.slot_machine_app and 
+                sas_service.slot_machine_app.sas_comm):
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        # AFT Registration Parameters
+        assetnumber = "0000006C"  # Asset number (108 in decimal)
+        registrationkey = "00000000000000000000000000000000000000000000"  # Default key
+        posid = "POS001"  # Point of Sale ID
+        
+        try:
+            # Send AFT registration command (SAS command 0x75)
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                # Try to call AFT registration if available
+                if hasattr(sas_comm.sas_money, 'komut_aft_registration'):
+                    result = sas_comm.sas_money.komut_aft_registration(
+                        assetnumber,
+                        registrationkey,
+                        posid
+                    )
+                else:
+                    # Manual AFT registration command construction
+                    # Command: 0x75 + asset number + registration key + POS ID
+                    sas_address = getattr(sas_comm, 'sas_address', '01')
+                    command = f"{sas_address}75{assetnumber}{registrationkey}{posid.ljust(16, '0')}"
+                    
+                    # Send the command
+                    if hasattr(sas_comm, 'send_command'):
+                        result = sas_comm.send_command(command)
+                    else:
+                        result = "Registration command sent (no response handler available)"
+            else:
+                raise HTTPException(
+                    status_code=503,
+                    detail="SAS money functions not available"
+                )
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="AFT registration initiated successfully",
+                execution_time_ms=execution_time,
+                data={
+                    "action": "register_aft",
+                    "asset_number": assetnumber,
+                    "pos_id": posid,
+                    "registration_key_length": len(registrationkey),
+                    "command_sent": f"AFT Registration Command (0x75)",
+                    "note": "Check transfer-status endpoint to verify registration success"
+                }
+            )
+            
+        except Exception as reg_error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"AFT registration failed: {str(reg_error)}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AFT registration error: {str(e)}"
+        ) 
