@@ -136,7 +136,7 @@ class SasMoney:
         print("=== METER: komut_get_meter called ===")
         print(f"METER: komut_get_meter params: isall={isall}, gameid={gameid}")
         # Removed buffer clear to avoid missing fast meter responses
-        G_CasinoId = int(self.config.get('casino', 'casinoid', fallback=8))
+        G_CasinoId = int(self.config.get('casino', 'casinoid') or 8)
         IsNewMeter = 1 if G_CasinoId in [8, 11, 7] else 0
         if isall == 0 and IsNewMeter == 0:
             command = get_crc("012F0C0000A0B802031E00010BA2BA")
