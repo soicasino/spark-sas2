@@ -379,7 +379,12 @@ class SasMoney:
                         print(f"  {meter_name} ({meter_code}): {meter_value} games")
                         if meter_code == "06":  # Debug info for games won
                             print("MeterCode", meter_code, "MeterLength", meter_length, "MeterVal", meter_val, "MeterValue", meter_value)
-                    else:  # Currency amounts - divide by 10 based on reference image analysis
+                    elif meter_code in ["A0", "B8"]:  # Coin in/out - divide by 100 for proper decimal places
+                        # Raw: 000000000089475290 -> 89475290 -> 894752.90 (divide by 100)
+                        meter_value = raw_value / 100.0
+                        parsed_meters[meter_name] = meter_value
+                        print(f"  {meter_name} ({meter_code}): {money_fmt(meter_value)}")
+                    else:  # Other currency amounts - divide by 10 based on reference image analysis
                         # Raw: 000000000013187000 -> 13187000 -> 1318700.0 (divide by 10)
                         meter_value = raw_value / 10.0
                         parsed_meters[meter_name] = meter_value
