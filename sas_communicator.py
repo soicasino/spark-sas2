@@ -660,7 +660,7 @@ class SASCommunicator:
         elif meter_type == 'extended':
             print("[SAS TEST] Sending one-time read EXTENDED meters command (01AF...)")
             # Example extended meters command (commonly used set)
-            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
+            command = get_crc("01AF1E000000A000B800020003001E00000001000B00A200BA00050006000C00")
         elif meter_type == 'bill':
             print("[SAS TEST] Sending one-time read BILL meters command (011E)...")
             command = get_crc("011E")
