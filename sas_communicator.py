@@ -579,14 +579,7 @@ class SASCommunicator:
                     asset_dec = int(reversed_hex, 16)
                     print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}  DEBUG: Asset number read from machine")
                     
-                    # Update config with the actual asset number from machine
-                    try:
-                        from config_manager import config_manager
-                        config_manager.set_asset_number(asset_dec)
-                        print(f"[ASSET NO] Updated config.ini with asset number: {asset_dec}")
-                    except Exception as config_error:
-                        print(f"[ASSET NO] Warning: Could not update config: {config_error}")
-                    
+                    print(f"[ASSET NO] Asset number read from machine: {asset_dec}")
                     return asset_dec
             
             print("[ASSET NO] Could not read asset number from SAS.")
@@ -597,18 +590,17 @@ class SASCommunicator:
             return None
     
     def get_asset_number_for_aft(self) -> str:
-        """Get asset number for AFT operations, trying machine first, then config."""
+        """Get asset number for AFT operations."""
         try:
-            from config_manager import config_manager
-            
-            # First try to read from machine
+            # Try to read from machine first
             machine_asset = self.read_asset_number_from_machine()
             if machine_asset is not None:
-                return config_manager.get_asset_number_hex()
+                # Convert to hex format (8 characters, big endian)
+                return f"{machine_asset:08X}"
             
-            # Fall back to config file
-            print(f"[ASSET NO] Using asset number from config: {config_manager.get_asset_number()}")
-            return config_manager.get_asset_number_hex()
+            # Fall back to default
+            print(f"[ASSET NO] Using default asset number")
+            return "0000006C"  # 108 in hex
             
         except Exception as e:
             print(f"[ASSET NO] Error getting asset number: {e}")

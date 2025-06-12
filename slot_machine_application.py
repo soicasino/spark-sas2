@@ -1,16 +1,48 @@
 print("slot_machine_application.py loaded")
 import threading
 import time
-from config_manager import ConfigManager
+import configparser
 from port_manager import PortManager
 from sas_communicator import SASCommunicator
 from card_reader_manager import CardReaderManager
+
+class SimpleConfig:
+    """Simple configuration replacement for config_manager"""
+    
+    def __init__(self):
+        self.config = configparser.ConfigParser()
+        # Set default values
+        self.config.read_dict({
+            'sas': {
+                'address': '01'
+            },
+            'machine': {
+                'devicetypeid': '8'
+            },
+            'casino': {
+                'casinoid': '8'
+            }
+        })
+    
+    def get(self, section, key, fallback=None):
+        """Get configuration value with fallback"""
+        try:
+            return self.config.get(section, key)
+        except:
+            return fallback
+    
+    def getint(self, section, key, fallback=None):
+        """Get integer configuration value with fallback"""
+        try:
+            return self.config.getint(section, key)
+        except:
+            return fallback if fallback is not None else 0
 
 class SlotMachineApplication:
     """Main application - simplified for SAS communication testing"""
     
     def __init__(self):
-        self.config = ConfigManager()
+        self.config = SimpleConfig()
         self.port_mgr = PortManager()
         self.sas_comm = None
         self.running = False
