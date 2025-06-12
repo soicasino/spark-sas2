@@ -23,18 +23,17 @@ def decode_af_command(command_hex):
     print(f"Command: {command}")
     print(f"Length: {length} (decimal: {int(length, 16)})")
     
-    # Parse meter codes
+    # Parse meter codes - each meter code is 2 bytes, no padding
     meter_data = command_hex[idx:-4]  # Exclude CRC
     print(f"Meter data: {meter_data}")
     
     print("Requested meters:")
     i = 0
     while i < len(meter_data):
-        if i + 4 <= len(meter_data):
+        if i + 2 <= len(meter_data):
             meter_code = meter_data[i:i+2]
-            padding = meter_data[i+2:i+4]
-            print(f"  - Meter {meter_code} (padding: {padding})")
-            i += 4
+            print(f"  - Meter {meter_code}")
+            i += 2
         else:
             break
 
