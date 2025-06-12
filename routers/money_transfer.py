@@ -64,7 +64,11 @@ async def add_credits(
             transactionid = int(datetime.now().timestamp()) % 10000
         
         # Get AFT parameters  
-        assetnumber = "0000006C"  # Asset number from hardware
+        # Try to get asset number from machine, fallback to default
+        if hasattr(sas_comm, 'asset_number') and sas_comm.asset_number:
+            assetnumber = sas_comm.asset_number
+        else:
+            assetnumber = "0000006C"  # Asset number fallback (108 in decimal)
         registrationkey = "00000000000000000000000000000000000000000000"  # Default registration key
         
         # Execute AFT credit transfer using SAS money functions
@@ -201,7 +205,11 @@ async def cashout_credits(
             transactionid = int(datetime.now().timestamp()) % 10000
         
         # Get AFT parameters  
-        assetnumber = "0000006C"  # Asset number from hardware
+        # Try to get asset number from machine, fallback to default
+        if hasattr(sas_comm, 'asset_number') and sas_comm.asset_number:
+            assetnumber = sas_comm.asset_number
+        else:
+            assetnumber = "0000006C"  # Asset number fallback (108 in decimal)
         registrationkey = "00000000000000000000000000000000000000000000"  # Default registration key
         
         # Execute AFT cashout using SAS money functions

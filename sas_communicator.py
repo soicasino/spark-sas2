@@ -46,6 +46,10 @@ class SASCommunicator:
         self.card_reader = None  # Will hold CardReader instance
         self.sas_money = SasMoney(self.global_config, self)
         self.bill_acceptor = BillAcceptorFunctions()
+        
+        # Asset number storage
+        self.asset_number = None  # Hex format
+        self.decimal_asset_number = None  # Decimal format
 
     def open_port(self):
         """Opens SAS port - EXACTLY matching working code's OpenCloseSasPort logic"""
@@ -578,6 +582,10 @@ class SASCommunicator:
                     reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
                     asset_dec = int(reversed_hex, 16)
                     print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}  DEBUG: Asset number read from machine")
+                    
+                    # Store the asset number in the communicator instance
+                    self.asset_number = asset_hex  # Store hex format
+                    self.decimal_asset_number = asset_dec  # Store decimal format
                     
                     print(f"[ASSET NO] Asset number read from machine: {asset_dec}")
                     return asset_dec
