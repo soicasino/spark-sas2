@@ -298,11 +298,15 @@ class SasMoney:
             # Parse AF format exactly like reference implementation
             # Reference shows: MeterCode=Yanit[index:index+2]; index=index+4
             try_count = 0
-            while try_count < 15 and idx < len(tdata):
+            
+            # Calculate where meter data should end (exclude CRC)
+            meter_data_end = message_length - 4  # Subtract 4 for CRC
+            
+            while try_count < 15 and idx < meter_data_end:
                 try_count += 1
                 
                 # Get meter code - exactly like reference
-                if idx + 2 > len(tdata):
+                if idx + 2 > meter_data_end:
                     break
                 meter_code = tdata[idx:idx+2].upper()
                 
@@ -311,17 +315,29 @@ class SasMoney:
                     idx += 2
                     continue
                     
+                # Check if this looks like a valid meter code from our map
+                if meter_code not in self.METER_CODE_MAP and len(meter_code) == 2:
+                    # Might be encountering end of data or invalid structure
+                    print(f"[DEBUG] Unknown meter code {meter_code} at index {idx}, stopping")
+                    break
+                    
                 idx += 4  # Skip meter code + 00 (matches reference: index=index+4)
                 
                 # Get meter length - exactly like reference  
-                if idx + 2 > len(tdata):
+                if idx + 2 > meter_data_end:
                     break
                 meter_length = int(tdata[idx:idx+2], 16)
                 idx += 2
                 hex_len = meter_length * 2  # MeterLength=MeterLength*2 in reference
                 
+                # Validate meter length makes sense
+                if meter_length == 0 or hex_len == 0:
+                    print(f"[DEBUG] Invalid meter length {meter_length} for code {meter_code}, stopping")
+                    break
+                
                 # Get meter value - exactly like reference
-                if idx + hex_len > len(tdata):
+                if idx + hex_len > meter_data_end:
+                    print(f"[DEBUG] Meter value would exceed data boundary for code {meter_code}, stopping")
                     break
                 meter_val = tdata[idx:idx+hex_len]
                 idx += hex_len
@@ -330,6 +346,10 @@ class SasMoney:
                 
                 try:
                     # Convert exactly like reference: MeterValue=Decimal(MeterVal)/100
+                    if not meter_val:  # Empty meter value
+                        print(f"[DEBUG] Empty meter value for code {meter_code}, skipping")
+                        continue
+                        
                     meter_value = int(meter_val) / 100.0
                     meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
                     parsed_meters[meter_name] = meter_value
