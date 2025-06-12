@@ -364,29 +364,28 @@ class SasMoney:
                 print(f"[DEBUG] AF meter_code={meter_code}, length={meter_length} bytes, meter_val={meter_val}")
                 
                 try:
-                    # Convert exactly like reference: MeterValue=Decimal(MeterVal)/100
+                    # Convert meter values with proper scaling based on meter type
                     if not meter_val:  # Empty meter value
                         print(f"[DEBUG] Empty meter value for code {meter_code}, skipping")
                         continue
-                        
-                    meter_value = int(meter_val) / 100.0
-                    meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
-                    parsed_meters[meter_name] = meter_value
-                    received_all_meter += f"{meter_code}-{meter_val}|"
                     
-                    # Special handling for games_played and games_won like reference
-                    if meter_code == "05":  # GamesPlayed_05
-                        meter_value = int(meter_value * 100)  # Convert back to int for games count
+                    raw_value = int(meter_val)
+                    meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
+                    
+                    # Special handling for different meter types
+                    if meter_code in ["05", "06"]:  # Games played/won - these are counts, not currency
+                        meter_value = raw_value  # No scaling for game counts
                         parsed_meters[meter_name] = meter_value
                         print(f"  {meter_name} ({meter_code}): {meter_value} games")
-                    elif meter_code == "06":  # GamesWon_06
-                        meter_value = int(meter_value * 100)  # Convert back to int for games count
+                        if meter_code == "06":  # Debug info for games won
+                            print("MeterCode", meter_code, "MeterLength", meter_length, "MeterVal", meter_val, "MeterValue", meter_value)
+                    else:  # Currency amounts - divide by 10 based on reference image analysis
+                        # Raw: 000000000013187000 -> 13187000 -> 1318700.0 (divide by 10)
+                        meter_value = raw_value / 10.0
                         parsed_meters[meter_name] = meter_value
-                        print(f"  {meter_name} ({meter_code}): {meter_value} games")
-                        print("MeterCode", meter_code, "MeterLength", meter_length, "MeterVal", meter_val, "MeterValue", meter_value)
-                        # Continue parsing instead of breaking to get all meters
-                    else:
                         print(f"  {meter_name} ({meter_code}): {money_fmt(meter_value)}")
+                    
+                    received_all_meter += f"{meter_code}-{meter_val}|"
                     
                 except Exception as e:
                     print(f"AF Meter parse error: {meter_code} {meter_val} {e}")
