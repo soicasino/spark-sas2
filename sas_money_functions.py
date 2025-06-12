@@ -295,36 +295,60 @@ class SasMoney:
             print("--- End of 2F Meter Block ---")
             
         elif command == "AF":
-            # Parse AF format: [code][00][len][value]...
+            # Parse AF format exactly like reference implementation
+            # Reference shows: MeterCode=Yanit[index:index+2]; index=index+4
             try_count = 0
             while try_count < 15 and idx < len(tdata):
                 try_count += 1
                 
-                meter_code = tdata[idx:idx+2].upper()
-                idx += 4  # skip code + 00
-                
+                # Get meter code - exactly like reference
                 if idx + 2 > len(tdata):
                     break
+                meter_code = tdata[idx:idx+2].upper()
+                
+                # Check if we have a valid meter code, skip padding zeros
+                if meter_code == "00":
+                    idx += 2
+                    continue
                     
+                idx += 4  # Skip meter code + 00 (matches reference: index=index+4)
+                
+                # Get meter length - exactly like reference  
+                if idx + 2 > len(tdata):
+                    break
                 meter_length = int(tdata[idx:idx+2], 16)
                 idx += 2
-                hex_len = meter_length * 2
+                hex_len = meter_length * 2  # MeterLength=MeterLength*2 in reference
                 
+                # Get meter value - exactly like reference
                 if idx + hex_len > len(tdata):
                     break
-                    
                 meter_val = tdata[idx:idx+hex_len]
                 idx += hex_len
                 
                 print(f"[DEBUG] AF meter_code={meter_code}, length={meter_length} bytes, meter_val={meter_val}")
                 
                 try:
-                    # Use decimal interpretation, divide by 10 (not 100) for this machine
-                    meter_value = int(meter_val) / 10.0
+                    # Convert exactly like reference: MeterValue=Decimal(MeterVal)/100
+                    meter_value = int(meter_val) / 100.0
                     meter_name = self.METER_CODE_MAP.get(meter_code, (meter_code, meter_length))[0]
                     parsed_meters[meter_name] = meter_value
                     received_all_meter += f"{meter_code}-{meter_val}|"
-                    print(f"  {meter_name} ({meter_code}): {money_fmt(meter_value)}")
+                    
+                    # Special handling for games_played and games_won like reference
+                    if meter_code == "05":  # GamesPlayed_05
+                        meter_value = int(meter_value * 100)  # Convert back to int for games count
+                        parsed_meters[meter_name] = meter_value
+                        print(f"  {meter_name} ({meter_code}): {meter_value} games")
+                    elif meter_code == "06":  # GamesWon_06
+                        meter_value = int(meter_value * 100)  # Convert back to int for games count
+                        parsed_meters[meter_name] = meter_value
+                        print(f"  {meter_name} ({meter_code}): {meter_value} games")
+                        print("MeterCode", meter_code, "MeterLength", meter_length, "MeterVal", meter_val, "MeterValue", meter_value)
+                        print("Break")
+                        break  # Reference breaks after games won
+                    else:
+                        print(f"  {meter_name} ({meter_code}): {money_fmt(meter_value)}")
                     
                 except Exception as e:
                     print(f"AF Meter parse error: {meter_code} {meter_val} {e}")
