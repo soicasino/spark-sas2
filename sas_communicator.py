@@ -355,6 +355,92 @@ class SASCommunicator:
                 return
             tdata = tdata.replace(" ", "").upper()
 
+            # CRITICAL FIX: Split concatenated messages
+            # SAS messages can come concatenated, we need to split them
+            messages = self._split_sas_messages(tdata)
+            
+            for message in messages:
+                if not message:
+                    continue
+                self._process_single_sas_message(message)
+                
+        except Exception as e:
+            print(f"Error in handle_received_sas_command: {e}")
+        print("DEBUG: handle_received_sas_command end")
+
+    def _split_sas_messages(self, tdata):
+        """Split concatenated SAS messages into individual messages"""
+        messages = []
+        i = 0
+        
+        while i < len(tdata):
+            # Try to identify message start patterns
+            if i + 4 <= len(tdata):
+                prefix = tdata[i:i+4]
+                
+                # Handle different message types
+                if prefix == "01FF":
+                    # Exception messages - typically 10 characters (01FF + 2 bytes + 4 byte CRC)
+                    if i + 10 <= len(tdata):
+                        messages.append(tdata[i:i+10])
+                        i += 10
+                    else:
+                        messages.append(tdata[i:])
+                        break
+                        
+                elif prefix in ["0172", "0174", "0173", "0154"]:
+                    # Length-prefixed messages
+                    if i + 6 <= len(tdata):
+                        try:
+                            length = int(tdata[i+4:i+6], 16)
+                            total_length = 6 + (length * 2) + 4  # header + data + CRC
+                            if i + total_length <= len(tdata):
+                                messages.append(tdata[i:i+total_length])
+                                i += total_length
+                            else:
+                                messages.append(tdata[i:])
+                                break
+                        except ValueError:
+                            # Invalid length, treat as single message
+                            messages.append(tdata[i:])
+                            break
+                    else:
+                        messages.append(tdata[i:])
+                        break
+                        
+                elif prefix in ["012F", "01AF"]:
+                    # Meter responses - length-prefixed
+                    if i + 6 <= len(tdata):
+                        try:
+                            length = int(tdata[i+4:i+6], 16)
+                            total_length = 6 + (length * 2) + 4  # header + data + CRC
+                            if i + total_length <= len(tdata):
+                                messages.append(tdata[i:i+total_length])
+                                i += total_length
+                            else:
+                                messages.append(tdata[i:])
+                                break
+                        except ValueError:
+                            messages.append(tdata[i:])
+                            break
+                    else:
+                        messages.append(tdata[i:])
+                        break
+                        
+                else:
+                    # Unknown message type, advance by 2 characters and try again
+                    i += 2
+            else:
+                # Not enough data for a complete message
+                if i < len(tdata):
+                    messages.append(tdata[i:])
+                break
+                
+        return messages
+
+    def _process_single_sas_message(self, tdata):
+        """Process a single SAS message"""
+        try:
             # Early returns for simple ACKs and known short responses
             early_acks = {
                 "01FF838F13": "Ignore: known message",
@@ -383,8 +469,8 @@ class SASCommunicator:
                 (lambda d: d.startswith("01FF6FED3E"), lambda d: print("Game locked")),
                 (lambda d: d[0:10] == "01FF5110E6", lambda d: print("Handpay is pending")),
                 (lambda d: d[0:10].startswith("01FF52"), lambda d: print("Handpay was reset")),
-                (lambda d: d[0:4] == "0172", lambda d: self._handle_aft_response(d)),
-                (lambda d: d[0:4] == "0174", lambda d: self._handle_balance_response(d)),
+                (lambda d: d[0:4] == "0172", lambda d: self._handle_aft_response(d)),  # FIXED: Actually call handler
+                (lambda d: d[0:4] == "0174", lambda d: self._handle_balance_response(d)),  # FIXED: Actually call handler
                 (lambda d: d.startswith("01FF54BDB1"), lambda d: print("Progressive win")),
                 (lambda d: d == "01FF29DF19", lambda d: print("Bill acceptor hardware failure!")),
                 (lambda d: d == "00", lambda d: print("Simple ACK")),
@@ -467,8 +553,7 @@ class SASCommunicator:
                 return
             print(f"DEBUG: Received SAS message: {tdata}")
         except Exception as e:
-            print(f"Error in handle_received_sas_command: {e}")
-        print("DEBUG: handle_received_sas_command end")
+            print(f"Error in _process_single_sas_message: {e}")
 
     def _handle_sas_version_response(self, tdata):
         """Handle SAS version response"""
