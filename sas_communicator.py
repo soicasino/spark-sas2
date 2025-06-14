@@ -658,6 +658,16 @@ class SASCommunicator:
                 if self.sas_money.is_waiting_for_bakiye_sifirla:
                     self.sas_money.global_para_silme_transfer_status = "00"  # Success
                     print(f"Updated cashout status to: 00 (Success)")
+            
+            # CRITICAL FIX: Automatically query balance after AFT completion
+            # This will update the balance display to show the new credits
+            print("[AFT COMPLETION] Querying balance to update display...")
+            try:
+                # Query the current balance to get updated amounts
+                self.sas_money.komut_bakiye_sorgulama("aft_completion", False, "post_aft_balance_update")
+                print("[AFT COMPLETION] Balance query sent - balance should update shortly")
+            except Exception as balance_error:
+                print(f"[AFT COMPLETION] Error querying balance after AFT completion: {balance_error}")
                     
         except Exception as e:
             print(f"Error handling AFT completion: {e}")

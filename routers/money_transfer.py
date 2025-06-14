@@ -134,7 +134,40 @@ async def add_credits(
                     wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=8)
                     
                     if wait_result is True:
-                        # Success - transfer completed
+                        # Success - AFT completed
+                        print(f"[ADD CREDITS] AFT transfer completed successfully")
+                        
+                        # CRITICAL FIX: Query updated balance after successful AFT transfer
+                        print(f"[ADD CREDITS] Querying updated balance...")
+                        try:
+                            # Send balance query to get updated amounts
+                            sas_comm.sas_money.komut_bakiye_sorgulama("add_credits_api", False, "post_aft_balance")
+                            
+                            # Wait for balance response
+                            balance_result = await sas_comm.sas_money.wait_for_bakiye_sorgulama_completion(timeout=3)
+                            
+                            if balance_result:
+                                updated_cashable = sas_comm.sas_money.yanit_bakiye_tutar
+                                updated_restricted = sas_comm.sas_money.yanit_restricted_amount  
+                                updated_nonrestricted = sas_comm.sas_money.yanit_nonrestricted_amount
+                                total_balance = updated_cashable + updated_restricted + updated_nonrestricted
+                                
+                                print(f"[ADD CREDITS] Updated balance: Cashable=${updated_cashable:.2f}, Restricted=${updated_restricted:.2f}, Non-restricted=${updated_nonrestricted:.2f}")
+                            else:
+                                print(f"[ADD CREDITS] Balance query timeout - using default values")
+                                updated_cashable = request.amount  # Assume the added amount
+                                updated_restricted = 0
+                                updated_nonrestricted = 0
+                                total_balance = updated_cashable
+                                
+                        except Exception as balance_error:
+                            print(f"[ADD CREDITS] Error querying balance: {balance_error}")
+                            # Use default values if balance query fails
+                            updated_cashable = request.amount
+                            updated_restricted = 0
+                            updated_nonrestricted = 0
+                            total_balance = updated_cashable
+                        
                         execution_time = (datetime.now() - start_time).total_seconds() * 1000
                         return MachineControlResponse(
                             success=True,
@@ -147,7 +180,13 @@ async def add_credits(
                                 "transaction_id": actual_transaction_id,
                                 "transfer_type": request.transfer_type,
                                 "transfer_type_name": get_transfer_type_name(request.transfer_type),
-                                "status": "completed"
+                                "status": "completed",
+                                "updated_balance": {
+                                    "cashable": float(updated_cashable),
+                                    "restricted": float(updated_restricted),
+                                    "nonrestricted": float(updated_nonrestricted),
+                                    "total": float(total_balance)
+                                }
                             }
                         )
                     elif wait_result is False:
