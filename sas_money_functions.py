@@ -54,22 +54,38 @@ class SasMoney:
         start = time.time()
         self.is_waiting_for_para_yukle = 1
         
+        print(f"[AFT WAIT] Starting AFT money load wait (timeout={timeout}s)")
+        print(f"[AFT WAIT] Initial status: {self.global_para_yukleme_transfer_status}")
+        
         while time.time() - start < timeout:
             status = self.global_para_yukleme_transfer_status
+            elapsed = time.time() - start
+            
+            print(f"[AFT WAIT] {elapsed:.1f}s - Current status: {status}")
             
             if status == "00":  # Success
                 self.is_waiting_for_para_yukle = 0
+                print(f"[AFT WAIT] SUCCESS after {elapsed:.2f}s")
                 return True
-            elif status in ("84", "87", "81", "40"):  # Error codes
+            elif status in ("84", "87", "81"):  # Error codes (removed "40" from here)
                 self.is_waiting_for_para_yukle = 0
+                print(f"[AFT WAIT] FAILED after {elapsed:.2f}s with status: {status}")
                 return False
             elif status == "40":  # Transfer pending - keep waiting
+                print(f"[AFT WAIT] Transfer pending, continuing to wait...")
                 pass
+            elif status is None:
+                print(f"[AFT WAIT] No response yet, waiting...")
+                pass
+            else:
+                print(f"[AFT WAIT] Unknown status: {status}")
                 
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.5)  # Check every 500ms instead of 200ms
             
         # Timeout
         self.is_waiting_for_para_yukle = 0
+        print(f"[AFT WAIT] TIMEOUT after {timeout}s - no response from machine")
+        print(f"[AFT WAIT] Final status: {self.global_para_yukleme_transfer_status}")
         return None
 
     async def wait_for_para_sifirla_completion(self, timeout=10):

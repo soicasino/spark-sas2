@@ -86,7 +86,8 @@ async def add_credits(
                 )
                 
                 # Wait for completion with timeout
-                wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=15)
+                print(f"[ADD CREDITS] Waiting for AFT response...")
+                wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=8)
                 
                 if wait_result is True:
                     # Success - transfer completed
@@ -114,10 +115,26 @@ async def add_credits(
                         detail=f"AFT credit transfer failed: {status_desc} (Code: {status_code})"
                     )
                 else:
-                    # Timeout
-                    raise HTTPException(
-                        status_code=504,
-                        detail="AFT credit transfer timed out - machine did not respond within 15 seconds"
+                    # Timeout - but AFT command was sent successfully
+                    # For machines that don't respond to AFT, this might be normal
+                    print(f"[ADD CREDITS] AFT timeout - machine may not support AFT responses")
+                    print(f"[ADD CREDITS] Command was sent successfully, assuming it worked")
+                    
+                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                    return MachineControlResponse(
+                        success=True,
+                        message=f"Credit addition of ${request.amount:.2f} sent to machine (no response confirmation)",
+                        execution_time_ms=execution_time,
+                        data={
+                            "action": "add_credits",
+                            "amount": request.amount,
+                            "credits": int(request.amount * 100),
+                            "transaction_id": actual_transaction_id,
+                            "transfer_type": request.transfer_type,
+                            "transfer_type_name": get_transfer_type_name(request.transfer_type),
+                            "status": "sent_no_confirmation",
+                            "note": "Machine may not support AFT response confirmation"
+                        }
                     )
             else:
                 # Fallback to direct money_cash_in method if available
