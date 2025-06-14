@@ -48,7 +48,7 @@ def test_balance_parsing():
     #         GameLockStatus(00) + AvailableTransfers(FF) + HostCashoutStatus(00) + 
     #         AFTStatus(B0) + MaxBufferIndex(00) + 
     #         CashableAmount(0000002000) + RestrictedAmount(0000000000) + NonRestrictedAmount(0000000000)
-    simulated_response = "01741E0000006C00FF00B0000000002000000000000000000000000000"
+    simulated_response = "01741E0000006C00FF00B000000000200000000000000000000000000000000000"
     
     print(f"Simulated response: {simulated_response}")
     print(f"Response length: {len(simulated_response)} characters")
@@ -77,14 +77,14 @@ def test_balance_parsing():
         import traceback
         traceback.print_exc()
     
-    # Test with different balance amounts
+    # Test with different balance amounts (with proper length)
     print("\n=== Testing Different Balance Amounts ===")
     test_cases = [
-        ("01741E0000006C00FF00B0000000000000000000000000000000000000", 0, 0, 0),      # All zero
-        ("01741E0000006C00FF00B0000000001000000000000000000000000000", 10, 0, 0),     # $10 cashable
-        ("01741E0000006C00FF00B0000000000000000000050000000000000000", 0, 50, 0),     # $50 restricted
-        ("01741E0000006C00FF00B0000000000000000000000000000000001500", 0, 0, 15),     # $15 non-restricted
-        ("01741E0000006C00FF00B0000000002000000000100000000000000500", 20, 10, 5),   # Mixed amounts
+        ("01741E0000006C00FF00B00000000000000000000000000000000000000000000000", 0, 0, 0),      # All zero
+        ("01741E0000006C00FF00B00000000010000000000000000000000000000000000000", 10, 0, 0),     # $10 cashable
+        ("01741E0000006C00FF00B00000000000000000000500000000000000000000000000", 0, 50, 0),     # $50 restricted
+        ("01741E0000006C00FF00B00000000000000000000000000000000150000000000000", 0, 0, 15),     # $15 non-restricted
+        ("01741E0000006C00FF00B00000000020000000001000000000000500000000000000", 20, 10, 5),   # Mixed amounts
     ]
     
     for response, exp_cash, exp_rest, exp_nonrest in test_cases:
