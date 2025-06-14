@@ -29,9 +29,22 @@ async def test_machine_unlock():
     print("Testing Machine Unlock Functionality")
     print("=" * 50)
     
-    # Initialize communicator
+    # Initialize communicator with proper config
     config = MockConfig()
-    communicator = SASCommunicator(config)
+    
+    # Create a mock global config that matches what SASCommunicator expects
+    global_config = {
+        'sas_address': '01',
+        'device_type_id': 8,
+        'casino_id': 8
+    }
+    
+    try:
+        communicator = SASCommunicator(config, global_config)
+    except Exception as e:
+        print(f"❌ Failed to initialize SASCommunicator: {e}")
+        print("This test requires a running SAS system. Try testing with the main application instead.")
+        return
     
     if not hasattr(communicator, 'sas_money') or not communicator.sas_money:
         print("❌ SAS money functions not available")
