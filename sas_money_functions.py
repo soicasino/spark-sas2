@@ -588,7 +588,7 @@ class SasMoney:
             
             # Convert BCD to decimal (divide by 100 for cents to dollars)
             try:
-                cashable_amount = int(current_cashable_amount, 16) / 100
+                cashable_amount = self.bcd_to_int(current_cashable_amount) / 100
                 print(f"[BALANCE RESPONSE] Cashable Amount: {cashable_amount}")
             except ValueError:
                 print(f"[BALANCE RESPONSE] Error converting cashable amount: {current_cashable_amount}")
@@ -603,7 +603,7 @@ class SasMoney:
                 current_restricted_amount = "0000000000"
             
             try:
-                restricted_amount = int(current_restricted_amount, 16) / 100
+                restricted_amount = self.bcd_to_int(current_restricted_amount) / 100
                 print(f"[BALANCE RESPONSE] Restricted Amount: {restricted_amount}")
             except ValueError:
                 restricted_amount = 0
@@ -617,7 +617,7 @@ class SasMoney:
                 current_nonrestricted_amount = "0000000000"
             
             try:
-                nonrestricted_amount = int(current_nonrestricted_amount, 16) / 100
+                nonrestricted_amount = self.bcd_to_int(current_nonrestricted_amount) / 100
                 print(f"[BALANCE RESPONSE] Non-restricted Amount: {nonrestricted_amount}")
             except ValueError:
                 nonrestricted_amount = 0
