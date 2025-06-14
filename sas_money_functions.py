@@ -370,7 +370,9 @@ class SasMoney:
             return None
 
         # --- Command construction (reference logic) ---
-        command_header = assetnumber + "72"
+        # FIXED: Command should start with SAS address, not asset number
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        command_header = sas_address + "72"
         command = "0000"  # Transfer Code, Transfer Index
 
         if RealTransferType in [10, 11]:
@@ -432,7 +434,9 @@ class SasMoney:
         # Reset status before sending
         self.global_para_silme_transfer_status = None
         
-        command_header = assetnumber + "72"
+        # FIXED: Command should start with SAS address, not asset number
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        command_header = sas_address + "72"
         command = "00"  # transfer code
         command += "00"  # transfer index
         command += "80"  # transfer type
