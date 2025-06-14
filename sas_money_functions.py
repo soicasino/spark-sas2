@@ -491,14 +491,13 @@ class SasMoney:
             print(f"[BALANCE RESPONSE] Received balance response: {yanit}")
             print(f"[BALANCE RESPONSE] Response length: {len(yanit)} characters")
             
-            if not self.is_waiting_for_bakiye_sorgulama:
-                print("[BALANCE RESPONSE] Not waiting for balance response, ignoring")
-                return
+            # FIXED: Always process balance responses, don't check waiting flag
+            # The waiting flag check was causing timing issues where responses
+            # arrived before the async wait function could properly set up
             
             # Minimum response should be at least 20 characters (address + command + length + some data)
             if len(yanit) < 20:
                 print(f"[BALANCE RESPONSE] Response too short: {len(yanit)} characters")
-                self.is_waiting_for_bakiye_sorgulama = False
                 return
             
             # Parse response according to SAS protocol
@@ -519,7 +518,6 @@ class SasMoney:
             # Validate command is 74 (balance query response)
             if command.upper() != "74":
                 print(f"[BALANCE RESPONSE] Unexpected command: {command}, expected 74")
-                self.is_waiting_for_bakiye_sorgulama = False
                 return
             
             # Parse length
@@ -528,7 +526,6 @@ class SasMoney:
                 print(f"[BALANCE RESPONSE] Parsed length: {length} bytes")
             except ValueError:
                 print(f"[BALANCE RESPONSE] Invalid length: {length_hex}")
-                self.is_waiting_for_bakiye_sorgulama = False
                 return
             
             # Check if we have enough data based on length
@@ -617,7 +614,7 @@ class SasMoney:
             self.yanit_restricted_amount = restricted_amount
             self.yanit_nonrestricted_amount = nonrestricted_amount
             
-            # Clear waiting flag
+            # Clear waiting flag - this will signal the async wait function
             self.is_waiting_for_bakiye_sorgulama = False
             
             print(f"[BALANCE RESPONSE] Balance parsed successfully:")
@@ -625,6 +622,7 @@ class SasMoney:
             print(f"[BALANCE RESPONSE]   Restricted: {restricted_amount}")
             print(f"[BALANCE RESPONSE]   Non-restricted: {nonrestricted_amount}")
             print(f"[BALANCE RESPONSE]   Game Lock Status: {game_lock_status}")
+            print(f"[BALANCE RESPONSE] Waiting flag cleared - async wait should now complete")
             
         except Exception as e:
             print(f"[BALANCE RESPONSE] Error parsing balance response: {e}")

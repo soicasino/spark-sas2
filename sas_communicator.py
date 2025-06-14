@@ -476,7 +476,7 @@ class SASCommunicator:
                 (lambda d: d == "00", lambda d: print("Simple ACK")),
                 (lambda d: d == "01", lambda d: print("Simple ACK")),
                 (lambda d: d == "51", lambda d: print("Simple ACK")),
-                (lambda d: d.startswith("01FF69DB5B") or d == "FF69DB5B" or d == "69DB5B" or d == "69", lambda d: print("AFT Transfer is completed")),
+                (lambda d: d.startswith("01FF69DB5B") or d == "FF69DB5B" or d == "69DB5B" or d == "69", lambda d: self._handle_aft_completion(d)),
                 (lambda d: "01FF66" in d, lambda d: print("Cashout is pressed or Hopper Limit Reached")),
                 (lambda d: d[0:6] == "01FF8A", lambda d: print("Game Recall Entry Displayed")),
                 (lambda d: d[0:4] == "0156", lambda d: print("EnabledGameNumbers")),
@@ -642,6 +642,25 @@ class SASCommunicator:
             # On error, still try to update status if possible
             if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
                 self.sas_money.global_para_yukleme_transfer_status = "FF"  # Error status
+
+    def _handle_aft_completion(self, tdata):
+        """Handle AFT completion message (01FF69DB5B)"""
+        try:
+            print("AFT Transfer is completed")
+            
+            # Update the transfer status to success (00) when we get completion message
+            if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
+                self.sas_money.global_para_yukleme_transfer_status = "00"  # Success
+                print(f"Updated transfer status to: 00 (Success)")
+            
+            # Also update cashout status if waiting for cashout
+            if hasattr(self.sas_money, 'global_para_silme_transfer_status'):
+                if self.sas_money.is_waiting_for_bakiye_sifirla:
+                    self.sas_money.global_para_silme_transfer_status = "00"  # Success
+                    print(f"Updated cashout status to: 00 (Success)")
+                    
+        except Exception as e:
+            print(f"Error handling AFT completion: {e}")
 
     def _handle_exception_message(self, tdata):
         """Handle exception messages (01FF)"""
