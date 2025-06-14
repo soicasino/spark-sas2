@@ -1548,6 +1548,30 @@ class SasMoney:
             print(f"[MACHINE INFO] Error getting info: {e}")
             return False
 
+    def komut_reserve_machine(self):
+        """
+        Reserve the machine using SAS command.
+        When a machine is "reserved", it won't accept AFT transfers from other systems.
+        This uses SAS command 8C to reserve the machine.
+        """
+        print(f"[RESERVE MACHINE] Reserving machine for exclusive access")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # Reserve machine command: 8Ch
+        command = f"{sas_address}8C"
+        command_crc = get_crc(command)
+        
+        print(f"[RESERVE MACHINE] Sending reserve machine command: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("ReserveMachine", command_crc, 1)
+            print(f"[RESERVE MACHINE] Reserve machine result: {result}")
+            return result
+        except Exception as e:
+            print(f"[RESERVE MACHINE] Error reserving machine: {e}")
+            return False
+
     def komut_clear_machine_reservation(self):
         """
         Clear machine reservation status using SAS command.
