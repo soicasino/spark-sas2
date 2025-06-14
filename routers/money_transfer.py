@@ -79,7 +79,7 @@ async def add_credits(
                 # AFT Registration Parameters (same as register_aft endpoint)
                 assetnumber_for_reg = "0000006C"  # Asset number (108 in decimal)
                 registrationkey_for_reg = "00000000000000000000000000000000000000000000"  # Default key
-                posid = "POS001"  # Point of Sale ID
+                posid = "POS001"
                 
                 # Use the same AFT registration logic as the register_aft endpoint
                 if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
@@ -666,13 +666,41 @@ async def register_aft(
         
         sas_comm = sas_service.slot_machine_app.sas_comm
         
+        # Step 1: Read asset number from machine first
+        print(f"[AFT REGISTRATION] Step 1: Reading asset number from machine...")
+        try:
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                if hasattr(sas_comm.sas_money, 'komut_read_asset_number'):
+                    asset_result = sas_comm.sas_money.komut_read_asset_number()
+                    print(f"[AFT REGISTRATION] Asset number query result: {asset_result}")
+                    
+                    # Wait for response
+                    await asyncio.sleep(1)
+                    
+                    # Try to get asset number from communicator
+                    if hasattr(sas_comm, 'asset_number') and sas_comm.asset_number:
+                        assetnumber = sas_comm.asset_number
+                        print(f"[AFT REGISTRATION] Using machine asset number: {assetnumber}")
+                    else:
+                        assetnumber = "0000006C"  # Fallback
+                        print(f"[AFT REGISTRATION] Using fallback asset number: {assetnumber}")
+                else:
+                    assetnumber = "0000006C"  # Fallback
+                    print(f"[AFT REGISTRATION] Using default asset number: {assetnumber}")
+            else:
+                assetnumber = "0000006C"  # Fallback
+                print(f"[AFT REGISTRATION] Using default asset number: {assetnumber}")
+        except Exception as asset_error:
+            print(f"[AFT REGISTRATION] Error reading asset number: {asset_error}")
+            assetnumber = "0000006C"  # Fallback
+        
         # AFT Registration Parameters
-        assetnumber = "0000006C"  # Asset number (108 in decimal)
         registrationkey = "00000000000000000000000000000000000000000000"  # Default key
         posid = "POS001"  # Point of Sale ID
         
         try:
-            # Send AFT registration command (SAS command 0x75)
+            # Step 2: Send AFT registration command
+            print(f"[AFT REGISTRATION] Step 2: Performing AFT registration...")
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
                 # Try to call AFT registration if available
                 if hasattr(sas_comm.sas_money, 'komut_aft_registration'):
@@ -681,6 +709,7 @@ async def register_aft(
                         registrationkey,
                         posid
                     )
+                    print(f"[AFT REGISTRATION] Registration result: {result}")
                 else:
                     # Manual AFT registration command construction
                     # Command: 0x75 + asset number + registration key + POS ID
@@ -690,8 +719,10 @@ async def register_aft(
                     # Send the command
                     if hasattr(sas_comm, 'send_command'):
                         result = sas_comm.send_command(command)
+                        print(f"[AFT REGISTRATION] Manual registration command sent: {result}")
                     else:
                         result = "Registration command sent (no response handler available)"
+                        print(f"[AFT REGISTRATION] {result}")
             else:
                 raise HTTPException(
                     status_code=503,

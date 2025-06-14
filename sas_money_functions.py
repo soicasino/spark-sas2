@@ -132,6 +132,92 @@ class SasMoney:
         command = "017201800BB4"
         self.communicator.sas_send_command_with_queue("CancelAFT", command, 1)
 
+    def komut_aft_registration(self, assetnumber, registrationkey, posid):
+        """
+        Perform AFT registration with the gaming machine.
+        This implements the proper two-step AFT registration process:
+        1. Initialize registration (code 00)
+        2. Complete registration (code 01) with asset number, key, and POS ID
+        
+        Args:
+            assetnumber: 8-character hex asset number (e.g., "0000006C")
+            registrationkey: 40-character hex registration key
+            posid: POS ID string (will be converted to hex)
+        
+        Returns:
+            Result of the registration command
+        """
+        print(f"[AFT REGISTRATION] Starting AFT registration process")
+        print(f"[AFT REGISTRATION]   Asset Number: {assetnumber}")
+        print(f"[AFT REGISTRATION]   Registration Key: {registrationkey}")
+        print(f"[AFT REGISTRATION]   POS ID: {posid}")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        try:
+            # Step 1: Initialize registration (code 00)
+            print(f"[AFT REGISTRATION] Step 1: Initialize registration")
+            init_command = f"{sas_address}7301FF"  # 73h command, length 01, code FF (query status)
+            init_command_crc = get_crc(init_command)
+            print(f"[AFT REGISTRATION] Sending init command: {init_command_crc}")
+            
+            result1 = self.communicator.sas_send_command_with_queue("AFTRegInit", init_command_crc, 1)
+            print(f"[AFT REGISTRATION] Init command result: {result1}")
+            
+            # Wait a moment for the machine to process
+            import time
+            time.sleep(0.5)
+            
+            # Step 2: Complete registration (code 01)
+            print(f"[AFT REGISTRATION] Step 2: Complete registration")
+            
+            # Convert POS ID to hex (pad to 8 characters)
+            posid_hex = ''.join(f"{ord(c):02x}" for c in posid.ljust(4, '\x00')[:4])
+            print(f"[AFT REGISTRATION] POS ID hex: {posid_hex}")
+            
+            # Construct complete registration command
+            # Format: Address + 73h + Length + Code(01) + AssetNumber(8) + RegistrationKey(40) + POSID(8)
+            command_data = f"01{assetnumber}{registrationkey}{posid_hex}"
+            command = f"{sas_address}73{len(command_data)//2:02X}{command_data}"
+            command_crc = get_crc(command)
+            
+            print(f"[AFT REGISTRATION] Complete registration command: {command_crc}")
+            
+            result2 = self.communicator.sas_send_command_with_queue("AFTRegComplete", command_crc, 1)
+            print(f"[AFT REGISTRATION] Complete registration result: {result2}")
+            
+            return result2
+            
+        except Exception as e:
+            print(f"[AFT REGISTRATION] Error during registration: {e}")
+            raise
+
+    def komut_read_asset_number(self):
+        """
+        Read the asset number from the gaming machine using SAS command 73h.
+        This should be called at startup to get the machine's actual asset number.
+        
+        Returns:
+            Result of the asset number query command
+        """
+        print(f"[ASSET NUMBER] Reading asset number from machine")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # Send AFT registration status query (code FF)
+        command = f"{sas_address}7301FF"
+        command_crc = get_crc(command)
+        
+        print(f"[ASSET NUMBER] Sending asset number query: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("ReadAssetNo", command_crc, 1)
+            print(f"[ASSET NUMBER] Asset number query result: {result}")
+            return result
+        except Exception as e:
+            print(f"[ASSET NUMBER] Error reading asset number: {e}")
+            raise
+
     async def wait_for_bakiye_sorgulama_completion(self, timeout=5):
         """
         Wait for the balance query to complete and balance fields to be set.
@@ -552,7 +638,7 @@ class SasMoney:
         if isall == 0 and IsNewMeter == 0:
             command = get_crc("012F0C0000A0B802031E00010BA2BA")
         elif isall == 0 and IsNewMeter == 1:
-            command = get_crc("01AF1E0000A000B800020003001E00000001000B00A200BA0005000600C0171800FA")
+            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
         elif isall == 1:
             command = get_crc("012F0C00000405060C191D7FFAFBFC")
         elif isall == 2:
@@ -1029,3 +1115,128 @@ class SasMoney:
             print(f"[CASHOUT RESPONSE] Error parsing response: {e}")
             # On parse error, clear waiting flag to prevent infinite wait
             self.is_waiting_for_para_sifirla = 0 
+
+    def yanit_aft_registration(self, yanit):
+        """
+        Handle AFT registration response from the machine.
+        This method parses the SAS 73h response and updates registration status.
+        
+        Args:
+            yanit: Hex string response from the machine
+        """
+        try:
+            print(f"[AFT REG RESPONSE] Received AFT registration response: {yanit}")
+            print(f"[AFT REG RESPONSE] Response length: {len(yanit)} characters")
+            
+            if len(yanit) < 8:
+                print(f"[AFT REG RESPONSE] Response too short: {len(yanit)} characters")
+                return
+            
+            # Parse response according to SAS protocol
+            # Format: Address(2) + Command(2) + Length(2) + RegistrationStatus(2) + AssetNumber(8) + RegistrationKey(40) + POSID(8)
+            index = 0
+            address = yanit[index:index+2]
+            index += 2
+            print(f"[AFT REG RESPONSE] Address: {address}")
+            
+            command = yanit[index:index+2]
+            index += 2
+            print(f"[AFT REG RESPONSE] Command: {command}")
+            
+            length_hex = yanit[index:index+2]
+            index += 2
+            print(f"[AFT REG RESPONSE] Length: {length_hex}")
+            
+            # Validate command is 73 (AFT registration response)
+            if command.upper() != "73":
+                print(f"[AFT REG RESPONSE] Unexpected command: {command}, expected 73")
+                return
+            
+            registration_status = yanit[index:index+2] if index + 2 <= len(yanit) else "80"
+            index += 2
+            print(f"[AFT REG RESPONSE] Registration Status: {registration_status}")
+            
+            # Decode registration status
+            status_descriptions = {
+                "00": "Registration Ready",
+                "01": "Registered",
+                "40": "Registration Pending", 
+                "80": "Not Registered"
+            }
+            status_text = status_descriptions.get(registration_status, f"Unknown status: {registration_status}")
+            print(f"[AFT REG RESPONSE] Status Description: {status_text}")
+            
+            # Parse asset number if available
+            if index + 8 <= len(yanit):
+                asset_number = yanit[index:index+8]
+                index += 8
+                print(f"[AFT REG RESPONSE] Asset Number: {asset_number}")
+                
+                # Convert asset number to decimal (little-endian BCD)
+                try:
+                    asset_dec = self.read_asset_to_int(asset_number)
+                    print(f"[AFT REG RESPONSE] Asset Number (decimal): {asset_dec}")
+                    
+                    # Store asset number in communicator if available
+                    if hasattr(self.communicator, 'asset_number'):
+                        self.communicator.asset_number = asset_number
+                        self.communicator.decimal_asset_number = asset_dec
+                        print(f"[AFT REG RESPONSE] Asset number stored in communicator")
+                        
+                except Exception as e:
+                    print(f"[AFT REG RESPONSE] Error converting asset number: {e}")
+            
+            # Parse registration key if available
+            if index + 40 <= len(yanit):
+                registration_key = yanit[index:index+40]
+                index += 40
+                print(f"[AFT REG RESPONSE] Registration Key: {registration_key}")
+            
+            # Parse POS ID if available
+            if index + 8 <= len(yanit):
+                pos_id = yanit[index:index+8]
+                print(f"[AFT REG RESPONSE] POS ID: {pos_id}")
+            
+            # Store registration status
+            if hasattr(self, 'aft_registration_status'):
+                self.aft_registration_status = registration_status
+            else:
+                self.aft_registration_status = registration_status
+                
+            print(f"[AFT REG RESPONSE] Registration processing completed")
+            
+        except Exception as e:
+            print(f"[AFT REG RESPONSE] Error parsing AFT registration response: {e}")
+            print(f"[AFT REG RESPONSE] Raw response: {yanit}")
+
+    def read_asset_to_int(self, asset_hex):
+        """
+        Convert asset number from hex string to integer using little-endian format.
+        This matches the reference implementation for asset number conversion.
+        
+        Args:
+            asset_hex: 8-character hex string (e.g., "0000006C")
+            
+        Returns:
+            Integer value of the asset number
+        """
+        try:
+            # Ensure even length
+            if len(asset_hex) % 2 != 0:
+                asset_hex = "0" + asset_hex
+            
+            # Reverse byte order (little-endian)
+            reversed_hex = ""
+            i = len(asset_hex) - 2
+            while i >= 0:
+                reversed_hex += asset_hex[i:i+2]
+                i -= 2
+            
+            # Convert to integer
+            result = int(reversed_hex, 16)
+            print(f"[ASSET CONVERT] {asset_hex} -> {reversed_hex} -> {result}")
+            return result
+            
+        except Exception as e:
+            print(f"[ASSET CONVERT] Error converting asset number {asset_hex}: {e}")
+            return 0 

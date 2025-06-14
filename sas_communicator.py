@@ -414,19 +414,24 @@ class SASCommunicator:
                 except Exception as e:
                     print(f"Error in dispatch for SAS message: {e}")
 
-            # Asset number response (0x73)
+            # AFT registration response (0x73)
             if tdata.startswith("0173"):
-                print("DEBUG: Asset number response detected")
-                asset_hex = tdata[8:16]
-                if len(asset_hex) % 2 != 0:
-                    asset_hex = '0' + asset_hex
-                reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
-                asset_dec = int(reversed_hex, 16)
-                print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
-                print("DEBUG: About to call get_meter (main run)")
-                self.sas_money.get_meter(isall=0)
-                print("DEBUG: get_meter call finished")
-                print("DEBUG: Returning after asset number handling")
+                print("DEBUG: AFT registration response detected")
+                # Call the new AFT registration response handler
+                if hasattr(self.sas_money, 'yanit_aft_registration'):
+                    self.sas_money.yanit_aft_registration(tdata)
+                else:
+                    # Fallback to old asset number handling
+                    asset_hex = tdata[8:16]
+                    if len(asset_hex) % 2 != 0:
+                        asset_hex = '0' + asset_hex
+                    reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
+                    asset_dec = int(reversed_hex, 16)
+                    print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}")
+                    print("DEBUG: About to call get_meter (main run)")
+                    self.sas_money.get_meter(isall=0)
+                    print("DEBUG: get_meter call finished")
+                print("DEBUG: Returning after AFT registration handling")
                 return
             # SAS Version response (0x54) (fallback)
             if tdata.startswith("0154"):

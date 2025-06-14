@@ -61,10 +61,29 @@ def read_asset_to_int(d):
 
 
 def add_left_bcd(number_str, length_bytes):
-    """Pads a BCD number string with leading '00' to reach target byte length."""
+    """
+    Pads a number string with leading '00' to reach target byte length.
+    This matches the original working implementation (AddLeftBCD + AddLeftString).
+    
+    Note: Despite the name "BCD", this function does NOT do true BCD encoding.
+    It just does string padding, which is what the original working code did.
+    """
+    # Convert to integer first to remove any leading zeros, then back to string
     number_str = str(int(number_str))
+    
+    # Ensure even number of digits
     if len(number_str) % 2 != 0:
         number_str = "0" + number_str
+    
+    # Calculate current length in bytes
     current_len_bytes = len(number_str) // 2
-    padding_needed_bytes = length_bytes - current_len_bytes
-    return "00" * int(padding_needed_bytes) + number_str 
+    
+    # Add left padding with "00" if needed
+    if current_len_bytes < length_bytes:
+        padding_needed_bytes = length_bytes - current_len_bytes
+        return "00" * int(padding_needed_bytes) + number_str
+    elif current_len_bytes > length_bytes:
+        # Truncate if too long (take rightmost bytes)
+        return number_str[-(length_bytes * 2):]
+    else:
+        return number_str 
