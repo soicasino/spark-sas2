@@ -198,6 +198,16 @@ class SasMoney:
         It builds a SAS AFT command (72h) with the appropriate details, matching the reference logic.
         """
         self.last_para_yukle_date = datetime.datetime.now()
+        
+        # Debug logging for input parameters
+        print(f"[MONEY LOAD] komut_para_yukle called with:")
+        print(f"[MONEY LOAD]   doincreasetransactionid: {doincreasetransactionid}")
+        print(f"[MONEY LOAD]   transfertype: {transfertype}")
+        print(f"[MONEY LOAD]   customerbalance: {customerbalance}")
+        print(f"[MONEY LOAD]   customerpromo: {customerpromo}")
+        print(f"[MONEY LOAD]   transactionid: {transactionid}")
+        print(f"[MONEY LOAD]   assetnumber: {assetnumber}")
+        print(f"[MONEY LOAD]   registrationkey: {registrationkey}")
 
         # --- Transaction ID logic (keep your class logic) ---
         if doincreasetransactionid:
@@ -218,29 +228,42 @@ class SasMoney:
         cpromo = customerpromo
         ttype = transfertype
 
-        if ttype in [10, 11]:  # Jackpot
+        # FIXED: Only treat as jackpot if this is an actual jackpot payout (not manual credit addition)
+        # For manual credit additions, transfer types 10/11 should be treated as cashable/restricted
+        # Only override balance for actual jackpot payouts (when JackpotWonAmount > 0)
+        if ttype in [10, 11] and JackpotWonAmount > 0:  # Actual jackpot payout
+            print(f"[MONEY LOAD] Processing as jackpot payout: {JackpotWonAmount}")
             RealTransferType = ttype
             cbalance = JackpotWonAmount
             cpromo = 0
         elif ttype == 13:  # Bonus
+            print(f"[MONEY LOAD] Processing as bonus transfer")
             RealTransferType = 10
             cbalance = JackpotWonAmount
             cpromo = 0
             if G_Machine_IsBonusCashable == 0:
                 RealTransferType = 0
         elif ttype == 1:  # Bill Acceptor
+            print(f"[MONEY LOAD] Processing as bill acceptor transfer: {Billacceptor_LastCredit}")
             cbalance = Billacceptor_LastCredit
             cpromo = 0
             ttype = 0
+        else:
+            # Manual credit addition - use provided amounts
+            print(f"[MONEY LOAD] Processing as manual credit addition")
+            print(f"[MONEY LOAD]   Transfer type: {ttype} (10=cashable, 11=restricted, 0=non-restricted)")
 
         cbalance_int = int(cbalance * 100)
         cpromo_int = int(cpromo * 100)
+        
+        print(f"[MONEY LOAD] Final amounts: cbalance={cbalance}, cpromo={cpromo}")
+        print(f"[MONEY LOAD] Final amounts (cents): cbalance_int={cbalance_int}, cpromo_int={cpromo_int}")
 
         # Early exit if nothing to load
         if cbalance == 0 and cpromo == 0:
             self.is_waiting_for_para_yukle = 0
             # Optionally: self.CashIn_CompletedBy = "No-Money"
-            print("No money to load.")
+            print("[MONEY LOAD] No money to load - both cbalance and cpromo are 0.")
             return None
 
         # --- Command construction (reference logic) ---
