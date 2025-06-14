@@ -1478,4 +1478,122 @@ class SasMoney:
             return result
         except Exception as e:
             print(f"[CLEAR HOST CONTROLS] Error clearing controls: {e}")
-            return False 
+            return False
+
+    def komut_get_machine_status(self):
+        """
+        Get detailed machine status to understand why it won't unlock.
+        This uses SAS command 02h to get general status information.
+        """
+        print(f"[MACHINE STATUS] Getting detailed machine status")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # General status query: 02h
+        command = f"{sas_address}02"
+        command_crc = get_crc(command)
+        
+        print(f"[MACHINE STATUS] Sending status query: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("MachineStatus", command_crc, 1)
+            print(f"[MACHINE STATUS] Status query result: {result}")
+            return result
+        except Exception as e:
+            print(f"[MACHINE STATUS] Error getting status: {e}")
+            return False
+
+    def komut_get_gaming_machine_info(self):
+        """
+        Get gaming machine information including capabilities and restrictions.
+        This uses SAS command 01h to get machine identification.
+        """
+        print(f"[MACHINE INFO] Getting gaming machine information")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # Machine info query: 01h
+        command = f"{sas_address}01"
+        command_crc = get_crc(command)
+        
+        print(f"[MACHINE INFO] Sending info query: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("MachineInfo", command_crc, 1)
+            print(f"[MACHINE INFO] Info query result: {result}")
+            return result
+        except Exception as e:
+            print(f"[MACHINE INFO] Error getting info: {e}")
+            return False
+
+    def decode_aft_status(self, aft_status_hex):
+        """
+        Decode the AFT status byte to understand specific lock conditions.
+        AFT Status B0 = 10110000 binary
+        """
+        try:
+            status_int = int(aft_status_hex, 16)
+            print(f"[AFT STATUS DECODE] AFT Status: {aft_status_hex} = {status_int} = {bin(status_int)}")
+            
+            # Decode individual bits (based on SAS AFT status specification)
+            bit_meanings = {
+                0: "AFT registered",
+                1: "AFT enabled", 
+                2: "AFT transfer pending",
+                3: "AFT transfer in progress",
+                4: "Machine cashout mode",
+                5: "Host cashout enabled",
+                6: "AFT bonus mode",
+                7: "Machine locked"
+            }
+            
+            print(f"[AFT STATUS DECODE] Status breakdown:")
+            for bit, meaning in bit_meanings.items():
+                bit_set = (status_int >> bit) & 1
+                status_text = "SET" if bit_set else "CLEAR"
+                print(f"[AFT STATUS DECODE]   Bit {bit} ({meaning}): {status_text}")
+                
+            return status_int
+        except Exception as e:
+            print(f"[AFT STATUS DECODE] Error decoding status: {e}")
+            return None
+
+    def decode_lock_status(self, lock_status_hex):
+        """
+        Decode the game lock status to understand specific lock types.
+        Lock Status FF = 11111111 binary (all locks active)
+        """
+        try:
+            status_int = int(lock_status_hex, 16)
+            print(f"[LOCK STATUS DECODE] Lock Status: {lock_status_hex} = {status_int} = {bin(status_int)}")
+            
+            # Decode individual lock bits (based on SAS lock status specification)
+            lock_meanings = {
+                0: "Machine disabled",
+                1: "Progressive lockup",
+                2: "Machine tilt",
+                3: "Cash door open",
+                4: "Logic door open", 
+                5: "Bill acceptor door open",
+                6: "Memory error",
+                7: "Gaming locked"
+            }
+            
+            print(f"[LOCK STATUS DECODE] Lock breakdown:")
+            active_locks = []
+            for bit, meaning in lock_meanings.items():
+                bit_set = (status_int >> bit) & 1
+                status_text = "LOCKED" if bit_set else "OK"
+                print(f"[LOCK STATUS DECODE]   Bit {bit} ({meaning}): {status_text}")
+                if bit_set:
+                    active_locks.append(meaning)
+                    
+            if active_locks:
+                print(f"[LOCK STATUS DECODE] ❌ Active locks: {', '.join(active_locks)}")
+            else:
+                print(f"[LOCK STATUS DECODE] ✅ All locks clear")
+                
+            return active_locks
+        except Exception as e:
+            print(f"[LOCK STATUS DECODE] Error decoding lock status: {e}")
+            return None 

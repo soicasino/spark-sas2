@@ -140,11 +140,49 @@ async def test_machine_unlock():
         print(f"Advanced unlock result: {advanced_unlock_result}")
         await asyncio.sleep(2)
         
-        # Method 3: Check AFT status after registration and unlock
-        print("Method 3: Check AFT status")
+        # Method 3: Detailed machine diagnostics
+        print("Method 3: Detailed machine diagnostics")
+        
+        # Get machine status
+        print("3.1: Machine status query")
         try:
-            status_result = money.check_aft_status()
-            print(f"AFT Status check result: {status_result}")
+            status_result = money.komut_get_machine_status()
+            print(f"Machine status result: {status_result}")
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"Machine status query failed: {e}")
+        
+        # Get machine info
+        print("3.2: Machine info query")
+        try:
+            info_result = money.komut_get_gaming_machine_info()
+            print(f"Machine info result: {info_result}")
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"Machine info query failed: {e}")
+        
+        # Decode current status
+        print("3.3: Status decoding")
+        try:
+            # Decode AFT status B0
+            money.decode_aft_status("B0")
+            # Decode lock status FF
+            active_locks = money.decode_lock_status("FF")
+            
+            if active_locks:
+                print(f"🔍 DIAGNOSIS: Machine locked due to: {', '.join(active_locks)}")
+                print(f"💡 SOLUTION: Check physical machine conditions (doors, tilts, etc.)")
+            else:
+                print(f"🔍 DIAGNOSIS: Software locks only - may need different unlock approach")
+                
+        except Exception as e:
+            print(f"Status decoding failed: {e}")
+        
+        # Check AFT status
+        print("3.4: AFT status check")
+        try:
+            aft_status_result = money.check_aft_status()
+            print(f"AFT Status check result: {aft_status_result}")
             await asyncio.sleep(2)
         except Exception as e:
             print(f"AFT Status check failed: {e}")
