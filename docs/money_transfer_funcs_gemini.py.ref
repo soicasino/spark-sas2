@@ -1,0 +1,285 @@
+import datetime
+from decimal import Decimal
+
+# Global variables that the functions depend on.
+# In a class-based structure, these would likely become instance attributes.
+Config = None # Should be an instance of configparser.ConfigParser
+G_SAS_LastAFTOperation = ""
+IsWaitingForParaYukle = 0
+Global_ParaYukleme_TransferStatus = "0"
+Yukle_FirstTransaction = 0
+Yukle_LastTransaction = 0
+Last_ParaYukle_TransferType = 0
+Global_Count_YanitHandle = 0
+JackpotWonAmount = Decimal(0)
+Billacceptor_LastCredit = Decimal(0)
+IsDebugAutoParaYukleYanit = 0
+Last_ParaYukleDate = datetime.datetime.now()
+CashIn_CompletedBy = ""
+
+Sifirla_Bakiye = Decimal(0)
+Sifirla_Promo = Decimal(0)
+Step_Parasifirla = "0"
+Global_ParaSilme_TransferStatus = ""
+IsWarnedForTakeWin = 0
+G_SAS_LastAFTOperation = ""
+IsWaitingForBakiyeSifirla = 0
+WaitingParaSifirla_PendingCount = 0
+FaultCount_WaitingParasifirla = 0
+Sifirla_FirstTransaction = 0
+Sifirla_LastTransaction = 0
+Global_Count_YanitHandle = 0
+Cashout_Source = 0
+G_Cashout_SOS = 0
+Yanit_BakiyeTutar = Decimal(0)
+Last_ParaSifirlaDate = datetime.datetime.now()
+IsDebugAutoBakiyeSifirlaYanit = 0
+IsWaitingLoopOnSASPooling = False
+
+
+def Komut_ParaYukle(doincreasetransactionid, transfertype):
+    """
+    Constructs and sends a command to load money onto the gaming machine.
+
+    This function handles different transfer types like regular cash-in, jackpots, and bonuses.
+    It builds a SAS AFT command (72h) with the appropriate details.
+    """
+    global IsWaitingForParaYukle, G_Config_IsCashoutSoft, Yukle_FirstTransaction, Yukle_LastTransaction
+    global CashIn_CompletedBy, Last_ParaYukleDate, Config
+
+    Last_ParaYukleDate = datetime.datetime.now()
+
+    transactionid = Config.getint("payment", "transactionid")
+    if doincreasetransactionid == 1:
+        transactionid += 1
+        if transactionid > 1000:
+            transactionid = 1
+        Config.set("payment", "transactionid", str(transactionid))
+
+    if Yukle_FirstTransaction == 0:
+        Yukle_FirstTransaction = transactionid
+    Yukle_LastTransaction = transactionid
+
+    customerbalance = Decimal(Config.get("customer", "customerbalance"))
+    customerpromo = Decimal(Config.get("customer", "customerpromo"))
+
+    RealTransferType = 0
+    if transfertype in [10, 11]: # Jackpot
+        RealTransferType = transfertype
+        customerbalance = JackpotWonAmount
+        customerpromo = 0
+    elif transfertype == 13: # Bonus
+        RealTransferType = 10
+        customerbalance = JackpotWonAmount
+        customerpromo = 0
+        if G_Machine_IsBonusCashable == 0:
+            RealTransferType = 0
+    elif transfertype == 1: # Bill Acceptor
+        customerbalance = Billacceptor_LastCredit
+        customerpromo = 0
+        transfertype = 0
+
+    customerbalanceint = int(customerbalance * 100)
+    if customerbalance == 0 and customerpromo == 0:
+        IsWaitingForParaYukle = 0
+        CashIn_CompletedBy = "No-Money"
+        print("No money to load.")
+        return
+
+    if doincreasetransactionid == 1:
+        SaveConfigFile()
+
+    CommandHeader = Config.get("sas", "address") + "72"
+    Command = "0000" # Transfer Code, Transfer Index
+
+    if RealTransferType in [10, 11]:
+        Command += f"{RealTransferType:02X}"
+    else:
+        Command += "00"
+
+    if transfertype == 13:
+        if G_Machine_IsBonusCashable == 1:
+            Command += AddLeftBCD(customerbalanceint, 5)
+            Command += AddLeftBCD(0, 5)
+            Command += AddLeftBCD(0, 5)
+        else: # Promo-based bonus
+            Command += AddLeftBCD(0, 5)
+            Command += AddLeftBCD(customerbalanceint, 5)
+            Command += AddLeftBCD(0, 5)
+    else:
+        Command += AddLeftBCD(customerbalanceint, 5)
+        Command += AddLeftBCD(int(customerpromo * 100), 5)
+        Command += "0000000000"
+
+    Command += "03" if G_Config_IsCashoutSoft == 1 else "07" # Transfer flag
+    Command += Config.get("sas", "assetnumber")
+    Command += Config.get("sas", "registrationkey")
+
+    TRANSACTIONID = "".join("{:02x}".format(ord(c)) for c in str(transactionid))
+    Command += AddLeftBCD(int(len(TRANSACTIONID) / 2), 1)
+    Command += TRANSACTIONID
+    Command += "00000000" # Expiration Date
+    Command += "0030" if transfertype == 13 or customerpromo > 0 else "0000" # Pool ID
+    Command += "00" # Receipt data length
+
+    CommandHeader += hex(int(len(Command) / 2)).replace("0x", "")
+    GenelKomut = GetCRC(f"{CommandHeader}{Command}")
+
+    print(f"Load Money Command, TxID {transactionid}: {GenelKomut}")
+    SAS_SendCommand("ParaYukle", GenelKomut, 1)
+
+
+def Wait_ParaYukle(transfertype):
+    """
+    Waits for the AFT money loading process to complete.
+
+    This function initiates the money loading command and then enters a loop,
+    waiting for a status update from the gaming machine. It handles various
+    SAS AFT response codes (e.g., success, errors, pending).
+    """
+    global IsWaitingForParaYukle, CashIn_CompletedBy, Global_ParaYukleme_TransferStatus
+    global Yukle_FirstTransaction, Yukle_LastTransaction, Last_ParaYukle_TransferType
+    global Global_Count_YanitHandle, Last_ParaYukleDate
+
+    IsWaitingForParaYukle = 1
+    G_SAS_LastAFTOperation = "Yukle"
+    Global_ParaYukleme_TransferStatus = "0"
+    Yukle_FirstTransaction = 0
+    Yukle_LastTransaction = 0
+    Last_ParaYukle_TransferType = transfertype
+    Global_Count_YanitHandle = 0
+    WaitParaYukle_Date = datetime.datetime.now()
+    
+    # ... (rest of the waiting logic from the original file)
+    # This part involves a while loop that checks `IsWaitingForParaYukle`
+    # and handles various `Global_ParaYukleme_TransferStatus` codes.
+    # It sends retry commands if necessary.
+    # The full implementation is in the original file.
+    
+    print("Pretending to wait for money load to complete.")
+    time.sleep(1) # Simulate waiting
+    IsWaitingForParaYukle = 0 # Simulate completion
+    
+    if Global_ParaYukleme_TransferStatus in ["87", "84", "FF", "-1", "83", "89", "82", "93"]:
+        print(f"Returning 0 due to status: {Global_ParaYukleme_TransferStatus}")
+        return 0
+        
+    return 1 # Placeholder for success
+
+def Komut_ParaSifirla(doincreaseid):
+    """
+    Constructs and sends a command to cash out money from the gaming machine.
+
+    This function builds a SAS AFT command (72h with transfer type 80h) to
+    initiate a cashout of the current balance.
+    """
+    global G_Config_IsCashoutSoft, Sifirla_FirstTransaction, Sifirla_LastTransaction
+    global Yanit_RestrictedPoolID, Last_ParaSifirlaDate, Yanit_BakiyeTutar, Yanit_RestrictedAmount
+    
+    Last_ParaSifirlaDate = datetime.datetime.now()
+
+    if (Yanit_BakiyeTutar == 0 and Yanit_RestrictedAmount == 0):
+        print("No balance to cash out.")
+        return
+
+    transactionid = Config.getint("payment", "transactionid")
+    if doincreaseid == 1:
+        transactionid += 1
+        Config.set("payment", "transactionid", str(transactionid))
+        Config.set('collectcmd', 'transactionid', str(transactionid))
+
+    if Sifirla_FirstTransaction == 0:
+        Sifirla_FirstTransaction = transactionid
+    Sifirla_LastTransaction = transactionid
+
+    if doincreaseid == 1:
+        SaveConfigFile()
+
+    CommandHeader = Config.get("sas", "address") + "72"
+    
+    BakiyeTutar = int(Yanit_BakiyeTutar * 100)
+    RestrictedTutar = int(Yanit_RestrictedAmount * 100)
+
+    Command = "000080" # Transfer Code, Index, Type (80h for cashout)
+    Command += AddLeftBCD(BakiyeTutar, 5)
+    Command += AddLeftBCD(RestrictedTutar, 5)
+    Command += AddLeftBCD(0, 5) # Non-restricted
+
+    Command += "03" if G_Config_IsCashoutSoft == 1 else "0F" # Transfer Flag
+
+    Command += Config.get("sas", "assetnumber")
+    Command += Config.get("sas", "registrationkey")
+    
+    TRANSACTIONID = "".join("{:02x}".format(ord(c)) for c in str(transactionid))
+    Command += AddLeftBCD(int(len(TRANSACTIONID) / 2), 1)
+    Command += TRANSACTIONID
+    
+    Command += "00000000" # Expiration Date
+    Command += Yanit_RestrictedPoolID if len(Yanit_RestrictedPoolID) == 4 else "0030" # Pool ID
+    Command += "00" # Receipt data length
+    
+    CommandHeader += hex(int(len(Command) / 2)).replace("0x", "")
+    GenelKomut = GetCRC(f"{CommandHeader}{Command}")
+
+    print(f"Cashout Command, TxID {transactionid}: {GenelKomut}")
+    SAS_SendCommand("Cashout", GenelKomut, 1)
+
+
+def Wait_ParaSifirla():
+    """
+    Waits for the AFT cashout process to complete.
+
+    This function initiates the cashout command and then enters a loop,
+    waiting for a status update from the gaming machine. It handles various
+    SAS AFT response codes.
+    """
+    global IsWaitingForBakiyeSifirla, Global_ParaSilme_TransferStatus, G_SAS_LastAFTOperation
+    
+    G_SAS_LastAFTOperation = "Sifirla"
+    IsWaitingForBakiyeSifirla = 1
+    
+    Komut_ParaSifirla(1)
+    
+    # ... (rest of the waiting logic from the original file)
+    # This part involves a `while IsWaitingForBakiyeSifirla == 1` loop
+    # that sends retry commands if the process takes too long.
+    # The full implementation is in the original file.
+    
+    print("Pretending to wait for cashout to complete.")
+    time.sleep(1) # Simulate waiting
+    IsWaitingForBakiyeSifirla = 0 # Simulate completion
+
+# --- Helper/Utility Functions ---
+
+def AddLeftBCD(numbers, leng):
+    """Converts a number to a BCD string and pads it with zeros."""
+    numbers = int(numbers)
+    retdata = str(numbers)
+    if len(retdata) % 2 == 1:
+        retdata = "0" + retdata
+    countNumber = len(retdata) / 2
+    kalan = (leng - countNumber)
+    retdata = AddLeftString(retdata, "00", kalan)
+    return retdata
+
+def AddLeftString(text, eklenecek, kacadet):
+    """Adds a string to the left of another string a specified number of times."""
+    while (kacadet > 0):
+        text = eklenecek + text
+        kacadet = kacadet - 1
+    return text
+
+def GetCRC(komut):
+    """Calculates the CRC for a given command string."""
+    # This function should contain the CRC calculation logic.
+    # For this example, it returns a placeholder.
+    return komut + "FFFF" 
+
+def SAS_SendCommand(CommandName, Command, DoSaveDB):
+    """A placeholder for the function that sends the command to the SAS port."""
+    print(f"SENDING SAS Command: {CommandName} - {Command}")
+    
+def SaveConfigFile():
+    """A placeholder for the function that saves the configuration."""
+    print("Saving config file...")
+

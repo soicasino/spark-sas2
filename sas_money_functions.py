@@ -120,43 +120,98 @@ class SasMoney:
         return command
 
     def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey):
+        """
+        Constructs and sends a command to load money onto the gaming machine.
+        This function handles different transfer types like regular cash-in, jackpots, and bonuses.
+        It builds a SAS AFT command (72h) with the appropriate details, matching the reference logic.
+        """
         self.last_para_yukle_date = datetime.datetime.now()
-        
-        # Use provided transaction ID or generate new one
+
+        # --- Transaction ID logic (keep your class logic) ---
         if doincreasetransactionid:
             actual_transaction_id = self.get_next_transaction_id()
         else:
             actual_transaction_id = transactionid
-            
-        # Reset status before sending
-        self.global_para_yukleme_transfer_status = None
-        
+
+        # --- Special transfer type handling (reference logic) ---
+        RealTransferType = 0
+        # These should be class attributes or fetched from config as needed
+        G_Machine_IsBonusCashable = getattr(self, 'G_Machine_IsBonusCashable', 0)
+        G_Config_IsCashoutSoft = getattr(self, 'G_Config_IsCashoutSoft', 0)
+        JackpotWonAmount = getattr(self, 'JackpotWonAmount', 0)
+        Billacceptor_LastCredit = getattr(self, 'Billacceptor_LastCredit', 0)
+
+        # Copy input values to local vars for mutation
+        cbalance = customerbalance
+        cpromo = customerpromo
+        ttype = transfertype
+
+        if ttype in [10, 11]:  # Jackpot
+            RealTransferType = ttype
+            cbalance = JackpotWonAmount
+            cpromo = 0
+        elif ttype == 13:  # Bonus
+            RealTransferType = 10
+            cbalance = JackpotWonAmount
+            cpromo = 0
+            if G_Machine_IsBonusCashable == 0:
+                RealTransferType = 0
+        elif ttype == 1:  # Bill Acceptor
+            cbalance = Billacceptor_LastCredit
+            cpromo = 0
+            ttype = 0
+
+        cbalance_int = int(cbalance * 100)
+        cpromo_int = int(cpromo * 100)
+
+        # Early exit if nothing to load
+        if cbalance == 0 and cpromo == 0:
+            self.is_waiting_for_para_yukle = 0
+            # Optionally: self.CashIn_CompletedBy = "No-Money"
+            print("No money to load.")
+            return None
+
+        # --- Command construction (reference logic) ---
         command_header = assetnumber + "72"
-        command = "00"  # transfer code
-        command += "00"  # transfer index
-        if transfertype == 10:
-            command += "10"
-        elif transfertype == 11:
-            command += "11"
+        command = "0000"  # Transfer Code, Transfer Index
+
+        if RealTransferType in [10, 11]:
+            command += f"{RealTransferType:02X}"
         else:
             command += "00"
-        customerbalanceint = int(customerbalance * 100)
-        command += add_left_bcd(str(customerbalanceint), 5)
-        command += add_left_bcd(str(int(customerpromo * 100)), 5)
-        command += "0000000000"  # nonrestricted amount
-        command += "07"  # transfer flag (hard mode)
+
+        if ttype == 13:
+            if G_Machine_IsBonusCashable == 1:
+                command += add_left_bcd(str(cbalance_int), 5)
+                command += add_left_bcd("0", 5)
+                command += add_left_bcd("0", 5)
+            else:  # Promo-based bonus
+                command += add_left_bcd("0", 5)
+                command += add_left_bcd(str(cbalance_int), 5)
+                command += add_left_bcd("0", 5)
+        else:
+            command += add_left_bcd(str(cbalance_int), 5)
+            command += add_left_bcd(str(cpromo_int), 5)
+            command += "0000000000"
+
+        # Transfer flag
+        command += "03" if G_Config_IsCashoutSoft == 1 else "07"
         command += assetnumber
         command += registrationkey
+
+        # Transaction ID as hex string
         transaction_id_hex = ''.join(f"{ord(c):02x}" for c in str(actual_transaction_id))
         command += add_left_bcd(str(len(transaction_id_hex) // 2), 1)
         command += transaction_id_hex
-        command += "00000000"  # expiration date
-        command += "0000"  # pool id
-        command += "00"  # receipt data length
+        command += "00000000"  # Expiration Date
+        # Pool ID
+        command += "0030" if ttype == 13 or cpromo > 0 else "0000"
+        command += "00"  # Receipt data length
+
         command_header += hex(len(command) // 2).replace("0x", "")
         full_command = get_crc(command_header + command)
         self.communicator.sas_send_command_with_queue("ParaYukle", full_command, 1)
-        
+
         return actual_transaction_id
 
     def komut_para_sifirla(self, doincreaseid, transactionid, assetnumber, registrationkey):
