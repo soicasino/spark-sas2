@@ -552,7 +552,7 @@ class SasMoney:
         if isall == 0 and IsNewMeter == 0:
             command = get_crc("012F0C0000A0B802031E00010BA2BA")
         elif isall == 0 and IsNewMeter == 1:
-            command = get_crc("01AF200000A000B800020003001E00000001000B00A200BA0005000600C01700180FA0FB0FC")
+            command = get_crc("01AF1E0000A000B800020003001E00000001000B00A200BA0005000600C0171800FA")
         elif isall == 1:
             command = get_crc("012F0C00000405060C191D7FFAFBFC")
         elif isall == 2:
