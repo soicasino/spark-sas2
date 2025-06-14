@@ -58,6 +58,9 @@ class SasMoney:
         print(f"[AFT WAIT] Initial status: {self.global_para_yukleme_transfer_status}")
         
         while time.time() - start < timeout:
+            # Add a small delay before checking status to allow background thread to update
+            await asyncio.sleep(0.1)
+            
             status = self.global_para_yukleme_transfer_status
             elapsed = time.time() - start
             
@@ -80,7 +83,8 @@ class SasMoney:
             else:
                 print(f"[AFT WAIT] Unknown status: {status}")
                 
-            await asyncio.sleep(0.5)  # Check every 500ms instead of 200ms
+            # Check every 500ms instead of immediately looping
+            await asyncio.sleep(0.4)  # Total 0.5s with the 0.1s above
             
         # Timeout
         self.is_waiting_for_para_yukle = 0
@@ -231,17 +235,26 @@ class SasMoney:
         print(f"[BALANCE WAIT] Starting balance query wait (timeout={timeout}s)")
         
         while time.time() - start < timeout:
-            # Check if balance has been received (any non-zero value indicates response)
+            # Add a small delay to allow background thread to process responses
+            await asyncio.sleep(0.1)
+            
+            # Check if waiting flag has been cleared by the response handler
+            if not self.is_waiting_for_bakiye_sorgulama:
+                print(f"[BALANCE WAIT] Balance received successfully after {time.time() - start:.2f}s")
+                print(f"[BALANCE WAIT] Cashable: {self.yanit_bakiye_tutar}, Restricted: {self.yanit_restricted_amount}, Non-restricted: {self.yanit_nonrestricted_amount}")
+                return True
+            
+            # Also check if balance has been received (any non-zero value indicates response)
             if (self.yanit_bakiye_tutar > 0 or 
                 self.yanit_restricted_amount > 0 or 
-                self.yanit_nonrestricted_amount > 0 or
-                not self.is_waiting_for_bakiye_sorgulama):
+                self.yanit_nonrestricted_amount > 0):
                 self.is_waiting_for_bakiye_sorgulama = False
                 print(f"[BALANCE WAIT] Balance received successfully after {time.time() - start:.2f}s")
                 print(f"[BALANCE WAIT] Cashable: {self.yanit_bakiye_tutar}, Restricted: {self.yanit_restricted_amount}, Non-restricted: {self.yanit_nonrestricted_amount}")
                 return True
                 
-            await asyncio.sleep(0.1)
+            # Wait before checking again
+            await asyncio.sleep(0.4)  # Total 0.5s with the 0.1s above
             
         # Timeout
         self.is_waiting_for_bakiye_sorgulama = False
