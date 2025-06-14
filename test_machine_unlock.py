@@ -2,18 +2,62 @@
 """
 Test script to try different machine unlock methods and AFT registration.
 This script attempts various approaches to unlock the machine and enable AFT transfers.
+Includes background polling to receive SAS responses.
 """
 
 import asyncio
 import time
+import threading
 from sas_communicator import SASCommunicator
 from sas_money_functions import SasMoney
 from config_manager import ConfigManager
 
+class UnlockTester:
+    def __init__(self):
+        self.running = False
+        self.poll_thread = None
+        self.communicator = None
+        
+    def start_polling(self):
+        """Start background polling thread"""
+        self.running = True
+        self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self.poll_thread.start()
+        print("✅ Background polling started")
+        
+    def stop_polling(self):
+        """Stop background polling"""
+        self.running = False
+        if self.poll_thread:
+            self.poll_thread.join(timeout=1)
+        print("✅ Background polling stopped")
+        
+    def _poll_loop(self):
+        """Background polling loop to receive SAS responses"""
+        while self.running:
+            try:
+                if self.communicator and self.communicator.is_port_open:
+                    # Get any incoming data
+                    data = self.communicator.get_data_from_sas_port()
+                    if data:
+                        print(f"RX: {data}")
+                        # Process the received data
+                        self.communicator.handle_received_sas_command(data)
+                    
+                    # Send periodic general poll (alternating 80/81)
+                    self.communicator.send_general_poll()
+                    
+                time.sleep(0.1)  # Poll every 100ms
+            except Exception as e:
+                print(f"Error in polling loop: {e}")
+                time.sleep(0.5)
+
 async def test_machine_unlock():
     """Test different methods to unlock the machine and enable AFT"""
     
-    print("=== Machine Unlock and AFT Test ===")
+    print("=== Machine Unlock and AFT Test with Polling ===")
+    
+    tester = UnlockTester()
     
     # Initialize components
     config = ConfigManager()
@@ -24,6 +68,9 @@ async def test_machine_unlock():
     communicator = SASCommunicator(port, config)
     money = SasMoney(config, communicator)
     
+    # Set up tester
+    tester.communicator = communicator
+    
     try:
         # Open SAS port
         print("Opening SAS port...")
@@ -33,13 +80,17 @@ async def test_machine_unlock():
             print("❌ Failed to open SAS port")
             return
         
-        # Wait for initial communication
-        await asyncio.sleep(2)
+        # Start background polling to receive responses
+        tester.start_polling()
+        
+        # Wait for initial communication to stabilize
+        print("Waiting for initial communication to stabilize...")
+        await asyncio.sleep(3)
         
         print("\n=== Initial Balance Check ===")
         # Check initial balance
         balance_result = money.komut_bakiye_sorgulama("unlock_test", False, "initial_balance")
-        balance_received = await money.wait_for_bakiye_sorgulama_completion(timeout=3)
+        balance_received = await money.wait_for_bakiye_sorgulama_completion(timeout=5)
         
         if balance_received:
             print("✅ Initial balance query successful")
@@ -55,13 +106,13 @@ async def test_machine_unlock():
         print("Method 1: Standard unlock with asset number")
         unlock_result = money.komut_unlock_machine()
         print(f"Unlock result: {unlock_result}")
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
         
         # Method 2: Unlock with zero asset number (sometimes needed for initial setup)
         print("Method 2: Unlock with zero asset number")
         unlock_result2 = money.komut_unlock_machine()  # This uses default asset number
         print(f"Unlock result: {unlock_result2}")
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
         
         # Method 3: AFT Registration
         print("Method 3: AFT Registration")
@@ -73,7 +124,7 @@ async def test_machine_unlock():
             
             reg_result = money.komut_aft_registration(asset_number, registration_key, pos_id)
             print(f"AFT Registration result: {reg_result}")
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)  # Give more time for registration
         except Exception as e:
             print(f"AFT Registration failed: {e}")
         
@@ -82,14 +133,14 @@ async def test_machine_unlock():
         try:
             status_result = money.check_aft_status()
             print(f"AFT Status check result: {status_result}")
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
         except Exception as e:
             print(f"AFT Status check failed: {e}")
         
         print("\n=== Final Balance Check ===")
         # Check balance after unlock attempts
         balance_result2 = money.komut_bakiye_sorgulama("unlock_test", False, "post_unlock_balance")
-        balance_received2 = await money.wait_for_bakiye_sorgulama_completion(timeout=3)
+        balance_received2 = await money.wait_for_bakiye_sorgulama_completion(timeout=5)
         
         if balance_received2:
             print("✅ Final balance query successful")
@@ -126,6 +177,12 @@ async def test_machine_unlock():
             except Exception as e:
                 print(f"Test transfer error: {e}")
         
+        # Give some time for any final responses
+        print("\n=== Final Communication Check ===")
+        for i in range(3):
+            await asyncio.sleep(1)
+            print(f"Final check {i+1}/3...")
+        
     except Exception as e:
         print(f"Error in unlock test: {e}")
         import traceback
@@ -133,7 +190,8 @@ async def test_machine_unlock():
     
     finally:
         # Clean up
-        print("\nClosing SAS port...")
+        print("\nCleaning up...")
+        tester.stop_polling()
         communicator.close_port()
         print("✅ Port closed")
 
