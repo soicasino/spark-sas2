@@ -276,14 +276,14 @@ class SasMoney:
         # Set waiting flag
         self.is_waiting_for_bakiye_sorgulama = True
         
-        # Get asset number from communicator
+        # FIXED: Get asset number from communicator - use proper AFT format
         asset_number = "0000006C"  # Default to known asset number (108 decimal)
         if hasattr(self.communicator, 'asset_number') and self.communicator.asset_number:
-            asset_number = self.communicator.asset_number
+            asset_number = self.communicator.asset_number.upper()  # Use stored AFT format
         elif hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
-            asset_number = self.communicator.asset_number_hex
-        # Note: SAS address (01) is NOT the same as asset number (0000006C)
-        # Don't convert SAS address to asset number - they are different values
+            asset_number = self.communicator.asset_number_hex.upper()
+        # CRITICAL: Do NOT convert SAS address to asset number - they are different values!
+        # SAS address (01) is NOT the same as asset number (0000006C)
         
         print(f"[BALANCE QUERY] Using asset number: {asset_number}")
         
