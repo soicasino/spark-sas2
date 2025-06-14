@@ -147,22 +147,23 @@ export default function SASDashboard() {
       return;
     }
 
-    if (transferType === "add") {
-      handleApiCall(
-        "moneyTransfer",
-        () => sasApi.addCredits(amount, transferType),
-        () => {
-          setTransferAmount("");
-          setTimeout(refreshMeters, 500); // Refresh meters to see balance changes
-        }
-      );
-    } else {
+    if (transferType === "subtract") {
       handleApiCall(
         "moneyTransfer",
         () => sasApi.cashout(amount),
         () => {
           setTransferAmount("");
           setTimeout(refreshMeters, 500);
+        }
+      );
+    } else {
+      // transferType is a SAS code ("10", "11", "00") for add credits
+      handleApiCall(
+        "moneyTransfer",
+        () => sasApi.addCredits(amount, transferType),
+        () => {
+          setTransferAmount("");
+          setTimeout(refreshMeters, 500); // Refresh meters to see balance changes
         }
       );
     }
