@@ -21,6 +21,12 @@ def test_balance_query():
     # Create communicator
     comm = SASCommunicator('COM3', config)
     
+    # Open the port first
+    print("Opening SAS port...")
+    if not comm.open_port():
+        print("ERROR: Could not open SAS port. Check connection and port name.")
+        return
+    
     print(f"SAS Address: {comm.sas_address}")
     print(f"Device Type ID: {comm.device_type_id}")
     
@@ -88,6 +94,10 @@ def test_balance_query():
         print(f"Error in balance query test: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Close the port
+        print("Closing SAS port...")
+        comm.close_port()
 
 if __name__ == "__main__":
     test_balance_query() 
