@@ -24,9 +24,9 @@ class SASCommunicator:
         self.timeout = timeout
         self.global_config = global_config
         self.serial_port = None
-        self.sas_address = self.global_config.get('sas', 'address', '01')
+        self.sas_address = self.global_config.get('sas', 'address', fallback='01')
         self.is_port_open = False
-        self.device_type_id = self.global_config.getint('machine', 'devicetypeid', 8)
+        self.device_type_id = self.global_config.getint('machine', 'devicetypeid', fallback=8)
         
         # CRITICAL: Match working code's global variables
         self.last_sent_poll_type = 81  # Sas_LastSent equivalent
