@@ -6,7 +6,7 @@ This script attempts various approaches to unlock the machine and enable AFT tra
 
 import asyncio
 import time
-from sas_communicator import SasCommunicator
+from sas_communicator import SASCommunicator
 from sas_money_functions import SasMoney
 from config_manager import ConfigManager
 
@@ -21,13 +21,13 @@ async def test_machine_unlock():
     print(f"Using port: {port}")
     
     # Create communicator
-    communicator = SasCommunicator(config)
+    communicator = SASCommunicator(port, config)
     money = SasMoney(config, communicator)
     
     try:
         # Open SAS port
         print("Opening SAS port...")
-        if communicator.open_sas_port(port):
+        if communicator.open_port():
             print("✅ SAS port opened successfully")
         else:
             print("❌ Failed to open SAS port")
@@ -134,7 +134,7 @@ async def test_machine_unlock():
     finally:
         # Clean up
         print("\nClosing SAS port...")
-        communicator.close_sas_port()
+        communicator.close_port()
         print("✅ Port closed")
 
 if __name__ == "__main__":
