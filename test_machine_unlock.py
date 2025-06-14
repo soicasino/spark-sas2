@@ -47,12 +47,9 @@ def test_machine_unlock():
         # Wait for response
         balance_received = asyncio.run(money.wait_for_bakiye_sorgulama_completion(timeout=3))
         print(f"Balance received: {balance_received}")
-        print(f"Current balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
+        print(f"Current balance: Cashable=${money.yanit_bakiye_tutar}, Restricted=${money.yanit_restricted_amount}, Non-restricted=${money.yanit_nonrestricted_amount}")
         
-        # Check machine status
-        print(f"Game Lock Status: {getattr(money, 'game_lock_status', 'Unknown')}")
-        print(f"Available Transfers: {getattr(money, 'available_transfers', 'Unknown')}")
-        print(f"AFT Status: {getattr(money, 'aft_status', 'Unknown')}")
+        # Machine status is shown in the balance response logs above
         
         # Try different unlock approaches
         print("\n=== Trying Different Unlock Methods ===")
@@ -90,12 +87,9 @@ def test_machine_unlock():
         # Wait for response
         balance_received = asyncio.run(money.wait_for_bakiye_sorgulama_completion(timeout=3))
         print(f"Balance received: {balance_received}")
-        print(f"Updated balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
+        print(f"Updated balance: Cashable=${money.yanit_bakiye_tutar}, Restricted=${money.yanit_restricted_amount}, Non-restricted=${money.yanit_nonrestricted_amount}")
         
-        # Check updated machine status
-        print(f"Game Lock Status: {getattr(money, 'game_lock_status', 'Unknown')}")
-        print(f"Available Transfers: {getattr(money, 'available_transfers', 'Unknown')}")
-        print(f"AFT Status: {getattr(money, 'aft_status', 'Unknown')}")
+        # Updated machine status is shown in the balance response logs above
         
         # Try a small AFT transfer
         print("\n=== Testing Small AFT Transfer ===")
@@ -121,7 +115,7 @@ def test_machine_unlock():
         result = money.komut_bakiye_sorgulama("unlock_test", False, "final_balance")
         if result:
             balance_received = asyncio.run(money.wait_for_bakiye_sorgulama_completion(timeout=3))
-            print(f"Final balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
+            print(f"Final balance: Cashable=${money.yanit_bakiye_tutar}, Restricted=${money.yanit_restricted_amount}, Non-restricted=${money.yanit_nonrestricted_amount}")
         
     except Exception as e:
         print(f"Error in unlock test: {e}")
