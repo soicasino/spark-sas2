@@ -543,7 +543,7 @@ class SasMoney:
         if isall == 0 and IsNewMeter == 0:
             command = get_crc("012F0C0000A0B802031E00010BA2BA")
         elif isall == 0 and IsNewMeter == 1:
-            command = get_crc("01AF1A0000A000B800020003001E00000001000B00A200BA0005000600")
+            command = get_crc("01AF1B0000A000B800020003001E00000001000B00A200BA0005000600C0")
         elif isall == 1:
             command = get_crc("012F0C00000405060C191D7FFAFBFC")
         elif isall == 2:
@@ -814,6 +814,16 @@ class SasMoney:
         print("Meter is received")
         
         print(f"[DEBUG] handle_single_meter_response finished. Parsed meters: {parsed_meters}")
+        
+        # Calculate balance from meters
+        if 'total_coin_in' in parsed_meters and 'total_coin_out' in parsed_meters:
+            calculated_balance = parsed_meters['total_coin_in'] - parsed_meters['total_coin_out']
+            parsed_meters['calculated_balance'] = calculated_balance
+            print(f"  calculated_balance: {money_fmt(calculated_balance)} (coin_in - coin_out)")
+        
+        # Add current credits if available
+        if 'current_credits' in parsed_meters:
+            print(f"  current_credits: {money_fmt(parsed_meters['current_credits'])}")
         
         # Store parsed meters for API access
         self.last_parsed_meters = parsed_meters
