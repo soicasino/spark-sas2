@@ -631,6 +631,19 @@ class SasMoney:
             self.yanit_restricted_amount = restricted_amount
             self.yanit_nonrestricted_amount = nonrestricted_amount
             
+            # Store lock status information in communicator for UI display
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                self.communicator.last_game_lock_status = game_lock_status
+                self.communicator.last_aft_status = aft_status
+                self.communicator.last_available_transfers = available_transfers
+                print(f"[BALANCE RESPONSE] Lock status stored in communicator")
+            else:
+                # Add attributes if they don't exist
+                self.communicator.last_game_lock_status = game_lock_status
+                self.communicator.last_aft_status = aft_status
+                self.communicator.last_available_transfers = available_transfers
+                print(f"[BALANCE RESPONSE] Lock status attributes created and stored")
+            
             # Clear waiting flag - this will signal the async wait function
             self.is_waiting_for_bakiye_sorgulama = False
             
@@ -639,6 +652,8 @@ class SasMoney:
             print(f"[BALANCE RESPONSE]   Restricted: {restricted_amount}")
             print(f"[BALANCE RESPONSE]   Non-restricted: {nonrestricted_amount}")
             print(f"[BALANCE RESPONSE]   Game Lock Status: {game_lock_status}")
+            print(f"[BALANCE RESPONSE]   AFT Status: {aft_status}")
+            print(f"[BALANCE RESPONSE]   Available Transfers: {available_transfers}")
             print(f"[BALANCE RESPONSE] Waiting flag cleared - async wait should now complete")
             
         except Exception as e:

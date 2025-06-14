@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { CreditCard, DollarSign, Settings, Activity, AlertCircle, CheckCircle, Wifi, WifiOff, RefreshCcw, Power, Lock, Unlock, X } from "lucide-react";
 
-import { sasApi, SASWebSocketClient, CardReaderStatus, MeterData, BillAcceptorStatus, EventStats } from "@/lib/api";
+import { sasApi, SASWebSocketClient, CardReaderStatus, MeterData, BillAcceptorStatus, EventStats, MachineStatus } from "@/lib/api";
 
 export default function SASDashboard() {
   // State management
@@ -23,6 +23,7 @@ export default function SASDashboard() {
   const [eventStats, setEventStats] = useState<any>(null);
   const [systemStatus, setSystemStatus] = useState<any>(null);
   const [aftBalance, setAftBalance] = useState<any>(null);
+  const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
 
   // Loading states
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -78,7 +79,15 @@ export default function SASDashboard() {
   }, []);
 
   const initializeDashboard = async () => {
-    await Promise.all([refreshCardStatus(), refreshMeters(), refreshBillAcceptorStatus(), refreshEventStats(), refreshSystemStatus(), refreshAftBalance()]);
+    await Promise.all([
+      refreshCardStatus(),
+      refreshMeters(),
+      refreshBillAcceptorStatus(),
+      refreshEventStats(),
+      refreshSystemStatus(),
+      refreshAftBalance(),
+      refreshMachineStatus(),
+    ]);
   };
 
   const setLoadingState = (key: string, state: boolean) => {
@@ -121,6 +130,8 @@ export default function SASDashboard() {
   const refreshSystemStatus = () => handleApiCall("systemStatus", () => sasApi.getSystemStatus(), setSystemStatus);
 
   const refreshAftBalance = () => handleApiCall("aftBalance", () => sasApi.getMoneyBalance(), setAftBalance);
+
+  const refreshMachineStatus = () => handleApiCall("machineStatus", () => sasApi.getMachineStatus(), setMachineStatus);
 
   // Card Reader Actions
   const handleEjectCard = () =>
@@ -181,8 +192,22 @@ export default function SASDashboard() {
   };
 
   // Machine Control Actions
-  const handleLockMachine = () => handleApiCall("lockMachine", () => sasApi.lockMachine());
-  const handleUnlockMachine = () => handleApiCall("unlockMachine", () => sasApi.unlockMachine());
+  const handleLockMachine = () =>
+    handleApiCall(
+      "lockMachine",
+      () => sasApi.lockMachine(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000); // Refresh status after lock
+      }
+    );
+  const handleUnlockMachine = () =>
+    handleApiCall(
+      "unlockMachine",
+      () => sasApi.unlockMachine(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000); // Refresh status after unlock
+      }
+    );
   const handleEmergencyStop = () => handleApiCall("emergencyStop", () => sasApi.emergencyStop());
 
   // Event Management Actions
@@ -238,7 +263,7 @@ export default function SASDashboard() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {/* Card Status Overview */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -290,6 +315,21 @@ export default function SASDashboard() {
                 <CardContent>
                   <div className="text-2xl font-bold">{eventStats?.data.is_online ? "Online" : "Offline"}</div>
                   <p className="text-xs text-muted-foreground">Unsynced: {eventStats?.data.unsynced_events.total || 0}</p>
+                </CardContent>
+              </Card>
+
+              {/* Machine Lock Status */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Machine Status</CardTitle>
+                  {machineStatus?.data.is_locked ? <Lock className="h-4 w-4 text-red-500" /> : <Unlock className="h-4 w-4 text-green-500" />}
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-2xl font-bold ${machineStatus?.data.is_locked ? "text-red-600" : "text-green-600"}`}>
+                    {machineStatus?.data.is_locked ? "Locked" : "Unlocked"}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{machineStatus?.data.lock_status_description || "Status unknown"}</p>
+                  <p className="text-xs text-gray-500 mt-1">AFT: {machineStatus?.data.aft_status_description || "Unknown"}</p>
                 </CardContent>
               </Card>
             </div>

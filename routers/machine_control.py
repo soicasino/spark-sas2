@@ -274,7 +274,7 @@ async def control_machine(
 @router.get("/status")
 async def get_machine_status(sas_service: SASWebService = Depends(get_sas_service)):
     """
-    Get current machine status and state information
+    Get current machine status and state information including lock status
     """
     try:
         # Get basic machine status
@@ -285,7 +285,11 @@ async def get_machine_status(sas_service: SASWebService = Depends(get_sas_servic
             "last_poll_type": None,
             "device_type_id": None,
             "port_name": None,
-            "communication_active": False
+            "communication_active": False,
+            "lock_status": "unknown",
+            "lock_status_description": "Status unknown",
+            "aft_status": "unknown",
+            "available_transfers": "unknown"
         }
         
         if (sas_service.slot_machine_app and 
@@ -303,6 +307,55 @@ async def get_machine_status(sas_service: SASWebService = Depends(get_sas_servic
                 "communication_active": sas_service.web_service_running,
                 "sas_address": getattr(sas_comm, 'sas_address', None)
             })
+            
+            # Get lock status from the last balance query response
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                # Trigger a quick balance query to get current status
+                try:
+                    sas_comm.sas_money.komut_bakiye_sorgulama("status_check", True, "machine_status")
+                    
+                    # Check if we have recent lock status information
+                    # This would need to be stored from the last balance response
+                    if hasattr(sas_comm, 'last_game_lock_status'):
+                        lock_status = getattr(sas_comm, 'last_game_lock_status', 'FF')
+                        aft_status = getattr(sas_comm, 'last_aft_status', '00')
+                        available_transfers = getattr(sas_comm, 'last_available_transfers', '00')
+                        
+                        # Decode lock status
+                        lock_descriptions = {
+                            "00": "Unlocked - Ready for play",
+                            "01": "Locked - Door open",
+                            "02": "Locked - Tilt condition",
+                            "04": "Locked - Cashout in progress", 
+                            "08": "Locked - AFT transfer in progress",
+                            "10": "Locked - Game disabled",
+                            "20": "Locked - Handpay pending",
+                            "40": "Locked - Progressive win",
+                            "80": "Locked - System error",
+                            "FF": "Locked - Multiple conditions"
+                        }
+                        
+                        aft_descriptions = {
+                            "00": "AFT Disabled",
+                            "01": "AFT Enabled - Full functionality",
+                            "02": "AFT Enabled - In-house only", 
+                            "04": "AFT Enabled - Bonus awards only",
+                            "08": "AFT Enabled - Debit transfers only",
+                            "10": "AFT Enabled - Credit transfers only",
+                            "B0": "AFT Enabled but restricted"
+                        }
+                        
+                        machine_info.update({
+                            "lock_status": lock_status,
+                            "lock_status_description": lock_descriptions.get(lock_status, f"Unknown lock status: {lock_status}"),
+                            "aft_status": aft_status,
+                            "aft_status_description": aft_descriptions.get(aft_status, f"Unknown AFT status: {aft_status}"),
+                            "available_transfers": available_transfers,
+                            "is_locked": lock_status != "00"
+                        })
+                    
+                except Exception as e:
+                    print(f"[MACHINE STATUS] Error getting lock status: {e}")
         
         return {
             "success": True,

@@ -401,3 +401,25 @@ export interface MoneyTransferResponse {
     nonrestricted_balance?: number;
   };
 }
+
+export interface MachineStatus {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  data: {
+    sas_connected: boolean;
+    initialized: boolean;
+    running: boolean;
+    last_poll_type?: string;
+    device_type_id?: string;
+    port_name?: string;
+    communication_active: boolean;
+    sas_address?: string;
+    lock_status: string;
+    lock_status_description: string;
+    aft_status: string;
+    aft_status_description?: string;
+    available_transfers: string;
+    is_locked: boolean;
+  };
+}

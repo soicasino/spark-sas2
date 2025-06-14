@@ -729,16 +729,22 @@ class SASWebService:
                 
             sas_comm = self.slot_machine_app.sas_comm
             
-            # Send machine unlock command (SAS 0x02)
-            # sas_comm.send_command(0x02)
-            
-            return {
-                "status": "success",
-                "action": "unlocked", 
-                "command_sent": "0x02",
-                "timestamp": datetime.now().isoformat(),
-                "message": "Machine unlocked successfully"
-            }
+            # Send AFT unlock command using the proper SAS money function
+            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                print("[MACHINE UNLOCK] Calling komut_unlock_machine...")
+                result = sas_comm.sas_money.komut_unlock_machine()
+                print(f"[MACHINE UNLOCK] Unlock result: {result}")
+                
+                return {
+                    "status": "success",
+                    "action": "unlocked", 
+                    "command_sent": "AFT_UNLOCK_74h",
+                    "command_result": result,
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "AFT unlock command sent successfully"
+                }
+            else:
+                raise Exception("SAS money functions not available")
             
         except Exception as e:
             raise Exception(f"Failed to unlock machine: {e}")
