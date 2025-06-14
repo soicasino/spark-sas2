@@ -217,6 +217,12 @@ export class SASApiClient {
     });
   }
 
+  async registerAFT() {
+    return this.request("/api/money/register-aft", {
+      method: "POST",
+    });
+  }
+
   async cancelTransfer() {
     return this.request("/api/money/cancel-transfer", { method: "POST" });
   }

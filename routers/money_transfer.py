@@ -73,101 +73,141 @@ async def add_credits(
         
         # Execute AFT credit transfer using SAS money functions
         try:
-            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                # Send the transfer command
-                actual_transaction_id = sas_comm.sas_money.komut_para_yukle(
-                    doincreasetransactionid,
-                    transfertype,
-                    customerbalance,
-                    customerpromo,
-                    transactionid,
-                    assetnumber,
-                    registrationkey
-                )
+            # Step 1: Register AFT first (required for AFT operations)
+            print(f"[ADD CREDITS] Registering AFT before money transfer...")
+            try:
+                # Send AFT registration command (SAS command 0x75)
+                sas_address = getattr(sas_comm, 'sas_address', '01')
+                assetnumber_for_reg = "0000006C"  # Asset number for registration
+                registrationkey_for_reg = "00000000000000000000000000000000000000000000"  # Default key
+                posid = "POS001"  # Point of Sale ID
                 
-                # Wait for completion with timeout
-                print(f"[ADD CREDITS] Waiting for AFT response...")
-                wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=8)
+                # Manual AFT registration command construction
+                # Command: 0x75 + asset number + registration key + POS ID
+                reg_command = f"{sas_address}75{assetnumber_for_reg}{registrationkey_for_reg}{posid.ljust(16, '0')}"
                 
-                if wait_result is True:
-                    # Success - transfer completed
-                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
-                    return MachineControlResponse(
-                        success=True,
-                        message=f"Credit addition of ${request.amount:.2f} completed successfully",
-                        execution_time_ms=execution_time,
-                        data={
-                            "action": "add_credits",
-                            "amount": request.amount,
-                            "credits": int(request.amount * 100),
-                            "transaction_id": actual_transaction_id,
-                            "transfer_type": request.transfer_type,
-                            "transfer_type_name": get_transfer_type_name(request.transfer_type),
-                            "status": "completed"
-                        }
+                # Add CRC and send registration command
+                from utils import get_crc
+                reg_command_with_crc = get_crc(reg_command)
+                
+                print(f"[ADD CREDITS] Sending AFT registration command: {reg_command_with_crc}")
+                sas_comm.sas_send_command_with_queue("AFTRegistration", reg_command_with_crc, 1)
+                
+                # Wait a moment for registration to process
+                await asyncio.sleep(1)
+                print(f"[ADD CREDITS] AFT registration sent, proceeding with money transfer...")
+                
+            except Exception as reg_error:
+                print(f"[ADD CREDITS] AFT registration warning: {reg_error}")
+                # Continue anyway - registration might already be done
+            
+            # Step 2: Proceed with money transfer
+            print(f"[ADD CREDITS] Starting money transfer...")
+            
+            # Get current balance before transfer
+            print(f"[ADD CREDITS] Getting current balance...")
+            try:
+                if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                    # Send the transfer command
+                    actual_transaction_id = sas_comm.sas_money.komut_para_yukle(
+                        doincreasetransactionid,
+                        transfertype,
+                        customerbalance,
+                        customerpromo,
+                        transactionid,
+                        assetnumber,
+                        registrationkey
                     )
-                elif wait_result is False:
-                    # Transfer failed
-                    status_code = sas_comm.sas_money.global_para_yukleme_transfer_status
-                    status_desc = sas_comm.sas_money.get_transfer_status_description(status_code)
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"AFT credit transfer failed: {status_desc} (Code: {status_code})"
-                    )
+                    
+                    # Wait for completion with timeout
+                    print(f"[ADD CREDITS] Waiting for AFT response...")
+                    wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=8)
+                    
+                    if wait_result is True:
+                        # Success - transfer completed
+                        execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                        return MachineControlResponse(
+                            success=True,
+                            message=f"Credit addition of ${request.amount:.2f} completed successfully",
+                            execution_time_ms=execution_time,
+                            data={
+                                "action": "add_credits",
+                                "amount": request.amount,
+                                "credits": int(request.amount * 100),
+                                "transaction_id": actual_transaction_id,
+                                "transfer_type": request.transfer_type,
+                                "transfer_type_name": get_transfer_type_name(request.transfer_type),
+                                "status": "completed"
+                            }
+                        )
+                    elif wait_result is False:
+                        # Transfer failed
+                        status_code = sas_comm.sas_money.global_para_yukleme_transfer_status
+                        status_desc = sas_comm.sas_money.get_transfer_status_description(status_code)
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"AFT credit transfer failed: {status_desc} (Code: {status_code})"
+                        )
+                    else:
+                        # Timeout - but AFT command was sent successfully
+                        # For machines that don't respond to AFT, this might be normal
+                        print(f"[ADD CREDITS] AFT timeout - machine may not support AFT responses")
+                        print(f"[ADD CREDITS] Command was sent successfully, assuming it worked")
+                        
+                        execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                        return MachineControlResponse(
+                            success=True,
+                            message=f"Credit addition of ${request.amount:.2f} sent to machine (no response confirmation)",
+                            execution_time_ms=execution_time,
+                            data={
+                                "action": "add_credits",
+                                "amount": request.amount,
+                                "credits": int(request.amount * 100),
+                                "transaction_id": actual_transaction_id,
+                                "transfer_type": request.transfer_type,
+                                "transfer_type_name": get_transfer_type_name(request.transfer_type),
+                                "status": "sent_no_confirmation",
+                                "note": "Machine may not support AFT response confirmation"
+                            }
+                        )
                 else:
-                    # Timeout - but AFT command was sent successfully
-                    # For machines that don't respond to AFT, this might be normal
-                    print(f"[ADD CREDITS] AFT timeout - machine may not support AFT responses")
-                    print(f"[ADD CREDITS] Command was sent successfully, assuming it worked")
+                    # Fallback to direct money_cash_in method if available
+                    result = sas_comm.money_cash_in(
+                        doincreasetransactionid,
+                        transfertype,
+                        customerbalance,
+                        customerpromo,
+                        transactionid,
+                        assetnumber,
+                        registrationkey
+                    )
                     
                     execution_time = (datetime.now() - start_time).total_seconds() * 1000
                     return MachineControlResponse(
                         success=True,
-                        message=f"Credit addition of ${request.amount:.2f} sent to machine (no response confirmation)",
+                        message=f"Credit addition of ${request.amount:.2f} initiated (fallback method)",
                         execution_time_ms=execution_time,
                         data={
                             "action": "add_credits",
                             "amount": request.amount,
                             "credits": int(request.amount * 100),
-                            "transaction_id": actual_transaction_id,
+                            "transaction_id": transactionid,
                             "transfer_type": request.transfer_type,
                             "transfer_type_name": get_transfer_type_name(request.transfer_type),
-                            "status": "sent_no_confirmation",
-                            "note": "Machine may not support AFT response confirmation"
+                            "status": "initiated_fallback"
                         }
                     )
-            else:
-                # Fallback to direct money_cash_in method if available
-                result = sas_comm.money_cash_in(
-                    doincreasetransactionid,
-                    transfertype,
-                    customerbalance,
-                    customerpromo,
-                    transactionid,
-                    assetnumber,
-                    registrationkey
-                )
-                
-                execution_time = (datetime.now() - start_time).total_seconds() * 1000
-                return MachineControlResponse(
-                    success=True,
-                    message=f"Credit addition of ${request.amount:.2f} initiated (fallback method)",
-                    execution_time_ms=execution_time,
-                    data={
-                        "action": "add_credits",
-                        "amount": request.amount,
-                        "credits": int(request.amount * 100),
-                        "transaction_id": transactionid,
-                        "transfer_type": request.transfer_type,
-                        "transfer_type_name": get_transfer_type_name(request.transfer_type),
-                        "status": "initiated_fallback"
-                    }
+            
+            except Exception as aft_error:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"AFT credit transfer failed: {str(aft_error)}"
                 )
             
-        except Exception as aft_error:
+        except Exception as e:
             raise HTTPException(
                 status_code=500,
-                detail=f"AFT credit transfer failed: {str(aft_error)}"
+                detail=f"Money transfer error: {str(e)}"
             )
             
     except HTTPException:
