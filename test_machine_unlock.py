@@ -9,6 +9,7 @@ import asyncio
 import configparser
 from sas_communicator import SASCommunicator
 from sas_money_functions import SasMoney
+from utils import get_crc
 
 def test_machine_unlock():
     """Test machine unlock and AFT functionality"""
@@ -56,7 +57,7 @@ def test_machine_unlock():
         
         # Method 1: Standard unlock with asset number
         print("Method 1: Standard unlock with asset number")
-        unlock_cmd = f"01740000006C{money.calculate_crc('01740000006C')}"
+        unlock_cmd = get_crc("01740000006C")
         print(f"Unlock command: {unlock_cmd}")
         result = comm.send_sas_command(unlock_cmd)
         print(f"Unlock result: {result}")
@@ -64,7 +65,7 @@ def test_machine_unlock():
         
         # Method 2: Unlock with zero asset number
         print("Method 2: Unlock with zero asset number")
-        unlock_cmd2 = f"017400000000{money.calculate_crc('017400000000')}"
+        unlock_cmd2 = get_crc("017400000000")
         print(f"Unlock command: {unlock_cmd2}")
         result2 = comm.send_sas_command(unlock_cmd2)
         print(f"Unlock result: {result2}")
