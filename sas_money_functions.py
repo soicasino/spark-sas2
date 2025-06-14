@@ -178,7 +178,9 @@ class SasMoney:
             # Construct complete registration command
             # Format: Address + 73h + Length + Code(01) + AssetNumber(8) + RegistrationKey(40) + POSID(8)
             command_data = f"01{assetnumber}{registrationkey}{posid_hex}"
-            command = f"{sas_address}73{len(command_data)//2:02X}{command_data}"
+            # Calculate correct length: data length in bytes
+            data_length = len(command_data) // 2
+            command = f"{sas_address}73{data_length:02X}{command_data}"
             command_crc = get_crc(command)
             
             print(f"[AFT REGISTRATION] Complete registration command: {command_crc}")
