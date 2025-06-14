@@ -4,6 +4,7 @@
 
 import datetime
 import time
+import asyncio
 from decimal import Decimal
 from threading import Thread
 from utils import get_crc, add_left_bcd
@@ -33,7 +34,80 @@ class SasMoney:
         self.is_waiting_for_meter = False
         self.meter_response_received = False  # New flag to prevent multiple processing
         self.last_parsed_meters = {}  # Store parsed meters for API access
+        # Transaction ID management
+        self.current_transaction_id = int(datetime.datetime.now().timestamp()) % 10000
         # ... add other state as needed
+
+    def get_next_transaction_id(self):
+        """Get the next transaction ID, incrementing the internal counter"""
+        self.current_transaction_id = (self.current_transaction_id + 1) % 10000
+        return self.current_transaction_id
+
+    async def wait_for_para_yukle_completion(self, timeout=10):
+        """
+        Wait for the ParaYukle (money load) transfer to complete.
+        Returns True if successful, False if failed, or None if timeout.
+        """
+        start = time.time()
+        self.is_waiting_for_para_yukle = 1
+        
+        while time.time() - start < timeout:
+            status = self.global_para_yukleme_transfer_status
+            
+            if status == "00":  # Success
+                self.is_waiting_for_para_yukle = 0
+                return True
+            elif status in ("84", "87", "81", "40"):  # Error codes
+                self.is_waiting_for_para_yukle = 0
+                return False
+            elif status == "40":  # Transfer pending - keep waiting
+                pass
+                
+            await asyncio.sleep(0.2)
+            
+        # Timeout
+        self.is_waiting_for_para_yukle = 0
+        return None
+
+    async def wait_for_para_sifirla_completion(self, timeout=10):
+        """
+        Wait for the ParaSifirla (cashout) transfer to complete.
+        Returns True if successful, False if failed, or None if timeout.
+        """
+        start = time.time()
+        self.is_waiting_for_bakiye_sifirla = 1
+        
+        while time.time() - start < timeout:
+            status = self.global_para_silme_transfer_status
+            
+            if status == "00":  # Success
+                self.is_waiting_for_bakiye_sifirla = 0
+                return True
+            elif status in ("84", "87", "81"):  # Error codes
+                self.is_waiting_for_bakiye_sifirla = 0
+                return False
+            elif status == "40":  # Transfer pending - keep waiting
+                pass
+                
+            await asyncio.sleep(0.2)
+            
+        # Timeout
+        self.is_waiting_for_bakiye_sifirla = 0
+        return None
+
+    def get_transfer_status_description(self, status_code):
+        """Get human-readable description of transfer status codes"""
+        status_descriptions = {
+            "00": "Transfer successful",
+            "40": "Transfer pending",
+            "81": "Transaction ID not unique",
+            "84": "Transfer amount exceeds machine limit", 
+            "87": "Gaming machine unable to accept transfers (door open, tilt, etc.)",
+            "80": "Machine not registered for AFT",
+            "82": "Registration key mismatch",
+            "83": "No POS ID configured"
+        }
+        return status_descriptions.get(status_code, f"Unknown status: {status_code}")
 
     def komut_cancel_aft_transfer(self):
         command = "017201800BB4"
@@ -47,8 +121,16 @@ class SasMoney:
 
     def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey):
         self.last_para_yukle_date = datetime.datetime.now()
+        
+        # Use provided transaction ID or generate new one
         if doincreasetransactionid:
-            transactionid += 1
+            actual_transaction_id = self.get_next_transaction_id()
+        else:
+            actual_transaction_id = transactionid
+            
+        # Reset status before sending
+        self.global_para_yukleme_transfer_status = None
+        
         command_header = assetnumber + "72"
         command = "00"  # transfer code
         command += "00"  # transfer index
@@ -65,7 +147,7 @@ class SasMoney:
         command += "07"  # transfer flag (hard mode)
         command += assetnumber
         command += registrationkey
-        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in str(transactionid))
+        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in str(actual_transaction_id))
         command += add_left_bcd(str(len(transaction_id_hex) // 2), 1)
         command += transaction_id_hex
         command += "00000000"  # expiration date
@@ -74,11 +156,21 @@ class SasMoney:
         command_header += hex(len(command) // 2).replace("0x", "")
         full_command = get_crc(command_header + command)
         self.communicator.sas_send_command_with_queue("ParaYukle", full_command, 1)
+        
+        return actual_transaction_id
 
     def komut_para_sifirla(self, doincreaseid, transactionid, assetnumber, registrationkey):
         self.last_para_sifirla_date = datetime.datetime.now()
+        
+        # Use provided transaction ID or generate new one
         if doincreaseid:
-            transactionid += 1
+            actual_transaction_id = self.get_next_transaction_id()
+        else:
+            actual_transaction_id = transactionid
+            
+        # Reset status before sending
+        self.global_para_silme_transfer_status = None
+        
         command_header = assetnumber + "72"
         command = "00"  # transfer code
         command += "00"  # transfer index
@@ -89,7 +181,7 @@ class SasMoney:
         command += "0F"  # transfer flag (hard mode)
         command += assetnumber
         command += registrationkey
-        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in str(transactionid))
+        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in str(actual_transaction_id))
         command += add_left_bcd(str(len(transaction_id_hex) // 2), 1)
         command += transaction_id_hex
         command += "00000000"  # expiration date
@@ -98,6 +190,33 @@ class SasMoney:
         command_header += hex(len(command) // 2).replace("0x", "")
         full_command = get_crc(command_header + command)
         self.communicator.sas_send_command_with_queue("Cashout", full_command, 1)
+        
+        return actual_transaction_id
+
+    def handle_aft_response(self, response_data):
+        """
+        Handle AFT response from the machine and update status variables.
+        This should be called by your SAS polling/response handling logic.
+        """
+        try:
+            # Parse the response to extract status code
+            # This is a simplified parser - adjust based on your actual response format
+            if len(response_data) >= 6:
+                command = response_data[2:4]
+                if command == "72":  # AFT response
+                    # Extract status from response (adjust indices based on actual format)
+                    status_code = response_data[6:8] if len(response_data) > 8 else "00"
+                    
+                    # Update appropriate status variable based on transfer type
+                    if self.is_waiting_for_para_yukle:
+                        self.global_para_yukleme_transfer_status = status_code
+                        print(f"AFT Load Status Updated: {status_code} - {self.get_transfer_status_description(status_code)}")
+                    elif self.is_waiting_for_bakiye_sifirla:
+                        self.global_para_silme_transfer_status = status_code
+                        print(f"AFT Cashout Status Updated: {status_code} - {self.get_transfer_status_description(status_code)}")
+                        
+        except Exception as e:
+            print(f"Error parsing AFT response: {e}")
 
     def yanit_bakiye_sorgulama(self, yanit):
         # Parse balance query response (simplified)

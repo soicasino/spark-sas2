@@ -74,7 +74,8 @@ async def add_credits(
         # Execute AFT credit transfer using SAS money functions
         try:
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                result = sas_comm.sas_money.komut_para_yukle(
+                # Send the transfer command
+                actual_transaction_id = sas_comm.sas_money.komut_para_yukle(
                     doincreasetransactionid,
                     transfertype,
                     customerbalance,
@@ -83,6 +84,41 @@ async def add_credits(
                     assetnumber,
                     registrationkey
                 )
+                
+                # Wait for completion with timeout
+                wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=15)
+                
+                if wait_result is True:
+                    # Success - transfer completed
+                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                    return MachineControlResponse(
+                        success=True,
+                        message=f"Credit addition of ${request.amount:.2f} completed successfully",
+                        execution_time_ms=execution_time,
+                        data={
+                            "action": "add_credits",
+                            "amount": request.amount,
+                            "credits": int(request.amount * 100),
+                            "transaction_id": actual_transaction_id,
+                            "transfer_type": request.transfer_type,
+                            "transfer_type_name": get_transfer_type_name(request.transfer_type),
+                            "status": "completed"
+                        }
+                    )
+                elif wait_result is False:
+                    # Transfer failed
+                    status_code = sas_comm.sas_money.global_para_yukleme_transfer_status
+                    status_desc = sas_comm.sas_money.get_transfer_status_description(status_code)
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"AFT credit transfer failed: {status_desc} (Code: {status_code})"
+                    )
+                else:
+                    # Timeout
+                    raise HTTPException(
+                        status_code=504,
+                        detail="AFT credit transfer timed out - machine did not respond within 15 seconds"
+                    )
             else:
                 # Fallback to direct money_cash_in method if available
                 result = sas_comm.money_cash_in(
@@ -94,22 +130,22 @@ async def add_credits(
                     assetnumber,
                     registrationkey
                 )
-            
-            execution_time = (datetime.now() - start_time).total_seconds() * 1000
-            
-            return MachineControlResponse(
-                success=True,
-                message=f"Credit addition of ${request.amount:.2f} initiated successfully",
-                execution_time_ms=execution_time,
-                data={
-                    "action": "add_credits",
-                    "amount": request.amount,
-                    "credits": int(request.amount * 100),
-                    "transaction_id": transactionid,
-                    "transfer_type": request.transfer_type,
-                    "transfer_type_name": get_transfer_type_name(request.transfer_type)
-                }
-            )
+                
+                execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                return MachineControlResponse(
+                    success=True,
+                    message=f"Credit addition of ${request.amount:.2f} initiated (fallback method)",
+                    execution_time_ms=execution_time,
+                    data={
+                        "action": "add_credits",
+                        "amount": request.amount,
+                        "credits": int(request.amount * 100),
+                        "transaction_id": transactionid,
+                        "transfer_type": request.transfer_type,
+                        "transfer_type_name": get_transfer_type_name(request.transfer_type),
+                        "status": "initiated_fallback"
+                    }
+                )
             
         except Exception as aft_error:
             raise HTTPException(
@@ -160,8 +196,16 @@ async def cashout_credits(
                     sendertext="API-Cashout"
                 )
                 
-                # Wait briefly for balance response
-                await asyncio.sleep(0.5)
+                # Wait for balance response with proper timeout
+                timeout = 5
+                start_wait = datetime.now()
+                while (datetime.now() - start_wait).total_seconds() < timeout:
+                    # Check if balance has been updated (non-zero values indicate response)
+                    if (sas_comm.sas_money.yanit_bakiye_tutar > 0 or 
+                        sas_comm.sas_money.yanit_restricted_amount > 0 or 
+                        sas_comm.sas_money.yanit_nonrestricted_amount > 0):
+                        break
+                    await asyncio.sleep(0.2)
                 
                 # Get current balance
                 current_balance = sas_comm.sas_money.yanit_bakiye_tutar
@@ -214,31 +258,51 @@ async def cashout_credits(
         
         # Execute AFT cashout using SAS money functions
         try:
-            result = sas_comm.sas_money.komut_para_sifirla(
+            # Send the cashout command
+            actual_transaction_id = sas_comm.sas_money.komut_para_sifirla(
                 doincreaseid,
                 transactionid,
                 assetnumber,
                 registrationkey
             )
             
-            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            # Wait for completion with timeout
+            wait_result = await sas_comm.sas_money.wait_for_para_sifirla_completion(timeout=15)
             
             cashout_amount = request.amount if request.amount else total_balance
             
-            return MachineControlResponse(
-                success=True,
-                message=f"Cashout of ${cashout_amount:.2f} initiated successfully",
-                execution_time_ms=execution_time,
-                data={
-                    "action": "cashout",
-                    "requested_amount": request.amount,
-                    "total_balance": total_balance,
-                    "cashable_balance": current_balance,
-                    "restricted_balance": restricted_balance,
-                    "nonrestricted_balance": nonrestricted_balance,
-                    "transaction_id": transactionid
-                }
-            )
+            if wait_result is True:
+                # Success - cashout completed
+                execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                return MachineControlResponse(
+                    success=True,
+                    message=f"Cashout of ${cashout_amount:.2f} completed successfully",
+                    execution_time_ms=execution_time,
+                    data={
+                        "action": "cashout",
+                        "requested_amount": request.amount,
+                        "total_balance": total_balance,
+                        "cashable_balance": current_balance,
+                        "restricted_balance": restricted_balance,
+                        "nonrestricted_balance": nonrestricted_balance,
+                        "transaction_id": actual_transaction_id,
+                        "status": "completed"
+                    }
+                )
+            elif wait_result is False:
+                # Cashout failed
+                status_code = sas_comm.sas_money.global_para_silme_transfer_status
+                status_desc = sas_comm.sas_money.get_transfer_status_description(status_code)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"AFT cashout failed: {status_desc} (Code: {status_code})"
+                )
+            else:
+                # Timeout
+                raise HTTPException(
+                    status_code=504,
+                    detail="AFT cashout timed out - machine did not respond within 15 seconds"
+                )
             
         except Exception as cashout_error:
             raise HTTPException(
@@ -282,8 +346,16 @@ async def get_balance(sas_service: SASWebService = Depends(get_sas_service)):
                     sendertext="API-Balance-Query"
                 )
                 
-                # Wait briefly for balance response
-                await asyncio.sleep(0.5)
+                # Wait for balance response with proper timeout
+                timeout = 5
+                start_wait = datetime.now()
+                while (datetime.now() - start_wait).total_seconds() < timeout:
+                    # Check if balance has been updated (non-zero values indicate response)
+                    if (sas_comm.sas_money.yanit_bakiye_tutar > 0 or 
+                        sas_comm.sas_money.yanit_restricted_amount > 0 or 
+                        sas_comm.sas_money.yanit_nonrestricted_amount > 0):
+                        break
+                    await asyncio.sleep(0.2)
                 
                 # Get current balance
                 current_balance = sas_comm.sas_money.yanit_bakiye_tutar
@@ -569,4 +641,147 @@ async def register_aft(
         raise HTTPException(
             status_code=500,
             detail=f"AFT registration error: {str(e)}"
+        )
+
+
+@router.get("/aft-debug", response_model=MachineControlResponse)
+async def aft_debug_status(
+    sas_service: SASWebService = Depends(get_sas_service)
+):
+    """
+    Comprehensive AFT debugging information to help diagnose transfer issues.
+    
+    Shows:
+    - Current AFT status and lock state
+    - Asset number information  
+    - Transfer status codes from the machine
+    - SAS money system status
+    - Last transfer results
+    """
+    try:
+        start_time = datetime.now()
+        
+        # Check SAS communication availability
+        if not (sas_service.slot_machine_app and 
+                sas_service.slot_machine_app.sas_comm):
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        debug_info = {}
+        
+        # 1. Asset Number Information
+        debug_info['asset_number'] = {
+            'hex_format': getattr(sas_comm, 'asset_number', None),
+            'decimal_format': getattr(sas_comm, 'decimal_asset_number', None),
+            'for_aft': sas_comm.get_asset_number_for_aft() if hasattr(sas_comm, 'get_asset_number_for_aft') else None
+        }
+        
+        # 2. SAS Money System Status
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            sas_money = sas_comm.sas_money
+            debug_info['sas_money_status'] = {
+                'available': True,
+                'last_balance_query': {
+                    'cashable': float(getattr(sas_money, 'yanit_bakiye_tutar', 0)),
+                    'restricted': float(getattr(sas_money, 'yanit_restricted_amount', 0)),
+                    'nonrestricted': float(getattr(sas_money, 'yanit_nonrestricted_amount', 0))
+                },
+                'transfer_status': {
+                    'para_yukleme_status': getattr(sas_money, 'global_para_yukleme_transfer_status', None),
+                    'para_silme_status': getattr(sas_money, 'global_para_silme_transfer_status', None),
+                    'waiting_for_para_yukle': getattr(sas_money, 'is_waiting_for_para_yukle', 0),
+                    'waiting_for_bakiye_sifirla': getattr(sas_money, 'is_waiting_for_bakiye_sifirla', 0)
+                },
+                'transaction_info': {
+                    'yukle_first_transaction': getattr(sas_money, 'yukle_first_transaction', 0),
+                    'yukle_last_transaction': getattr(sas_money, 'yukle_last_transaction', 0),
+                    'sifirla_first_transaction': getattr(sas_money, 'sifirla_first_transaction', 0),
+                    'sifirla_last_transaction': getattr(sas_money, 'sifirla_last_transaction', 0)
+                }
+            }
+        else:
+            debug_info['sas_money_status'] = {
+                'available': False,
+                'reason': 'SAS money system not initialized'
+            }
+        
+        # 3. AFT Protocol Status Interpretation
+        debug_info['aft_protocol_status'] = {
+            'status_code_meanings': {
+                '00': 'Transfer successful',
+                '01': 'Transfer pending', 
+                '40': 'Transfer amount exceeds limit',
+                '41': 'Amount not even multiple of denomination',
+                '42': 'Amount not even multiple of accounting denomination',
+                '43': 'Amount exceeds machine transfer limit',
+                '80': 'Machine not registered for AFT',
+                '81': 'Registration key mismatch',
+                '82': 'No POS ID',
+                '83': 'No won amount available for cashout'
+            },
+            'current_status': getattr(sas_comm.sas_money, 'global_para_yukleme_transfer_status', 'unknown') if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money else 'unknown'
+        }
+        
+        # 4. Machine Communication Status
+        debug_info['communication_status'] = {
+            'port_open': getattr(sas_comm, 'is_port_open', False),
+            'port_name': getattr(sas_comm, 'port_name', None),
+            'sas_address': getattr(sas_comm, 'sas_address', None),
+            'device_type': getattr(sas_comm, 'device_type_id', None),
+            'last_communication': 'Recently active' if hasattr(sas_comm, 'last_80_time') else 'Unknown'
+        }
+        
+        # 5. AFT Recommendations
+        recommendations = []
+        
+        # Check asset number
+        if not debug_info['asset_number']['hex_format']:
+            recommendations.append("Asset number not read from machine - try restarting SAS communication")
+        
+        # Check AFT status
+        current_status = debug_info['aft_protocol_status']['current_status']
+        if current_status == '80':
+            recommendations.append("Machine not registered for AFT - run /register-aft endpoint")
+        elif current_status == '81':
+            recommendations.append("AFT registration key mismatch - check asset number format")
+        elif current_status == '82':
+            recommendations.append("No POS ID configured - check AFT registration")
+        elif current_status == 'unknown':
+            recommendations.append("No AFT status received - machine may not support AFT or need registration")
+        
+        # Check if transfers are being attempted
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            if getattr(sas_comm.sas_money, 'is_waiting_for_para_yukle', 0):
+                recommendations.append("Transfer in progress - wait for completion before trying another")
+        
+        debug_info['recommendations'] = recommendations
+        
+        execution_time = (datetime.now() - start_time).total_seconds() * 1000
+        
+        return MachineControlResponse(
+            success=True,
+            message="AFT debug information retrieved successfully",
+            execution_time_ms=execution_time,
+            data={
+                "action": "aft_debug",
+                **debug_info,
+                "next_steps": [
+                    "1. Check AFT registration status",
+                    "2. Verify asset number is properly read",
+                    "3. Send AFT lock/status request (0x74)",
+                    "4. Monitor transfer status codes",
+                    "5. Check machine AFT capability"
+                ]
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AFT debug error: {str(e)}"
         ) 
