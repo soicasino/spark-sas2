@@ -366,7 +366,6 @@ class SASCommunicator:
                 
         except Exception as e:
             print(f"Error in handle_received_sas_command: {e}")
-        print("DEBUG: handle_received_sas_command end")
 
     def _split_sas_messages(self, tdata):
         """Split concatenated SAS messages into individual messages"""
