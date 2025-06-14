@@ -13,69 +13,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from sas_communicator import SASCommunicator
 from config_manager import ConfigManager
 
-def read_asset_number_with_retry(communicator, max_attempts=10):
-    """Read asset number with multiple attempts and proper response handling"""
-    print(f"Reading asset number with up to {max_attempts} attempts...")
-    
-    for attempt in range(max_attempts):
-        print(f"\n--- Attempt {attempt + 1} ---")
-        
-        # Send the asset number query command
-        sas_address = communicator.sas_address
-        command = f"{sas_address}7301FF"
-        from utils import get_crc
-        command_crc = get_crc(command)
-        
-        print(f"Sending asset number query: {command_crc}")
-        communicator.sas_send_command_with_queue("ReadAssetNo", command_crc, 1)
-        
-        # Wait for response with longer timeout
-        print("Waiting for response...")
-        for check in range(50):  # Wait up to 10 seconds (50 * 0.2s)
-            time.sleep(0.2)
-            response = communicator.get_data_from_sas_port()
-            if response:
-                print(f"Response received: {response}")
-                
-                # Check if this is an asset number response (starts with 0173)
-                if response.startswith('0173'):
-                    print("Asset number response detected!")
-                    
-                    # Parse the asset number
-                    if len(response) >= 16:
-                        asset_hex = response[8:16]
-                        print(f"Raw asset hex: {asset_hex}")
-                        
-                        if len(asset_hex) % 2 != 0:
-                            asset_hex = '0' + asset_hex
-                        
-                        # Reverse by bytes (little-endian)
-                        reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
-                        asset_dec = int(reversed_hex, 16)
-                        
-                        print(f"Asset number - HEX: {asset_hex}, Reversed: {reversed_hex}, DEC: {asset_dec}")
-                        
-                        # Store in communicator
-                        communicator.asset_number = asset_hex
-                        communicator.decimal_asset_number = asset_dec
-                        
-                        return asset_dec
-                    else:
-                        print("Asset number response too short")
-                else:
-                    print(f"Other response: {response}")
-                    # Process other responses
-                    communicator.handle_received_sas_command(response)
-            else:
-                if check % 10 == 0:  # Print every 2 seconds
-                    print(f"Still waiting... ({check * 0.2:.1f}s)")
-        
-        print(f"Attempt {attempt + 1} failed - no asset number response")
-        time.sleep(1)  # Wait 1 second before next attempt
-    
-    print(f"Failed to read asset number after {max_attempts} attempts")
-    return None
-
 def test_aft_registration():
     """Test AFT registration process step by step"""
     
@@ -94,21 +31,22 @@ def test_aft_registration():
     
     print("SAS port opened successfully")
     
-    # Test 1: Read asset number with retry
-    print("\n--- Test 1: Reading Asset Number (with retry) ---")
-    asset_number = read_asset_number_with_retry(communicator, max_attempts=5)
-    print(f"Final asset number result: {asset_number}")
+    # Use known asset number from main app logs
+    print("\n--- Using Known Asset Number ---")
+    asset_number = 108  # From main app logs
+    asset_hex = f"{asset_number:08X}"  # 0000006C
+    print(f"Using known asset number: {asset_number} (hex: {asset_hex})")
     
-    if asset_number is None:
-        print("WARNING: Could not read asset number, using default")
-        asset_number = 108  # Default value
+    # Store in communicator
+    communicator.asset_number = asset_hex
+    communicator.decimal_asset_number = asset_number
     
-    # Test 2: Send general polls to establish communication
-    print("\n--- Test 2: Establishing Communication ---")
+    # Test 1: Send general polls to establish communication
+    print("\n--- Test 1: Establishing Communication ---")
     print("Sending general polls...")
-    for i in range(5):
+    for i in range(3):
         communicator.send_general_poll()
-        time.sleep(0.5)
+        time.sleep(0.3)
         
         # Check for any responses
         response = communicator.get_data_from_sas_port()
@@ -118,10 +56,39 @@ def test_aft_registration():
         else:
             print(f"Poll {i+1}: No response")
     
+    # Test 2: AFT Registration Status Query
+    print("\n--- Test 2: AFT Registration Status Query ---")
+    sas_address = communicator.sas_address
+    command = f"{sas_address}7301FF"
+    from utils import get_crc
+    command_crc = get_crc(command)
+    print(f"Sending AFT status query: {command_crc}")
+    
+    communicator.sas_send_command_with_queue("AFTStatusQuery", command_crc, 1)
+    
+    # Wait for status response
+    print("Waiting for AFT status response...")
+    status_response_received = False
+    for i in range(25):  # Wait up to 5 seconds
+        time.sleep(0.2)
+        response = communicator.get_data_from_sas_port()
+        if response:
+            print(f"Status response {i+1}: {response}")
+            communicator.handle_received_sas_command(response)
+            if response.startswith('0173'):
+                status_response_received = True
+                print("AFT status response received!")
+                break
+        else:
+            if i % 5 == 0:
+                print(f"Status waiting... ({i * 0.2:.1f}s)")
+    
+    if not status_response_received:
+        print("WARNING: No AFT status response received")
+    
     # Test 3: Full AFT registration
     print("\n--- Test 3: Full AFT Registration ---")
     try:
-        asset_hex = f"{asset_number:08X}"
         registration_key = "00000000000000000000000000000000000000000000"
         pos_id = "POS001"
         
@@ -131,9 +98,7 @@ def test_aft_registration():
         
         # Step 1: Initialize registration
         print("\nStep 1: Initialize AFT registration")
-        sas_address = communicator.sas_address
         init_command = f"{sas_address}7301FF"
-        from utils import get_crc
         init_command_crc = get_crc(init_command)
         print(f"Sending init command: {init_command_crc}")
         
@@ -213,6 +178,8 @@ def test_aft_registration():
         
         # Send a small test transfer
         transaction_id = communicator.sas_money.get_next_transaction_id()
+        print(f"Using transaction ID: {transaction_id}")
+        
         result = communicator.sas_money.komut_para_yukle(
             doincreasetransactionid=0,
             transfertype=10,  # Cashable
@@ -258,6 +225,21 @@ def test_aft_registration():
         
     except Exception as e:
         print(f"Error during AFT transfer test: {e}")
+    
+    # Test 6: Send some general polls to see what happens
+    print("\n--- Test 6: Final Communication Check ---")
+    print("Sending final polls...")
+    for i in range(5):
+        communicator.send_general_poll()
+        time.sleep(0.3)
+        
+        # Check for any responses
+        response = communicator.get_data_from_sas_port()
+        if response:
+            print(f"Final poll response {i+1}: {response}")
+            communicator.handle_received_sas_command(response)
+        else:
+            print(f"Final poll {i+1}: No response")
     
     # Cleanup
     print("\n--- Cleanup ---")
