@@ -7,6 +7,7 @@ import time
 import sys
 import os
 import threading
+import asyncio
 
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -55,7 +56,7 @@ class AFTTester:
                 print(f"Error in polling loop: {e}")
                 time.sleep(0.5)
 
-def test_simple_aft_transfer():
+async def test_simple_aft_transfer():
     """Test AFT transfer with proper polling"""
     
     print("=== Simple AFT Transfer Test with Polling ===")
@@ -96,21 +97,19 @@ def test_simple_aft_transfer():
         
         # Wait for initial communication to stabilize
         print("Waiting for initial communication to stabilize...")
-        time.sleep(2)
+        await asyncio.sleep(2)
         
-        # Test 1: Simple AFT status query
+        # Test 1: Simple AFT status query with proper async waiting
         print("\n--- Test 1: AFT Status Query ---")
         result = money.komut_bakiye_sorgulama("test", 0, "SimpleAFTTest")
         print(f"Balance query initiated, result: {result}")
         
-        # Wait for response
-        print("Waiting for balance response...")
-        for i in range(10):  # Wait up to 5 seconds
-            time.sleep(0.5)
-            if not money.is_waiting_for_bakiye_sorgulama:
-                print(f"Balance response received: {money.yanit_bakiye_tutar} TL")
-                break
-            print(f"Still waiting for balance response... ({i+1}/10)")
+        # Use the built-in async wait function
+        balance_success = await money.wait_for_bakiye_sorgulama_completion(timeout=10)
+        if balance_success:
+            print(f"✅ Balance query SUCCESS: {money.yanit_bakiye_tutar} TL (Cashable), {money.yanit_restricted_amount} TL (Restricted), {money.yanit_nonrestricted_amount} TL (Non-restricted)")
+        else:
+            print("❌ Balance query TIMEOUT or FAILED")
         
         # Test 2: Direct AFT transfer (no complex registration)
         print("\n--- Test 2: Direct AFT Transfer ---")
@@ -136,56 +135,47 @@ def test_simple_aft_transfer():
         
         print(f"AFT transfer initiated, transaction ID: {result}")
         
-        # Wait for responses and check status
-        print("Waiting for AFT responses...")
-        start_time = time.time()
+        # Use the built-in async wait function for AFT completion
+        aft_success = await money.wait_for_para_yukle_completion(timeout=15)
+        if aft_success:
+            print("✅ AFT Transfer SUCCESS!")
+        elif aft_success is False:
+            print("❌ AFT Transfer FAILED!")
+        else:
+            print("⏰ AFT Transfer TIMEOUT!")
         
-        for i in range(20):  # Wait up to 10 seconds
-            time.sleep(0.5)
-            elapsed = time.time() - start_time
-            
-            # Check transfer status
-            status = money.global_para_yukleme_transfer_status
-            print(f"[{elapsed:.1f}s] Transfer status: {status}")
-            
-            if status == "00":
-                print("✅ AFT Transfer SUCCESS!")
-                break
-            elif status in ["84", "87", "81"]:
-                print(f"❌ AFT Transfer FAILED with status: {status}")
-                break
-            elif status == "40":
-                print("⏳ AFT Transfer PENDING...")
-            
         # Test 3: Check final balance
         print("\n--- Test 3: Final Balance Check ---")
-        money.is_waiting_for_bakiye_sorgulama = True
-        money.komut_bakiye_sorgulama("test", 0, "FinalBalanceCheck")
+        result = money.komut_bakiye_sorgulama("test", 0, "FinalBalanceCheck")
         
-        # Wait for balance response
-        for i in range(10):
-            time.sleep(0.5)
-            if not money.is_waiting_for_bakiye_sorgulama:
-                break
-            print(f"Waiting for final balance... ({i+1}/10)")
-        
-        print(f"Final balance: {money.yanit_bakiye_tutar} TL")
+        # Wait for balance response using async function
+        balance_success = await money.wait_for_bakiye_sorgulama_completion(timeout=10)
+        if balance_success:
+            print(f"✅ Final balance: {money.yanit_bakiye_tutar} TL (Cashable), {money.yanit_restricted_amount} TL (Restricted), {money.yanit_nonrestricted_amount} TL (Non-restricted)")
+        else:
+            print("❌ Final balance query TIMEOUT or FAILED")
         
         # Test 4: Check for any final responses
         print("\n--- Test 4: Final Communication Check ---")
         for i in range(5):
-            time.sleep(0.5)
+            await asyncio.sleep(0.5)
             print(f"Final check {i+1}/5...")
         
         return True
         
     except Exception as e:
         print(f"Error during test: {e}")
+        import traceback
+        traceback.print_exc()
         return False
     finally:
         tester.stop_polling()
         communicator.close_port()
         print("SAS port closed")
 
+def main():
+    """Main function to run the async test"""
+    return asyncio.run(test_simple_aft_transfer())
+
 if __name__ == "__main__":
-    test_simple_aft_transfer() 
+    main() 
