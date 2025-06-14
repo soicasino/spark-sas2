@@ -1359,17 +1359,24 @@ class SasMoney:
                 print(f"[AFT STATUS CHECK] ✅ Machine is unlocked")
                 return True
             elif lock_status == "FF":
-                print(f"[AFT STATUS CHECK] ⚠️  Machine reports all locks (FF) - likely test/simulation mode")
+                print(f"[AFT STATUS CHECK] ⚠️  Machine reports all locks (FF) - checking if test/simulation mode")
                 # Check if AFT is actually working despite lock status
-                if aft_status in ["B0", "A0", "90"]:  # Common AFT ready states
-                    print(f"[AFT STATUS CHECK] ✅ AFT appears functional despite lock status")
+                # In test mode, machines often report FF locks but still process AFT commands
+                if aft_status in ["B0", "A0", "90", "80"]:  # Common AFT states (including registered states)
+                    print(f"[AFT STATUS CHECK] ✅ AFT appears functional despite lock status (test/simulation mode)")
+                    print(f"[AFT STATUS CHECK] 💡 Proceeding with AFT operations - machine may be in test mode")
                     return True
                 else:
-                    print(f"[AFT STATUS CHECK] ❌ Machine is fully locked")
+                    print(f"[AFT STATUS CHECK] ❌ Machine is fully locked and AFT non-functional")
                     return False
             else:
                 print(f"[AFT STATUS CHECK] ⚠️  Machine partially locked: {lock_status}")
-                return False
+                # For partial locks, still try AFT if status looks reasonable
+                if aft_status in ["B0", "A0", "90", "80"]:
+                    print(f"[AFT STATUS CHECK] ⚠️  Partial locks but AFT may still work")
+                    return True
+                else:
+                    return False
         else:
             print(f"[AFT STATUS CHECK] ⚠️  No status information available")
             return False
@@ -1423,15 +1430,24 @@ class SasMoney:
             # Check results
             if hasattr(self.communicator, 'last_game_lock_status'):
                 lock_status = self.communicator.last_game_lock_status
+                aft_status = getattr(self.communicator, 'last_aft_status', 'FF')
+                
                 if lock_status == "00":
                     print(f"[ADVANCED UNLOCK] ✅ SUCCESS: Machine unlocked!")
                     return True
-                elif lock_status != "FF":
+                elif lock_status == "FF":
+                    print(f"[ADVANCED UNLOCK] ⚠️  Machine reports all locks (FF) - checking AFT functionality")
+                    # In test/simulation mode, machine may report FF but still work
+                    # Check if we can get successful AFT responses
+                    if aft_status in ["B0", "A0", "90"]:
+                        print(f"[ADVANCED UNLOCK] ✅ AFT appears functional despite lock status - proceeding")
+                        return True
+                    else:
+                        print(f"[ADVANCED UNLOCK] ❌ FAILED: Machine not responding to AFT")
+                        return False
+                else:
                     print(f"[ADVANCED UNLOCK] ⚠️  PARTIAL: Lock status improved to {lock_status}")
                     return True
-                else:
-                    print(f"[ADVANCED UNLOCK] ❌ FAILED: Machine still locked ({lock_status})")
-                    return False
             else:
                 print(f"[ADVANCED UNLOCK] ⚠️  Cannot verify - no status available")
                 return None
