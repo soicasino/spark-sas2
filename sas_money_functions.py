@@ -264,16 +264,13 @@ class SasMoney:
         self.is_waiting_for_bakiye_sorgulama = True
         
         # Get asset number from communicator
-        asset_number = "00000000"  # Default
+        asset_number = "0000006C"  # Default to known asset number (108 decimal)
         if hasattr(self.communicator, 'asset_number') and self.communicator.asset_number:
             asset_number = self.communicator.asset_number
-        elif hasattr(self.communicator, 'sas_address') and self.communicator.sas_address:
-            # Convert SAS address to asset number format
-            sas_addr = self.communicator.sas_address
-            if len(sas_addr) == 2:
-                asset_number = f"{sas_addr}000000"
-            else:
-                asset_number = sas_addr.ljust(8, '0')[:8]
+        elif hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
+            asset_number = self.communicator.asset_number_hex
+        # Note: SAS address (01) is NOT the same as asset number (0000006C)
+        # Don't convert SAS address to asset number - they are different values
         
         print(f"[BALANCE QUERY] Using asset number: {asset_number}")
         
