@@ -45,7 +45,7 @@ def test_machine_unlock():
             print("⚠️  Initial balance query failed")
         
         # Wait for response
-        balance_received = money.wait_for_balance_query_completion(timeout=3)
+        balance_received = asyncio.run(money.wait_for_bakiye_sorgulama_completion(timeout=3))
         print(f"Balance received: {balance_received}")
         print(f"Current balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
         
@@ -88,7 +88,7 @@ def test_machine_unlock():
             print("⚠️  Post-unlock balance query failed")
         
         # Wait for response
-        balance_received = money.wait_for_balance_query_completion(timeout=3)
+        balance_received = asyncio.run(money.wait_for_bakiye_sorgulama_completion(timeout=3))
         print(f"Balance received: {balance_received}")
         print(f"Updated balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
         
@@ -112,7 +112,7 @@ def test_machine_unlock():
         
         # Wait for transfer completion
         print("Waiting for transfer completion...")
-        transfer_completed = money.wait_for_para_yukle_completion(timeout=10)
+        transfer_completed = asyncio.run(money.wait_for_para_yukle_completion(timeout=10))
         print(f"Transfer completed: {transfer_completed}")
         print(f"Transfer status: {money.get_transfer_status_description(money.transfer_status)}")
         
@@ -120,7 +120,7 @@ def test_machine_unlock():
         print("\n=== Final Balance Check ===")
         result = money.komut_bakiye_sorgulama("unlock_test", False, "final_balance")
         if result:
-            balance_received = money.wait_for_balance_query_completion(timeout=3)
+            balance_received = asyncio.run(money.wait_for_bakiye_sorgulama_completion(timeout=3))
             print(f"Final balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
         
     except Exception as e:
