@@ -18,14 +18,17 @@ import { sasApi, SASWebSocketClient, CardReaderStatus, MeterData, BillAcceptorSt
 export default function SASDashboard() {
   // State management
   const [cardStatus, setCardStatus] = useState<CardReaderStatus | null>(null);
-  const [meters, setMeters] = useState<MeterData | null>(null);
-  const [billAcceptorStatus, setBillAcceptorStatus] = useState<BillAcceptorStatus | null>(null);
-  const [eventStats, setEventStats] = useState<EventStats | null>(null);
-  const [liveEvents, setLiveEvents] = useState<any[]>([]);
+  const [meters, setMeters] = useState<any>(null);
+  const [billAcceptorStatus, setBillAcceptorStatus] = useState<any>(null);
+  const [eventStats, setEventStats] = useState<any>(null);
   const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [aftBalance, setAftBalance] = useState<any>(null);
 
+  // Loading states
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+
+  const [liveEvents, setLiveEvents] = useState<any[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
 
   // Money transfer state
@@ -75,7 +78,7 @@ export default function SASDashboard() {
   }, []);
 
   const initializeDashboard = async () => {
-    await Promise.all([refreshCardStatus(), refreshMeters(), refreshBillAcceptorStatus(), refreshEventStats(), refreshSystemStatus()]);
+    await Promise.all([refreshCardStatus(), refreshMeters(), refreshBillAcceptorStatus(), refreshEventStats(), refreshSystemStatus(), refreshAftBalance()]);
   };
 
   const setLoadingState = (key: string, state: boolean) => {
@@ -117,6 +120,8 @@ export default function SASDashboard() {
 
   const refreshSystemStatus = () => handleApiCall("systemStatus", () => sasApi.getSystemStatus(), setSystemStatus);
 
+  const refreshAftBalance = () => handleApiCall("aftBalance", () => sasApi.getMoneyBalance(), setAftBalance);
+
   // Card Reader Actions
   const handleEjectCard = () =>
     handleApiCall(
@@ -153,7 +158,10 @@ export default function SASDashboard() {
         () => sasApi.cashout(amount),
         () => {
           setTransferAmount("");
-          setTimeout(refreshMeters, 500);
+          setTimeout(() => {
+            refreshMeters();
+            refreshAftBalance();
+          }, 500);
         }
       );
     } else {
@@ -163,7 +171,10 @@ export default function SASDashboard() {
         () => sasApi.addCredits(amount, transferType),
         () => {
           setTransferAmount("");
-          setTimeout(refreshMeters, 500); // Refresh meters to see balance changes
+          setTimeout(() => {
+            refreshMeters();
+            refreshAftBalance();
+          }, 500); // Refresh both meters and AFT balance to see changes
         }
       );
     }
@@ -248,10 +259,11 @@ export default function SASDashboard() {
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">
-                    {meters?.data.meters?.current_credits ? formatCurrency(meters.data.meters.current_credits / 100) : "$0.00"}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Credits: {meters?.data.meters?.current_credits || 0}</p>
+                  <div className="text-2xl font-bold">{aftBalance?.data?.total_balance ? formatCurrency(aftBalance.data.total_balance) : "$0.00"}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Cashable: {aftBalance?.data?.cashable_balance ? formatCurrency(aftBalance.data.cashable_balance) : "$0.00"} | Restricted:{" "}
+                    {aftBalance?.data?.restricted_balance ? formatCurrency(aftBalance.data.restricted_balance) : "$0.00"}
+                  </p>
                 </CardContent>
               </Card>
 

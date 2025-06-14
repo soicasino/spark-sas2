@@ -437,7 +437,7 @@ async def cashout_credits(
 @router.get("/balance", response_model=MachineControlResponse)
 async def get_balance(sas_service: SASWebService = Depends(get_sas_service)):
     """
-    Query current balance on the slot machine
+    Query current AFT balance on the slot machine
     """
     try:
         start_time = datetime.now()
@@ -452,56 +452,66 @@ async def get_balance(sas_service: SASWebService = Depends(get_sas_service)):
         
         sas_comm = sas_service.slot_machine_app.sas_comm
         
-        # Query balance using SAS money functions
+        # Query AFT balance using SAS command 74h (AFT status request)
         try:
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                print("[BALANCE] Querying current credits via meter system...")
+                print("[BALANCE] Querying AFT balance via balance query...")
                 
-                # Get current meters to check credits
-                sas_comm.sas_money.get_meter(isall=0)
+                # Send AFT balance query (SAS command 74h)
+                sas_comm.sas_money.komut_bakiye_sorgulama("balance_api", False, "api_balance_query")
                 
-                # Wait a moment for meter response
-                await asyncio.sleep(1)
+                # Wait for balance response
+                balance_result = await sas_comm.sas_money.wait_for_bakiye_sorgulama_completion(timeout=5)
                 
-                # Get current credits from parsed meters
-                current_credits = 0
-                if hasattr(sas_comm.sas_money, 'last_parsed_meters') and sas_comm.sas_money.last_parsed_meters:
-                    meters = sas_comm.sas_money.last_parsed_meters
-                    # Look for current credits in various possible meter names
-                    current_credits = (
-                        meters.get('current_credits', 0) or
-                        meters.get('total_coin_in', 0) - meters.get('total_coin_out', 0) or
-                        0
+                if balance_result:
+                    # Get the parsed balance amounts
+                    cashable_balance = getattr(sas_comm.sas_money, 'yanit_bakiye_tutar', 0)
+                    restricted_balance = getattr(sas_comm.sas_money, 'yanit_restricted_amount', 0)
+                    nonrestricted_balance = getattr(sas_comm.sas_money, 'yanit_nonrestricted_amount', 0)
+                    
+                    print(f"[BALANCE] AFT Balance retrieved:")
+                    print(f"[BALANCE]   Cashable: {cashable_balance}")
+                    print(f"[BALANCE]   Restricted: {restricted_balance}")
+                    print(f"[BALANCE]   Non-restricted: {nonrestricted_balance}")
+                    
+                    total_balance = cashable_balance + restricted_balance + nonrestricted_balance
+                    
+                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                    
+                    return MachineControlResponse(
+                        success=True,
+                        message="AFT balance retrieved successfully",
+                        execution_time_ms=execution_time,
+                        data={
+                            "cashable_balance": float(cashable_balance),
+                            "restricted_balance": float(restricted_balance),
+                            "nonrestricted_balance": float(nonrestricted_balance),
+                            "total_balance": float(total_balance),
+                            "currency": "USD"
+                        }
                     )
-                    print(f"[BALANCE] Current credits from meters: {current_credits}")
                 else:
-                    print("[BALANCE] No meter data available")
-                
-                # Convert to dollars if needed (assuming credits are in cents)
-                if current_credits > 1000:  # Likely in cents
-                    current_balance = current_credits / 100
-                else:
-                    current_balance = current_credits
-                
-                # For balance endpoint, we'll show all balance as cashable since we can't distinguish
-                restricted_balance = 0
-                nonrestricted_balance = 0
-                total_balance = current_balance
-                
-                execution_time = (datetime.now() - start_time).total_seconds() * 1000
-                
-                return MachineControlResponse(
-                    success=True,
-                    message="Balance retrieved successfully",
-                    execution_time_ms=execution_time,
-                    data={
-                        "cashable_balance": float(current_balance),
-                        "restricted_balance": float(restricted_balance),
-                        "nonrestricted_balance": float(nonrestricted_balance),
-                        "total_balance": float(total_balance),
-                        "currency": "USD"  # Assuming USD, could be configurable
-                    }
-                )
+                    print("[BALANCE] AFT balance query timed out")
+                    # Fallback to current stored values
+                    cashable_balance = getattr(sas_comm.sas_money, 'yanit_bakiye_tutar', 0)
+                    restricted_balance = getattr(sas_comm.sas_money, 'yanit_restricted_amount', 0)
+                    nonrestricted_balance = getattr(sas_comm.sas_money, 'yanit_nonrestricted_amount', 0)
+                    total_balance = cashable_balance + restricted_balance + nonrestricted_balance
+                    
+                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                    
+                    return MachineControlResponse(
+                        success=True,
+                        message="AFT balance retrieved from cache (query timeout)",
+                        execution_time_ms=execution_time,
+                        data={
+                            "cashable_balance": float(cashable_balance),
+                            "restricted_balance": float(restricted_balance),
+                            "nonrestricted_balance": float(nonrestricted_balance),
+                            "total_balance": float(total_balance),
+                            "currency": "USD"
+                        }
+                    )
             else:
                 raise HTTPException(
                     status_code=503,
@@ -511,7 +521,7 @@ async def get_balance(sas_service: SASWebService = Depends(get_sas_service)):
         except Exception as balance_error:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to query balance: {str(balance_error)}"
+                detail=f"Failed to query AFT balance: {str(balance_error)}"
             )
             
     except HTTPException:
@@ -519,7 +529,7 @@ async def get_balance(sas_service: SASWebService = Depends(get_sas_service)):
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Balance query error: {str(e)}"
+            detail=f"AFT balance query error: {str(e)}"
         )
 
 
