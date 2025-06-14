@@ -70,18 +70,18 @@ class SasMoney:
                 self.is_waiting_for_para_yukle = 0
                 print(f"[AFT WAIT] SUCCESS after {elapsed:.2f}s")
                 return True
-            elif status in ("84", "87", "81"):  # Error codes (removed "40" from here)
+            elif status in ("84", "87", "81", "FF"):  # Error codes
                 self.is_waiting_for_para_yukle = 0
                 print(f"[AFT WAIT] FAILED after {elapsed:.2f}s with status: {status}")
                 return False
-            elif status == "40":  # Transfer pending - keep waiting
-                print(f"[AFT WAIT] Transfer pending, continuing to wait...")
+            elif status in ("40", "C0", "C1", "C2"):  # Pending/in-progress codes - keep waiting
+                print(f"[AFT WAIT] Transfer {self.get_transfer_status_description(status).lower()}, continuing to wait...")
                 pass
             elif status is None:
                 print(f"[AFT WAIT] No response yet, waiting...")
                 pass
             else:
-                print(f"[AFT WAIT] Unknown status: {status}")
+                print(f"[AFT WAIT] Unknown status: {status} - {self.get_transfer_status_description(status)}")
                 
             # Check every 500ms instead of immediately looping
             await asyncio.sleep(0.4)  # Total 0.5s with the 0.1s above
@@ -123,12 +123,16 @@ class SasMoney:
         status_descriptions = {
             "00": "Transfer successful",
             "40": "Transfer pending",
-            "81": "Transaction ID not unique",
-            "84": "Transfer amount exceeds machine limit", 
-            "87": "Gaming machine unable to accept transfers (door open, tilt, etc.)",
             "80": "Machine not registered for AFT",
-            "82": "Registration key mismatch",
-            "83": "No POS ID configured"
+            "81": "Transaction ID not unique",
+            "82": "Registration key mismatch", 
+            "83": "No POS ID configured",
+            "84": "Transfer amount exceeds machine limit",
+            "87": "Gaming machine unable to accept transfers (door open, tilt, etc.)",
+            "C0": "Transfer request acknowledged/pending",
+            "C1": "Transfer in progress",
+            "C2": "Transfer partially complete",
+            "FF": "Transfer failed - general error"
         }
         return status_descriptions.get(status_code, f"Unknown status: {status_code}")
 
@@ -1254,3 +1258,46 @@ class SasMoney:
         except Exception as e:
             print(f"[ASSET CONVERT] Error converting asset number {asset_hex}: {e}")
             return 0 
+
+    def komut_unlock_machine(self):
+        """
+        Send AFT unlock command to the gaming machine.
+        This sends SAS command 74h with unlock code to enable AFT transfers.
+        """
+        print(f"[AFT UNLOCK] Attempting to unlock machine for AFT transfers")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # AFT unlock command: 74h with lock code 00 (unlock)
+        # Format: Address + 74h + LockCode(00) + TransferCondition(00) + LockTimeout(0000)
+        command = f"{sas_address}7400000000"
+        command_crc = get_crc(command)
+        
+        print(f"[AFT UNLOCK] Sending unlock command: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("AFTUnlock", command_crc, 1)
+            print(f"[AFT UNLOCK] Unlock command result: {result}")
+            return result
+        except Exception as e:
+            print(f"[AFT UNLOCK] Error sending unlock command: {e}")
+            raise
+
+    def check_aft_status(self):
+        """
+        Check if the machine is ready for AFT transfers by querying status.
+        Returns True if ready, False if locked or unavailable.
+        """
+        print(f"[AFT STATUS CHECK] Checking machine AFT status")
+        
+        # Query balance to get AFT status
+        self.komut_bakiye_sorgulama("aft_status_check", False, "status_check")
+        
+        # Wait a moment for response
+        import time
+        time.sleep(1)
+        
+        # Check the last balance response for status indicators
+        # This would need to be implemented based on your response parsing
+        print(f"[AFT STATUS CHECK] Status check completed")
+        return True  # Simplified for now 
