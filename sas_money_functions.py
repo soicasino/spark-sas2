@@ -36,6 +36,9 @@ class SasMoney:
         self.last_parsed_meters = {}  # Store parsed meters for API access
         # Transaction ID management
         self.current_transaction_id = int(datetime.datetime.now().timestamp()) % 10000
+        # Balance query wait logic
+        self.is_waiting_for_bakiye_sorgulama = False
+        self.balance_query_timeout = 5  # seconds
         # ... add other state as needed
 
     def get_next_transaction_id(self):
@@ -113,10 +116,50 @@ class SasMoney:
         command = "017201800BB4"
         self.communicator.sas_send_command_with_queue("CancelAFT", command, 1)
 
+    async def wait_for_bakiye_sorgulama_completion(self, timeout=5):
+        """
+        Wait for the balance query to complete and balance fields to be set.
+        Returns True if successful, False if failed, or None if timeout.
+        """
+        start = time.time()
+        self.is_waiting_for_bakiye_sorgulama = True
+        
+        print(f"[BALANCE WAIT] Starting balance query wait (timeout={timeout}s)")
+        
+        while time.time() - start < timeout:
+            # Check if balance has been received (any non-zero value indicates response)
+            if (self.yanit_bakiye_tutar > 0 or 
+                self.yanit_restricted_amount > 0 or 
+                self.yanit_nonrestricted_amount > 0 or
+                not self.is_waiting_for_bakiye_sorgulama):
+                self.is_waiting_for_bakiye_sorgulama = False
+                print(f"[BALANCE WAIT] Balance received successfully after {time.time() - start:.2f}s")
+                print(f"[BALANCE WAIT] Cashable: {self.yanit_bakiye_tutar}, Restricted: {self.yanit_restricted_amount}, Non-restricted: {self.yanit_nonrestricted_amount}")
+                return True
+                
+            await asyncio.sleep(0.1)
+            
+        # Timeout
+        self.is_waiting_for_bakiye_sorgulama = False
+        print(f"[BALANCE WAIT] Timeout after {timeout}s - no balance response received")
+        return False
+
     def komut_bakiye_sorgulama(self, sender, isforinfo, sendertext='UndefinedBakiyeSorgulama'):
+        """
+        Send balance query command and set waiting flag.
+        """
+        # Reset balance values before query
+        self.yanit_bakiye_tutar = 0
+        self.yanit_restricted_amount = 0
+        self.yanit_nonrestricted_amount = 0
+        
+        # Set waiting flag
+        self.is_waiting_for_bakiye_sorgulama = True
+        
         command = "017400000000"
         command = get_crc(command)
         self.communicator.sas_send_command_with_queue("MoneyQuery", command, 0)
+        print(f"Balance query sent: {command} (sender={sender}, sendertext={sendertext})")
         return command
 
     def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey):
@@ -274,37 +317,85 @@ class SasMoney:
             print(f"Error parsing AFT response: {e}")
 
     def yanit_bakiye_sorgulama(self, yanit):
-        # Parse balance query response (simplified)
-        index = 0
-        address = yanit[index:index+2]
-        index += 2
-        command = yanit[index:index+2]
-        index += 2
-        length = yanit[index:index+2]
-        index += 2
-        asset_number = yanit[index:index+8]
-        index += 8
-        game_lock_status = yanit[index:index+2]
-        index += 2
-        available_transfers = yanit[index:index+2]
-        index += 2
-        host_cashout_status = yanit[index:index+2]
-        index += 2
-        aft_status = yanit[index:index+2]
-        index += 2
-        max_buffer_index = yanit[index:index+2]
-        index += 2
-        current_cashable_amount = yanit[index:index+10]
-        index += 10
-        current_restricted_amount = yanit[index:index+10]
-        index += 10
-        current_nonrestricted_amount = yanit[index:index+10]
-        index += 10
-        # ... parse more as needed
-        self.yanit_bakiye_tutar = Decimal(current_cashable_amount) / 100
-        self.yanit_restricted_amount = Decimal(current_restricted_amount) / 100
-        self.yanit_nonrestricted_amount = Decimal(current_nonrestricted_amount) / 100
-        print(f"Balance received: cashable={self.yanit_bakiye_tutar}, restricted={self.yanit_restricted_amount}, nonrestricted={self.yanit_nonrestricted_amount}")
+        """
+        Handle balance query response from the machine.
+        This method parses the SAS 74h response and updates balance fields.
+        """
+        try:
+            print(f"[BALANCE RESPONSE] Received balance response: {yanit[:20]}...")
+            
+            if not self.is_waiting_for_bakiye_sorgulama:
+                print("[BALANCE RESPONSE] Not waiting for balance response, ignoring")
+                return
+            
+            # Parse response according to SAS protocol
+            # Format: Address(1) + Command(1) + Length(1) + AssetNumber(4) + GameLockStatus(1) + ...
+            index = 0
+            address = yanit[index:index+2]
+            index += 2
+            
+            command = yanit[index:index+2]
+            index += 2
+            
+            length = yanit[index:index+2]
+            index += 2
+            
+            asset_number = yanit[index:index+8]
+            index += 8
+            
+            game_lock_status = yanit[index:index+2]
+            index += 2
+            
+            available_transfers = yanit[index:index+2]
+            index += 2
+            
+            host_cashout_status = yanit[index:index+2]
+            index += 2
+            
+            aft_status = yanit[index:index+2]
+            index += 2
+            
+            max_buffer_index = yanit[index:index+2]
+            index += 2
+            
+            # Current cashable amount (5 bytes BCD)
+            current_cashable_amount = yanit[index:index+10]
+            index += 10
+            
+            if len(current_cashable_amount) != 10:
+                print("[BALANCE RESPONSE] Incomplete balance response!")
+                return
+            
+            # Convert BCD to decimal (divide by 100 for cents to dollars)
+            cashable_amount = int(current_cashable_amount, 16) / 100
+            
+            # Current restricted amount (5 bytes BCD)
+            current_restricted_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
+            index += 10
+            restricted_amount = int(current_restricted_amount, 16) / 100
+            
+            # Current non-restricted amount (5 bytes BCD)
+            current_nonrestricted_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
+            index += 10
+            nonrestricted_amount = int(current_nonrestricted_amount, 16) / 100
+            
+            # Update balance fields
+            self.yanit_bakiye_tutar = cashable_amount
+            self.yanit_restricted_amount = restricted_amount
+            self.yanit_nonrestricted_amount = nonrestricted_amount
+            
+            # Clear waiting flag
+            self.is_waiting_for_bakiye_sorgulama = False
+            
+            print(f"[BALANCE RESPONSE] Balance parsed successfully:")
+            print(f"[BALANCE RESPONSE]   Cashable: {cashable_amount}")
+            print(f"[BALANCE RESPONSE]   Restricted: {restricted_amount}")
+            print(f"[BALANCE RESPONSE]   Non-restricted: {nonrestricted_amount}")
+            print(f"[BALANCE RESPONSE]   Game Lock Status: {game_lock_status}")
+            
+        except Exception as e:
+            print(f"[BALANCE RESPONSE] Error parsing balance response: {e}")
+            self.is_waiting_for_bakiye_sorgulama = False
 
     def komut_get_meter(self, isall=0, gameid=0):
         print("=== METER: komut_get_meter called ===")
@@ -624,3 +715,161 @@ class SasMoney:
     def is_valid_bcd(self, hex_str):
         """Check if a hex string is valid BCD (only 0-9 digits)."""
         return all(c in '0123456789' for c in hex_str) 
+
+    def yanit_para_yukle(self, yanit):
+        """
+        Handle AFT money load response from the machine.
+        This method parses the SAS 72h response and updates transfer status.
+        """
+        try:
+            print(f"[MONEY LOAD RESPONSE] Received response: {yanit[:20]}...")
+            
+            if not self.is_waiting_for_para_yukle:
+                print("[MONEY LOAD RESPONSE] Not waiting for money load response, ignoring")
+                return
+                
+            # Parse response according to SAS protocol
+            # Format: Address(1) + Command(1) + Length(1) + TransactionBuffer(1) + TransferStatus(1) + ...
+            index = 0
+            
+            # Skip address and command
+            index += 4  # Address(2) + Command(2)
+            
+            # Get length
+            length = yanit[index:index+2]
+            index += 2
+            
+            # Get transaction buffer
+            transaction_buffer = yanit[index:index+2]
+            index += 2
+            
+            # Get transfer status (most important field)
+            transfer_status = yanit[index:index+2]
+            index += 2
+            
+            print(f"[MONEY LOAD RESPONSE] Transfer Status: {transfer_status}")
+            
+            # Update global transfer status
+            self.global_para_yukleme_transfer_status = transfer_status
+            
+            # Parse amounts for logging
+            amounts_info = ""
+            try:
+                if len(yanit) > 14:
+                    cashable_amount = yanit[14:24]  # 10 chars for BCD amount
+                    promo_amount = yanit[24:34] if len(yanit) > 24 else "0000000000"
+                    amounts_info = f" (C:{cashable_amount} P:{promo_amount})"
+            except Exception as e:
+                print(f"[MONEY LOAD RESPONSE] Error parsing amounts: {e}")
+            
+            # Handle different transfer statuses
+            if transfer_status == "00":
+                print(f"[MONEY LOAD RESPONSE] Transfer successful{amounts_info}")
+                self.is_waiting_for_para_yukle = 0
+                
+                # Parse transaction ID for validation if needed
+                try:
+                    if len(yanit) > 50:  # Ensure we have enough data
+                        # Transaction ID is at the end, preceded by its length
+                        # This is a simplified parsing - adjust based on actual response format
+                        pass
+                except Exception as e:
+                    print(f"[MONEY LOAD RESPONSE] Error parsing transaction ID: {e}")
+                    
+            elif transfer_status in ["87", "84", "FF", "93", "82", "83", "81", "40"]:
+                print(f"[MONEY LOAD RESPONSE] Transfer failed with status: {transfer_status}")
+                if transfer_status == "87":
+                    print("[MONEY LOAD RESPONSE] Machine door open, tilt, or disabled")
+                elif transfer_status == "84":
+                    print("[MONEY LOAD RESPONSE] Transfer amount exceeds machine limit")
+                elif transfer_status == "81":
+                    print("[MONEY LOAD RESPONSE] Transaction ID not unique")
+                elif transfer_status == "40":
+                    print("[MONEY LOAD RESPONSE] Transfer pending - continuing to wait")
+                    return  # Don't clear waiting flag for pending status
+                    
+                # For error statuses, clear the waiting flag
+                if transfer_status != "40":
+                    self.is_waiting_for_para_yukle = 0
+            else:
+                print(f"[MONEY LOAD RESPONSE] Unknown transfer status: {transfer_status}")
+                
+        except Exception as e:
+            print(f"[MONEY LOAD RESPONSE] Error parsing response: {e}")
+            # On parse error, clear waiting flag to prevent infinite wait
+            self.is_waiting_for_para_yukle = 0 
+
+    def yanit_para_sifirla(self, yanit):
+        """
+        Handle AFT cashout response from the machine.
+        This method parses the SAS 72h cashout response and updates cashout status.
+        """
+        try:
+            print(f"[CASHOUT RESPONSE] Received response: {yanit[:20]}...")
+            
+            if not self.is_waiting_for_para_sifirla:
+                print("[CASHOUT RESPONSE] Not waiting for cashout response, ignoring")
+                return
+                
+            # Parse response according to SAS protocol
+            # Format: Address(1) + Command(1) + Length(1) + TransactionBuffer(1) + TransferStatus(1) + ...
+            index = 0
+            
+            # Skip address and command
+            index += 4  # Address(2) + Command(2)
+            
+            # Get length
+            length = yanit[index:index+2]
+            index += 2
+            
+            # Get transaction buffer
+            transaction_buffer = yanit[index:index+2]
+            index += 2
+            
+            # Get transfer status (most important field)
+            transfer_status = yanit[index:index+2]
+            index += 2
+            
+            print(f"[CASHOUT RESPONSE] Transfer Status: {transfer_status}")
+            
+            # Update global transfer status
+            self.global_para_silme_transfer_status = transfer_status
+            
+            # Parse amounts for logging
+            amounts_info = ""
+            try:
+                if len(yanit) > 14:
+                    cashout_amount = yanit[14:24]  # 10 chars for BCD amount
+                    amounts_info = f" (Amount:{cashout_amount})"
+            except Exception as e:
+                print(f"[CASHOUT RESPONSE] Error parsing amounts: {e}")
+            
+            # Handle different transfer statuses
+            if transfer_status == "00":
+                print(f"[CASHOUT RESPONSE] Cashout successful{amounts_info}")
+                self.is_waiting_for_para_sifirla = 0
+                
+            elif transfer_status in ["87", "84", "FF", "93", "82", "83", "81", "40"]:
+                print(f"[CASHOUT RESPONSE] Cashout failed with status: {transfer_status}")
+                if transfer_status == "87":
+                    print("[CASHOUT RESPONSE] Machine door open, tilt, or disabled")
+                elif transfer_status == "84":
+                    print("[CASHOUT RESPONSE] Cashout amount exceeds machine limit")
+                elif transfer_status == "83":
+                    print("[CASHOUT RESPONSE] No won amount available for cashout")
+                elif transfer_status == "81":
+                    print("[CASHOUT RESPONSE] Transaction ID not unique")
+                elif transfer_status == "40":
+                    print("[CASHOUT RESPONSE] Cashout pending - continuing to wait")
+                    return  # Don't clear waiting flag for pending status
+                    
+                # For error statuses, clear the waiting flag
+                if transfer_status != "40":
+                    self.is_waiting_for_para_sifirla = 0
+            else:
+                print(f"[CASHOUT RESPONSE] Unknown transfer status: {transfer_status}")
+                
+        except Exception as e:
+            print(f"[CASHOUT RESPONSE] Error parsing response: {e}")
+            # On parse error, clear waiting flag to prevent infinite wait
+            self.is_waiting_for_para_sifirla = 0 

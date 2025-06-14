@@ -30,7 +30,8 @@ export default function SASDashboard() {
 
   // Money transfer state
   const [transferAmount, setTransferAmount] = useState<string>("");
-  const [transferType, setTransferType] = useState<"add" | "subtract">("add");
+  // Allow SAS codes ("10", "11", "00") and "subtract"
+  const [transferType, setTransferType] = useState<string>("10");
 
   // WebSocket connection
   const [wsClient] = useState(() => new SASWebSocketClient());
@@ -443,20 +444,38 @@ export default function SASDashboard() {
                   <div className="flex items-center space-x-2">
                     <Label htmlFor="transfer-type">Transfer Type:</Label>
                     <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-2">
-                        <input type="radio" id="add-credits" name="transfer-type" checked={transferType === "add"} onChange={() => setTransferType("add")} />
-                        <Label htmlFor="add-credits">Add Credits</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="radio"
-                          id="subtract-credits"
-                          name="transfer-type"
-                          checked={transferType === "subtract"}
-                          onChange={() => setTransferType("subtract")}
-                        />
-                        <Label htmlFor="subtract-credits">Subtract Credits</Label>
-                      </div>
+                      {transferType === "subtract" ? (
+                        <>
+                          <input
+                            type="radio"
+                            id="subtract-credits"
+                            name="transfer-type"
+                            checked={transferType === "subtract"}
+                            onChange={() => setTransferType("subtract")}
+                          />
+                          <Label htmlFor="subtract-credits">Subtract Credits</Label>
+                        </>
+                      ) : (
+                        <>
+                          <input
+                            type="radio"
+                            id="add-credits"
+                            name="transfer-type"
+                            checked={transferType !== "subtract"}
+                            onChange={() => setTransferType("10")}
+                          />
+                          <Label htmlFor="add-credits">Add Credits</Label>
+                          <select
+                            id="sas-transfer-type"
+                            value={transferType}
+                            onChange={(e) => setTransferType(e.target.value)}
+                            className="ml-2 border rounded px-2 py-1">
+                            <option value="10">Cashable (10)</option>
+                            <option value="11">Restricted (11)</option>
+                            <option value="00">Non-restricted (00)</option>
+                          </select>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -464,8 +483,8 @@ export default function SASDashboard() {
                     onClick={handleMoneyTransfer}
                     disabled={loading.moneyTransfer || !transferAmount}
                     className="w-full"
-                    variant={transferType === "add" ? "default" : "destructive"}>
-                    {transferType === "add" ? "Add" : "Subtract"} Credits
+                    variant={transferType === "subtract" ? "destructive" : "default"}>
+                    {transferType === "subtract" ? "Subtract" : "Add"} Credits
                   </Button>
                 </CardContent>
               </Card>

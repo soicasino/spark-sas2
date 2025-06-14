@@ -493,48 +493,76 @@ class SASCommunicator:
         try:
             print(f"AFT response received: {tdata}")
             
-            if len(tdata) < 10:
+            if len(tdata) < 14:
                 print("AFT response too short")
                 return
                 
-            # Parse AFT response structure (simplified)
-            # Address (2) + Command (2) + Length (2) + Data...
+            # Parse AFT response structure
+            # Format: Address(2) + Command(2) + Length(2) + TransactionBuffer(2) + TransferStatus(2) + ReceiptStatus(2) + TransferType(2) + ...
             address = tdata[0:2]
             command = tdata[2:4]
-            length = int(tdata[4:6], 16)
+            length_hex = tdata[4:6]
+            
+            try:
+                length = int(length_hex, 16)
+            except ValueError:
+                print(f"Invalid length in AFT response: {length_hex}")
+                return
             
             print(f"AFT Response - Address: {address}, Command: {command}, Length: {length}")
             
-            if len(tdata) >= 18:
-                # Extract transfer status (usually at offset 6-8)
-                transfer_status = tdata[6:8]
-                receipt_status = tdata[8:10]
+            if len(tdata) >= 14:
+                # Extract key fields
+                transaction_buffer = tdata[6:8]
+                transfer_status = tdata[8:10]
+                receipt_status = tdata[10:12]
+                transfer_type = tdata[12:14]
                 
-                print(f"Transfer Status: {transfer_status}, Receipt Status: {receipt_status}")
+                print(f"AFT Details - TransferStatus: {transfer_status}, ReceiptStatus: {receipt_status}, TransferType: {transfer_type}")
                 
-                # Common AFT status codes
+                # Update global transfer status in sas_money
+                if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
+                    self.sas_money.global_para_yukleme_transfer_status = transfer_status
+                
+                # Call appropriate response handler based on transfer type
+                if transfer_type in ["00", "10", "11"]:  # Money load transfer types
+                    print("Calling money load response handler")
+                    if hasattr(self.sas_money, 'yanit_para_yukle'):
+                        self.sas_money.yanit_para_yukle(tdata)
+                    else:
+                        print("Warning: yanit_para_yukle method not found in sas_money")
+                        
+                elif transfer_type in ["80", "90"]:  # Cashout transfer types
+                    print("Calling cashout response handler")
+                    if hasattr(self.sas_money, 'yanit_para_sifirla'):
+                        self.sas_money.yanit_para_sifirla(tdata)
+                    else:
+                        print("Warning: yanit_para_sifirla method not found in sas_money")
+                        
+                else:
+                    print(f"Unknown transfer type: {transfer_type}")
+                
+                # Common AFT status codes for logging
                 status_messages = {
                     "00": "Transfer successful",
-                    "01": "Transfer pending",
-                    "40": "Transfer amount exceeds transfer limit", 
-                    "41": "Transfer amount not even multiple of gaming machine denomination",
-                    "42": "Transfer amount not an even multiple of the accounting denomination",
-                    "43": "Transfer amount exceeds the gaming machine transfer limit",
+                    "40": "Transfer pending",
+                    "81": "Transaction ID not unique", 
+                    "84": "Transfer amount exceeds transfer limit",
+                    "87": "Gaming machine unable to accept transfers (door open, tilt, etc.)",
                     "80": "Gaming machine not registered for AFT transfers",
-                    "81": "Gaming machine registration key does not match",
-                    "82": "No POS ID",
-                    "83": "No won amount available for cashout"
+                    "82": "Registration key does not match",
+                    "83": "No POS ID configured",
+                    "FF": "No transfer information available"
                 }
                 
                 status_msg = status_messages.get(transfer_status, f"Unknown status: {transfer_status}")
                 print(f"AFT Transfer Status: {status_msg}")
                 
-                # Set flags for the money system
-                if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
-                    self.sas_money.global_para_yukleme_transfer_status = transfer_status
-                    
         except Exception as e:
             print(f"Error parsing AFT response: {e}")
+            # On error, still try to update status if possible
+            if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
+                self.sas_money.global_para_yukleme_transfer_status = "FF"  # Error status
 
     def _handle_exception_message(self, tdata):
         """Handle exception messages (01FF)"""

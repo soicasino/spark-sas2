@@ -190,22 +190,21 @@ async def cashout_credits(
         try:
             # Query current balance using SAS money functions
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                # Send balance query
                 balance_result = sas_comm.sas_money.komut_bakiye_sorgulama(
                     sender=2,  # Cashout operation
                     isforinfo=0,  # Required for operation
                     sendertext="API-Cashout"
                 )
                 
-                # Wait for balance response with proper timeout
-                timeout = 5
-                start_wait = datetime.now()
-                while (datetime.now() - start_wait).total_seconds() < timeout:
-                    # Check if balance has been updated (non-zero values indicate response)
-                    if (sas_comm.sas_money.yanit_bakiye_tutar > 0 or 
-                        sas_comm.sas_money.yanit_restricted_amount > 0 or 
-                        sas_comm.sas_money.yanit_nonrestricted_amount > 0):
-                        break
-                    await asyncio.sleep(0.2)
+                # Wait for balance response with proper timeout using the new wait method
+                wait_result = await sas_comm.sas_money.wait_for_bakiye_sorgulama_completion(timeout=5)
+                
+                if not wait_result:
+                    raise HTTPException(
+                        status_code=504,
+                        detail="Balance query timed out - machine did not respond within 5 seconds"
+                    )
                 
                 # Get current balance
                 current_balance = sas_comm.sas_money.yanit_bakiye_tutar
@@ -233,6 +232,8 @@ async def cashout_credits(
                     detail="SAS money functions not available"
                 )
         
+        except HTTPException:
+            raise
         except Exception as balance_error:
             raise HTTPException(
                 status_code=500,
