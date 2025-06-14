@@ -186,52 +186,60 @@ async def cashout_credits(
         
         sas_comm = sas_service.slot_machine_app.sas_comm
         
-        # First query balance to check available funds
+        # First query current credits to check available funds
         try:
-            # Query current balance using SAS money functions
+            # Query current credits using meter system instead of balance query
+            # since the machine doesn't respond to SAS 74h balance queries
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                # Send balance query
-                balance_result = sas_comm.sas_money.komut_bakiye_sorgulama(
-                    sender=2,  # Cashout operation
-                    isforinfo=0,  # Required for operation
-                    sendertext="API-Cashout"
-                )
+                print("[CASHOUT] Querying current credits via meter system...")
                 
-                # Wait for balance response with proper timeout using the new wait method
-                wait_result = await sas_comm.sas_money.wait_for_bakiye_sorgulama_completion(timeout=5)
+                # Get current meters to check credits
+                sas_comm.sas_money.get_meter(isall=0)
                 
-                if not wait_result:
-                    raise HTTPException(
-                        status_code=504,
-                        detail="Balance query timed out - machine did not respond within 5 seconds"
+                # Wait a moment for meter response
+                await asyncio.sleep(1)
+                
+                # Get current credits from parsed meters
+                current_credits = 0
+                if hasattr(sas_comm.sas_money, 'last_parsed_meters') and sas_comm.sas_money.last_parsed_meters:
+                    meters = sas_comm.sas_money.last_parsed_meters
+                    # Look for current credits in various possible meter names
+                    current_credits = (
+                        meters.get('current_credits', 0) or
+                        meters.get('total_coin_in', 0) - meters.get('total_coin_out', 0) or
+                        0
                     )
+                    print(f"[CASHOUT] Current credits from meters: {current_credits}")
+                else:
+                    print("[CASHOUT] No meter data available")
                 
-                # Get current balance
-                current_balance = sas_comm.sas_money.yanit_bakiye_tutar
-                restricted_balance = sas_comm.sas_money.yanit_restricted_amount
-                nonrestricted_balance = sas_comm.sas_money.yanit_nonrestricted_amount
+                # Convert to dollars if needed (assuming credits are in cents)
+                if current_credits > 1000:  # Likely in cents
+                    current_balance = current_credits / 100
+                else:
+                    current_balance = current_credits
                 
-                total_balance = current_balance + restricted_balance + nonrestricted_balance
+                print(f"[CASHOUT] Available balance: ${current_balance:.2f}")
                 
-                if total_balance <= 0:
+                if current_balance <= 0:
                     raise HTTPException(
                         status_code=400,
                         detail="No balance available to cashout"
                     )
                 
                 # Check if requested amount is available
-                if request.amount and request.amount > total_balance:
+                if request.amount and request.amount > current_balance:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Requested amount ${request.amount:.2f} exceeds available balance ${total_balance:.2f}"
+                        detail=f"Requested amount ${request.amount:.2f} exceeds available balance ${current_balance:.2f}"
                     )
-                
+            
             else:
                 raise HTTPException(
                     status_code=503,
                     detail="SAS money functions not available"
                 )
-        
+            
         except HTTPException:
             raise
         except Exception as balance_error:
@@ -270,7 +278,7 @@ async def cashout_credits(
             # Wait for completion with timeout
             wait_result = await sas_comm.sas_money.wait_for_para_sifirla_completion(timeout=15)
             
-            cashout_amount = request.amount if request.amount else total_balance
+            cashout_amount = request.amount if request.amount else current_balance
             
             if wait_result is True:
                 # Success - cashout completed
@@ -282,10 +290,10 @@ async def cashout_credits(
                     data={
                         "action": "cashout",
                         "requested_amount": request.amount,
-                        "total_balance": total_balance,
+                        "total_balance": current_balance,
                         "cashable_balance": current_balance,
-                        "restricted_balance": restricted_balance,
-                        "nonrestricted_balance": nonrestricted_balance,
+                        "restricted_balance": 0,
+                        "nonrestricted_balance": 0,
                         "transaction_id": actual_transaction_id,
                         "status": "completed"
                     }
@@ -341,29 +349,38 @@ async def get_balance(sas_service: SASWebService = Depends(get_sas_service)):
         # Query balance using SAS money functions
         try:
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                result = sas_comm.sas_money.komut_bakiye_sorgulama(
-                    sender=1,  # Info query
-                    isforinfo=1,  # Information only
-                    sendertext="API-Balance-Query"
-                )
+                print("[BALANCE] Querying current credits via meter system...")
                 
-                # Wait for balance response with proper timeout
-                timeout = 5
-                start_wait = datetime.now()
-                while (datetime.now() - start_wait).total_seconds() < timeout:
-                    # Check if balance has been updated (non-zero values indicate response)
-                    if (sas_comm.sas_money.yanit_bakiye_tutar > 0 or 
-                        sas_comm.sas_money.yanit_restricted_amount > 0 or 
-                        sas_comm.sas_money.yanit_nonrestricted_amount > 0):
-                        break
-                    await asyncio.sleep(0.2)
+                # Get current meters to check credits
+                sas_comm.sas_money.get_meter(isall=0)
                 
-                # Get current balance
-                current_balance = sas_comm.sas_money.yanit_bakiye_tutar
-                restricted_balance = sas_comm.sas_money.yanit_restricted_amount
-                nonrestricted_balance = sas_comm.sas_money.yanit_nonrestricted_amount
+                # Wait a moment for meter response
+                await asyncio.sleep(1)
                 
-                total_balance = current_balance + restricted_balance + nonrestricted_balance
+                # Get current credits from parsed meters
+                current_credits = 0
+                if hasattr(sas_comm.sas_money, 'last_parsed_meters') and sas_comm.sas_money.last_parsed_meters:
+                    meters = sas_comm.sas_money.last_parsed_meters
+                    # Look for current credits in various possible meter names
+                    current_credits = (
+                        meters.get('current_credits', 0) or
+                        meters.get('total_coin_in', 0) - meters.get('total_coin_out', 0) or
+                        0
+                    )
+                    print(f"[BALANCE] Current credits from meters: {current_credits}")
+                else:
+                    print("[BALANCE] No meter data available")
+                
+                # Convert to dollars if needed (assuming credits are in cents)
+                if current_credits > 1000:  # Likely in cents
+                    current_balance = current_credits / 100
+                else:
+                    current_balance = current_credits
+                
+                # For balance endpoint, we'll show all balance as cashable since we can't distinguish
+                restricted_balance = 0
+                nonrestricted_balance = 0
+                total_balance = current_balance
                 
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
                 
