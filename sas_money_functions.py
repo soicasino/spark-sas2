@@ -1283,9 +1283,18 @@ class SasMoney:
         
         sas_address = getattr(self.communicator, 'sas_address', '01')
         
-        # AFT unlock command: 74h with lock code 00 (unlock)
-        # Format: Address + 74h + LockCode(00) + TransferCondition(00) + LockTimeout(0000)
-        command = f"{sas_address}7400000000"
+        # Get the correct asset number from the communicator
+        asset_number = "0000006C"  # Default to known asset number (108 decimal)
+        if hasattr(self.communicator, 'asset_number') and self.communicator.asset_number:
+            asset_number = self.communicator.asset_number.upper()
+        elif hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
+            asset_number = self.communicator.asset_number_hex.upper()
+        
+        print(f"[AFT UNLOCK] Using asset number: {asset_number}")
+        
+        # AFT unlock command: 74h with asset number and lock code
+        # Format: Address + 74h + AssetNumber(4 bytes) + LockCode(00=unlock) + TransferCondition(00) + LockTimeout(0000)
+        command = f"{sas_address}74{asset_number}00000000"
         command_crc = get_crc(command)
         
         print(f"[AFT UNLOCK] Sending unlock command: {command_crc}")

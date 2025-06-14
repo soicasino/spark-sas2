@@ -102,20 +102,8 @@ async def test_machine_unlock():
         
         print("\n=== Trying Different Unlock Methods ===")
         
-        # Method 1: Standard unlock with asset number
-        print("Method 1: Standard unlock with asset number")
-        unlock_result = money.komut_unlock_machine()
-        print(f"Unlock result: {unlock_result}")
-        await asyncio.sleep(2)
-        
-        # Method 2: Unlock with zero asset number (sometimes needed for initial setup)
-        print("Method 2: Unlock with zero asset number")
-        unlock_result2 = money.komut_unlock_machine()  # This uses default asset number
-        print(f"Unlock result: {unlock_result2}")
-        await asyncio.sleep(2)
-        
-        # Method 3: AFT Registration
-        print("Method 3: AFT Registration")
+        # Method 1: AFT Registration first (prerequisite for unlock)
+        print("Method 1: AFT Registration")
         try:
             # Use correct method name and provide required parameters
             asset_number = "0000006C"  # Known asset number (108 decimal)
@@ -128,14 +116,45 @@ async def test_machine_unlock():
         except Exception as e:
             print(f"AFT Registration failed: {e}")
         
-        # Method 4: Check AFT status after registration
-        print("Method 4: Check AFT status")
+        # Method 2: Machine unlock with correct asset number
+        print("Method 2: Machine unlock with correct asset number")
+        unlock_result = money.komut_unlock_machine()
+        print(f"Unlock result: {unlock_result}")
+        await asyncio.sleep(2)
+        
+        # Method 3: Check AFT status after registration and unlock
+        print("Method 3: Check AFT status")
         try:
             status_result = money.check_aft_status()
             print(f"AFT Status check result: {status_result}")
             await asyncio.sleep(2)
         except Exception as e:
             print(f"AFT Status check failed: {e}")
+        
+        # Method 4: Check balance to see if unlock worked
+        print("Method 4: Check balance after unlock")
+        balance_result3 = money.komut_bakiye_sorgulama("unlock_test", False, "post_unlock_check")
+        balance_received3 = await money.wait_for_bakiye_sorgulama_completion(timeout=5)
+        
+        if balance_received3:
+            print("✅ Post-unlock balance query successful")
+            # Check lock status from communicator
+            if hasattr(money.communicator, 'last_game_lock_status'):
+                lock_status = money.communicator.last_game_lock_status
+                aft_status = money.communicator.last_aft_status
+                print(f"📊 Current Lock Status: {lock_status}")
+                print(f"📊 Current AFT Status: {aft_status}")
+                
+                if lock_status == "FF":
+                    print("❌ Machine is still fully locked")
+                elif lock_status == "00":
+                    print("✅ Machine is fully unlocked!")
+                else:
+                    print(f"⚠️  Machine partially locked: {lock_status}")
+            else:
+                print("⚠️  No lock status information available")
+        else:
+            print("⚠️  Post-unlock balance query failed")
         
         print("\n=== Final Balance Check ===")
         # Check balance after unlock attempts
