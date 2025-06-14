@@ -146,8 +146,11 @@ class SasMoney:
 
     def komut_bakiye_sorgulama(self, sender, isforinfo, sendertext='UndefinedBakiyeSorgulama'):
         """
-        Send balance query command and set waiting flag.
+        Send balance query command to the machine.
+        This sends SAS command 74h to query current balance.
         """
+        print(f"[BALANCE QUERY] Starting balance query - sender: {sender}, isforinfo: {isforinfo}, text: {sendertext}")
+        
         # Reset balance values before query
         self.yanit_bakiye_tutar = 0
         self.yanit_restricted_amount = 0
@@ -156,11 +159,37 @@ class SasMoney:
         # Set waiting flag
         self.is_waiting_for_bakiye_sorgulama = True
         
-        command = "017400000000"
+        # Get asset number from communicator
+        asset_number = "00000000"  # Default
+        if hasattr(self.communicator, 'asset_number') and self.communicator.asset_number:
+            asset_number = self.communicator.asset_number
+        elif hasattr(self.communicator, 'sas_address') and self.communicator.sas_address:
+            # Convert SAS address to asset number format
+            sas_addr = self.communicator.sas_address
+            if len(sas_addr) == 2:
+                asset_number = f"{sas_addr}000000"
+            else:
+                asset_number = sas_addr.ljust(8, '0')[:8]
+        
+        print(f"[BALANCE QUERY] Using asset number: {asset_number}")
+        
+        # Construct SAS 74h command (AFT status inquiry)
+        # Format: Address + Command + Asset Number
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        command = f"{sas_address}74{asset_number}"
         command = get_crc(command)
-        self.communicator.sas_send_command_with_queue("MoneyQuery", command, 0)
-        print(f"Balance query sent: {command} (sender={sender}, sendertext={sendertext})")
-        return command
+        
+        print(f"[BALANCE QUERY] Sending command: {command}")
+        
+        try:
+            # Send the command
+            result = self.communicator.sas_send_command_with_queue("MoneyQuery", command, 1)
+            print(f"[BALANCE QUERY] Command sent successfully, result: {result}")
+            return result
+        except Exception as e:
+            print(f"[BALANCE QUERY] Error sending command: {e}")
+            self.is_waiting_for_bakiye_sorgulama = False
+            raise
 
     def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey):
         """
@@ -322,62 +351,129 @@ class SasMoney:
         This method parses the SAS 74h response and updates balance fields.
         """
         try:
-            print(f"[BALANCE RESPONSE] Received balance response: {yanit[:20]}...")
+            print(f"[BALANCE RESPONSE] Received balance response: {yanit}")
+            print(f"[BALANCE RESPONSE] Response length: {len(yanit)} characters")
             
             if not self.is_waiting_for_bakiye_sorgulama:
                 print("[BALANCE RESPONSE] Not waiting for balance response, ignoring")
                 return
             
+            # Minimum response should be at least 20 characters (address + command + length + some data)
+            if len(yanit) < 20:
+                print(f"[BALANCE RESPONSE] Response too short: {len(yanit)} characters")
+                self.is_waiting_for_bakiye_sorgulama = False
+                return
+            
             # Parse response according to SAS protocol
-            # Format: Address(1) + Command(1) + Length(1) + AssetNumber(4) + GameLockStatus(1) + ...
+            # Format: Address(2) + Command(2) + Length(2) + AssetNumber(8) + GameLockStatus(2) + ...
             index = 0
             address = yanit[index:index+2]
             index += 2
+            print(f"[BALANCE RESPONSE] Address: {address}")
             
             command = yanit[index:index+2]
             index += 2
+            print(f"[BALANCE RESPONSE] Command: {command}")
             
-            length = yanit[index:index+2]
+            length_hex = yanit[index:index+2]
             index += 2
+            print(f"[BALANCE RESPONSE] Length: {length_hex}")
             
-            asset_number = yanit[index:index+8]
-            index += 8
-            
-            game_lock_status = yanit[index:index+2]
-            index += 2
-            
-            available_transfers = yanit[index:index+2]
-            index += 2
-            
-            host_cashout_status = yanit[index:index+2]
-            index += 2
-            
-            aft_status = yanit[index:index+2]
-            index += 2
-            
-            max_buffer_index = yanit[index:index+2]
-            index += 2
-            
-            # Current cashable amount (5 bytes BCD)
-            current_cashable_amount = yanit[index:index+10]
-            index += 10
-            
-            if len(current_cashable_amount) != 10:
-                print("[BALANCE RESPONSE] Incomplete balance response!")
+            # Validate command is 74 (balance query response)
+            if command.upper() != "74":
+                print(f"[BALANCE RESPONSE] Unexpected command: {command}, expected 74")
+                self.is_waiting_for_bakiye_sorgulama = False
                 return
             
+            # Parse length
+            try:
+                length = int(length_hex, 16)
+                print(f"[BALANCE RESPONSE] Parsed length: {length} bytes")
+            except ValueError:
+                print(f"[BALANCE RESPONSE] Invalid length: {length_hex}")
+                self.is_waiting_for_bakiye_sorgulama = False
+                return
+            
+            # Check if we have enough data based on length
+            expected_total_length = 6 + (length * 2)  # 6 for header + length*2 for data
+            if len(yanit) < expected_total_length:
+                print(f"[BALANCE RESPONSE] Incomplete response: got {len(yanit)}, expected {expected_total_length}")
+                # Try to parse what we have
+            
+            asset_number = yanit[index:index+8] if index + 8 <= len(yanit) else "00000000"
+            index += 8
+            print(f"[BALANCE RESPONSE] Asset Number: {asset_number}")
+            
+            game_lock_status = yanit[index:index+2] if index + 2 <= len(yanit) else "00"
+            index += 2
+            print(f"[BALANCE RESPONSE] Game Lock Status: {game_lock_status}")
+            
+            available_transfers = yanit[index:index+2] if index + 2 <= len(yanit) else "00"
+            index += 2
+            print(f"[BALANCE RESPONSE] Available Transfers: {available_transfers}")
+            
+            host_cashout_status = yanit[index:index+2] if index + 2 <= len(yanit) else "00"
+            index += 2
+            print(f"[BALANCE RESPONSE] Host Cashout Status: {host_cashout_status}")
+            
+            aft_status = yanit[index:index+2] if index + 2 <= len(yanit) else "00"
+            index += 2
+            print(f"[BALANCE RESPONSE] AFT Status: {aft_status}")
+            
+            max_buffer_index = yanit[index:index+2] if index + 2 <= len(yanit) else "00"
+            index += 2
+            print(f"[BALANCE RESPONSE] Max Buffer Index: {max_buffer_index}")
+            
+            # Current cashable amount (5 bytes BCD = 10 hex characters)
+            current_cashable_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
+            index += 10
+            print(f"[BALANCE RESPONSE] Current Cashable Amount (raw): {current_cashable_amount}")
+            
+            if len(current_cashable_amount) != 10:
+                print(f"[BALANCE RESPONSE] Incomplete cashable amount: {current_cashable_amount}")
+                # Use what we have, pad with zeros
+                current_cashable_amount = current_cashable_amount.ljust(10, '0')
+            
+            # Validate BCD format
+            if not self.is_valid_bcd(current_cashable_amount):
+                print(f"[BALANCE RESPONSE] Invalid BCD in cashable amount: {current_cashable_amount}")
+                current_cashable_amount = "0000000000"
+            
             # Convert BCD to decimal (divide by 100 for cents to dollars)
-            cashable_amount = int(current_cashable_amount, 16) / 100
+            try:
+                cashable_amount = int(current_cashable_amount, 16) / 100
+                print(f"[BALANCE RESPONSE] Cashable Amount: {cashable_amount}")
+            except ValueError:
+                print(f"[BALANCE RESPONSE] Error converting cashable amount: {current_cashable_amount}")
+                cashable_amount = 0
             
             # Current restricted amount (5 bytes BCD)
             current_restricted_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
             index += 10
-            restricted_amount = int(current_restricted_amount, 16) / 100
+            print(f"[BALANCE RESPONSE] Current Restricted Amount (raw): {current_restricted_amount}")
+            
+            if not self.is_valid_bcd(current_restricted_amount):
+                current_restricted_amount = "0000000000"
+            
+            try:
+                restricted_amount = int(current_restricted_amount, 16) / 100
+                print(f"[BALANCE RESPONSE] Restricted Amount: {restricted_amount}")
+            except ValueError:
+                restricted_amount = 0
             
             # Current non-restricted amount (5 bytes BCD)
             current_nonrestricted_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
             index += 10
-            nonrestricted_amount = int(current_nonrestricted_amount, 16) / 100
+            print(f"[BALANCE RESPONSE] Current Non-restricted Amount (raw): {current_nonrestricted_amount}")
+            
+            if not self.is_valid_bcd(current_nonrestricted_amount):
+                current_nonrestricted_amount = "0000000000"
+            
+            try:
+                nonrestricted_amount = int(current_nonrestricted_amount, 16) / 100
+                print(f"[BALANCE RESPONSE] Non-restricted Amount: {nonrestricted_amount}")
+            except ValueError:
+                nonrestricted_amount = 0
             
             # Update balance fields
             self.yanit_bakiye_tutar = cashable_amount
@@ -395,6 +491,8 @@ class SasMoney:
             
         except Exception as e:
             print(f"[BALANCE RESPONSE] Error parsing balance response: {e}")
+            print(f"[BALANCE RESPONSE] Raw response: {yanit}")
+            # Clear waiting flag on error to prevent infinite wait
             self.is_waiting_for_bakiye_sorgulama = False
 
     def komut_get_meter(self, isall=0, gameid=0):
