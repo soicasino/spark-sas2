@@ -1548,6 +1548,123 @@ class SasMoney:
             print(f"[MACHINE INFO] Error getting info: {e}")
             return False
 
+    def komut_clear_machine_reservation(self):
+        """
+        Clear machine reservation status using SAS command.
+        When a machine is "reserved", it won't accept AFT transfers until cleared.
+        This uses SAS command 8F to clear the reservation.
+        """
+        print(f"[CLEAR RESERVATION] Clearing machine reservation status")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # Clear reservation command: 8Fh
+        command = f"{sas_address}8F"
+        command_crc = get_crc(command)
+        
+        print(f"[CLEAR RESERVATION] Sending clear reservation command: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("ClearReservation", command_crc, 1)
+            print(f"[CLEAR RESERVATION] Clear reservation result: {result}")
+            return result
+        except Exception as e:
+            print(f"[CLEAR RESERVATION] Error clearing reservation: {e}")
+            return False
+
+    def komut_disable_machine(self):
+        """
+        Disable the machine using SAS command 8Dh.
+        Sometimes needed before clearing reservation.
+        """
+        print(f"[MACHINE DISABLE] Disabling machine")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # Disable command: 8Dh
+        command = f"{sas_address}8D"
+        command_crc = get_crc(command)
+        
+        print(f"[MACHINE DISABLE] Sending disable command: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("MachineDisable", command_crc, 1)
+            print(f"[MACHINE DISABLE] Disable result: {result}")
+            return result
+        except Exception as e:
+            print(f"[MACHINE DISABLE] Error disabling machine: {e}")
+            return False
+
+    def komut_clear_reservation_sequence(self):
+        """
+        Complete sequence to clear machine reservation and enable AFT.
+        This tries multiple approaches to clear the reserved status.
+        """
+        print(f"[RESERVATION SEQUENCE] Starting complete reservation clearing sequence")
+        
+        try:
+            # Step 1: Disable machine first
+            print(f"[RESERVATION SEQUENCE] Step 1: Disable machine")
+            disable_result = self.komut_disable_machine()
+            print(f"[RESERVATION SEQUENCE] Disable result: {disable_result}")
+            
+            import time
+            time.sleep(1)
+            
+            # Step 2: Clear reservation
+            print(f"[RESERVATION SEQUENCE] Step 2: Clear reservation")
+            clear_result = self.komut_clear_machine_reservation()
+            print(f"[RESERVATION SEQUENCE] Clear result: {clear_result}")
+            
+            time.sleep(1)
+            
+            # Step 3: Enable machine
+            print(f"[RESERVATION SEQUENCE] Step 3: Enable machine")
+            enable_result = self.komut_machine_enable()
+            print(f"[RESERVATION SEQUENCE] Enable result: {enable_result}")
+            
+            time.sleep(1)
+            
+            # Step 4: Clear any remaining host controls
+            print(f"[RESERVATION SEQUENCE] Step 4: Clear host controls")
+            host_clear_result = self.komut_clear_host_controls()
+            print(f"[RESERVATION SEQUENCE] Host clear result: {host_clear_result}")
+            
+            time.sleep(1)
+            
+            # Step 5: Try unlock after clearing reservation
+            print(f"[RESERVATION SEQUENCE] Step 5: Unlock machine")
+            unlock_result = self.komut_unlock_machine()
+            print(f"[RESERVATION SEQUENCE] Unlock result: {unlock_result}")
+            
+            time.sleep(2)
+            
+            # Step 6: Verify status
+            print(f"[RESERVATION SEQUENCE] Step 6: Verify machine status")
+            self.komut_bakiye_sorgulama("reservation_clear_verify", False, "reservation_verification")
+            
+            time.sleep(2)
+            
+            # Check results
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                lock_status = self.communicator.last_game_lock_status
+                if lock_status == "00":
+                    print(f"[RESERVATION SEQUENCE] ✅ SUCCESS: Machine reservation cleared and unlocked!")
+                    return True
+                elif lock_status != "FF":
+                    print(f"[RESERVATION SEQUENCE] ⚠️  PARTIAL SUCCESS: Lock status improved to {lock_status}")
+                    return True
+                else:
+                    print(f"[RESERVATION SEQUENCE] ❌ FAILED: Machine still shows reservation/locks ({lock_status})")
+                    return False
+            else:
+                print(f"[RESERVATION SEQUENCE] ⚠️  Cannot verify - no status available")
+                return None
+                
+        except Exception as e:
+            print(f"[RESERVATION SEQUENCE] Error in reservation clearing sequence: {e}")
+            return False
+
     def decode_aft_status(self, aft_status_hex):
         """
         Decode the AFT status byte to understand specific lock conditions.

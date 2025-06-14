@@ -134,8 +134,14 @@ async def test_machine_unlock():
         print(f"Clear host controls result: {clear_result}")
         await asyncio.sleep(1)
         
-        # Method 2.7: Advanced unlock sequence
-        print("Method 2.7: Advanced unlock sequence")
+        # Method 2.7: Clear machine reservation (NEW - for reserved machines)
+        print("Method 2.7: Clear machine reservation")
+        reservation_clear_result = money.komut_clear_reservation_sequence()
+        print(f"Reservation clear result: {reservation_clear_result}")
+        await asyncio.sleep(3)
+        
+        # Method 2.8: Advanced unlock sequence
+        print("Method 2.8: Advanced unlock sequence")
         advanced_unlock_result = money.komut_advanced_unlock()
         print(f"Advanced unlock result: {advanced_unlock_result}")
         await asyncio.sleep(2)
