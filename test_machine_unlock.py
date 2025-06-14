@@ -116,10 +116,28 @@ async def test_machine_unlock():
         except Exception as e:
             print(f"AFT Registration failed: {e}")
         
-        # Method 2: Machine unlock with correct asset number
-        print("Method 2: Machine unlock with correct asset number")
+        # Method 2: Standard unlock with correct asset number
+        print("Method 2: Standard unlock with correct asset number")
         unlock_result = money.komut_unlock_machine()
-        print(f"Unlock result: {unlock_result}")
+        print(f"Standard unlock result: {unlock_result}")
+        await asyncio.sleep(2)
+        
+        # Method 2.5: Machine enable (prerequisite for some machines)
+        print("Method 2.5: Machine enable")
+        enable_result = money.komut_machine_enable()
+        print(f"Machine enable result: {enable_result}")
+        await asyncio.sleep(1)
+        
+        # Method 2.6: Clear host controls
+        print("Method 2.6: Clear host controls")
+        clear_result = money.komut_clear_host_controls()
+        print(f"Clear host controls result: {clear_result}")
+        await asyncio.sleep(1)
+        
+        # Method 2.7: Advanced unlock sequence
+        print("Method 2.7: Advanced unlock sequence")
+        advanced_unlock_result = money.komut_advanced_unlock()
+        print(f"Advanced unlock result: {advanced_unlock_result}")
         await asyncio.sleep(2)
         
         # Method 3: Check AFT status after registration and unlock

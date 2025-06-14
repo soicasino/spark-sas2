@@ -1292,8 +1292,17 @@ class SasMoney:
         
         print(f"[AFT UNLOCK] Using asset number: {asset_number}")
         
-        # AFT unlock command: 74h with asset number and lock code
-        # Format: Address + 74h + AssetNumber(4 bytes) + LockCode(00=unlock) + TransferCondition(00) + LockTimeout(0000)
+        # AFT unlock/lock command: 74h 
+        # IMPORTANT: The 74h command is actually "AFT Lock" command, not unlock!
+        # To UNLOCK, we need to send lock code 00 (no locks)
+        # To LOCK, we would send specific lock codes like FF
+        
+        # Format: Address + 74h + AssetNumber(4 bytes) + LockCode + TransferCondition + LockTimeout
+        # LockCode 00 = No locks (unlock all)
+        # TransferCondition 00 = No transfer restrictions  
+        # LockTimeout 0000 = No timeout
+        
+        print(f"[AFT UNLOCK] Attempting to clear all locks (unlock)")
         command = f"{sas_address}74{asset_number}00000000"
         command_crc = get_crc(command)
         
@@ -1302,6 +1311,22 @@ class SasMoney:
         try:
             result = self.communicator.sas_send_command_with_queue("AFTUnlock", command_crc, 1)
             print(f"[AFT UNLOCK] Unlock command result: {result}")
+            
+            # Wait a moment for the machine to process the unlock
+            import time
+            time.sleep(0.5)
+            
+            # Try additional unlock approaches if the first one doesn't work
+            print(f"[AFT UNLOCK] Trying alternative unlock approaches...")
+            
+            # Approach 2: Some machines need a specific unlock sequence
+            # Try with transfer condition FF (all transfers allowed)
+            command2 = f"{sas_address}74{asset_number}00FF0000"
+            command2_crc = get_crc(command2)
+            print(f"[AFT UNLOCK] Sending alternative unlock: {command2_crc}")
+            result2 = self.communicator.sas_send_command_with_queue("AFTUnlock2", command2_crc, 1)
+            print(f"[AFT UNLOCK] Alternative unlock result: {result2}")
+            
             return result
         except Exception as e:
             print(f"[AFT UNLOCK] Error sending unlock command: {e}")
@@ -1322,6 +1347,135 @@ class SasMoney:
         time.sleep(1)
         
         # Check the last balance response for status indicators
-        # This would need to be implemented based on your response parsing
-        print(f"[AFT STATUS CHECK] Status check completed")
-        return True  # Simplified for now 
+        if hasattr(self.communicator, 'last_game_lock_status'):
+            lock_status = self.communicator.last_game_lock_status
+            aft_status = self.communicator.last_aft_status
+            
+            print(f"[AFT STATUS CHECK] Current Lock Status: {lock_status}")
+            print(f"[AFT STATUS CHECK] Current AFT Status: {aft_status}")
+            
+            # Analyze the status codes
+            if lock_status == "00":
+                print(f"[AFT STATUS CHECK] ✅ Machine is unlocked")
+                return True
+            elif lock_status == "FF":
+                print(f"[AFT STATUS CHECK] ❌ Machine is fully locked")
+                return False
+            else:
+                print(f"[AFT STATUS CHECK] ⚠️  Machine partially locked: {lock_status}")
+                return False
+        else:
+            print(f"[AFT STATUS CHECK] ⚠️  No status information available")
+            return False
+
+    def komut_advanced_unlock(self):
+        """
+        Advanced unlock method that tries multiple approaches to unlock the machine.
+        This method addresses common lock conditions that might prevent AFT transfers.
+        """
+        print(f"[ADVANCED UNLOCK] Starting comprehensive unlock sequence")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        asset_number = "0000006C"
+        if hasattr(self.communicator, 'asset_number') and self.communicator.asset_number:
+            asset_number = self.communicator.asset_number.upper()
+        
+        print(f"[ADVANCED UNLOCK] Using asset number: {asset_number}")
+        
+        try:
+            # Step 1: Clear all game locks (00 = no locks)
+            print(f"[ADVANCED UNLOCK] Step 1: Clear all game locks")
+            cmd1 = f"{sas_address}74{asset_number}00000000"
+            result1 = self.communicator.sas_send_command_with_queue("UnlockStep1", get_crc(cmd1), 1)
+            print(f"[ADVANCED UNLOCK] Clear locks result: {result1}")
+            
+            import time
+            time.sleep(0.5)
+            
+            # Step 2: Enable all transfer types (FF = all transfers allowed)
+            print(f"[ADVANCED UNLOCK] Step 2: Enable all transfer types")  
+            cmd2 = f"{sas_address}74{asset_number}00FF0000"
+            result2 = self.communicator.sas_send_command_with_queue("UnlockStep2", get_crc(cmd2), 1)
+            print(f"[ADVANCED UNLOCK] Enable transfers result: {result2}")
+            
+            time.sleep(0.5)
+            
+            # Step 3: Try with extended timeout to allow machine processing
+            print(f"[ADVANCED UNLOCK] Step 3: Set extended unlock timeout")
+            cmd3 = f"{sas_address}74{asset_number}00FFFF00"  # Extended timeout
+            result3 = self.communicator.sas_send_command_with_queue("UnlockStep3", get_crc(cmd3), 1)
+            print(f"[ADVANCED UNLOCK] Extended timeout result: {result3}")
+            
+            time.sleep(1)  # Give more time for processing
+            
+            # Step 4: Query status to confirm unlock
+            print(f"[ADVANCED UNLOCK] Step 4: Verify unlock status")
+            self.komut_bakiye_sorgulama("advanced_unlock_verify", False, "unlock_verification")
+            
+            time.sleep(1)
+            
+            # Check results
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                lock_status = self.communicator.last_game_lock_status
+                if lock_status == "00":
+                    print(f"[ADVANCED UNLOCK] ✅ SUCCESS: Machine unlocked!")
+                    return True
+                elif lock_status != "FF":
+                    print(f"[ADVANCED UNLOCK] ⚠️  PARTIAL: Lock status improved to {lock_status}")
+                    return True
+                else:
+                    print(f"[ADVANCED UNLOCK] ❌ FAILED: Machine still locked ({lock_status})")
+                    return False
+            else:
+                print(f"[ADVANCED UNLOCK] ⚠️  Cannot verify - no status available")
+                return None
+                
+        except Exception as e:
+            print(f"[ADVANCED UNLOCK] Error in unlock sequence: {e}")
+            return False
+
+    def komut_machine_enable(self):
+        """
+        Enable the machine using SAS enable command.
+        Sometimes machines need to be enabled before they can be unlocked.
+        """
+        print(f"[MACHINE ENABLE] Enabling machine before unlock")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # Enable command: 8Eh
+        command = f"{sas_address}8E"
+        command_crc = get_crc(command)
+        
+        print(f"[MACHINE ENABLE] Sending enable command: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("MachineEnable", command_crc, 1)
+            print(f"[MACHINE ENABLE] Enable result: {result}")
+            return result
+        except Exception as e:
+            print(f"[MACHINE ENABLE] Error enabling machine: {e}")
+            return False
+
+    def komut_clear_host_controls(self):
+        """
+        Clear host controls that might be preventing AFT operations.
+        Some machines have host-controlled lockouts that need to be cleared.
+        """
+        print(f"[CLEAR HOST CONTROLS] Clearing host-controlled lockouts")
+        
+        sas_address = getattr(self.communicator, 'sas_address', '01')
+        
+        # Clear host controls: 85h (Clear host control)
+        command = f"{sas_address}85"
+        command_crc = get_crc(command)
+        
+        print(f"[CLEAR HOST CONTROLS] Sending clear command: {command_crc}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("ClearHostControls", command_crc, 1)
+            print(f"[CLEAR HOST CONTROLS] Clear result: {result}")
+            return result
+        except Exception as e:
+            print(f"[CLEAR HOST CONTROLS] Error clearing controls: {e}")
+            return False 
