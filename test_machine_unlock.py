@@ -1,110 +1,137 @@
 #!/usr/bin/env python3
 """
-Test script to verify machine unlock functionality
+Test machine unlock and AFT transfer functionality
 """
 
-import asyncio
+import sys
 import time
-from configparser import ConfigParser
+import asyncio
+import configparser
 from sas_communicator import SASCommunicator
+from sas_money_functions import SasMoney
 
-class MockConfig:
-    """Mock config for testing"""
-    def __init__(self):
-        self.data = {
-            'sas': {'address': '01'},
-            'machine': {'devicetypeid': '8'},
-            'casino': {'casinoid': '8'}
-        }
+def test_machine_unlock():
+    """Test machine unlock and AFT functionality"""
+    print("=== Machine Unlock and AFT Test ===")
     
-    def get(self, section, key, fallback=None):
-        return self.data.get(section, {}).get(key, fallback)
+    # Load config
+    config = configparser.ConfigParser()
+    config.read('config.ini')
     
-    def getint(self, section, key, fallback=None):
-        value = self.get(section, key, fallback)
-        return int(value) if value is not None else fallback
-
-async def test_machine_unlock():
-    """Test machine unlock functionality"""
-    print("Testing Machine Unlock Functionality")
-    print("=" * 50)
-    
-    # Initialize communicator with proper config
-    config = MockConfig()
-    
-    # Create a mock global config that matches what SASCommunicator expects
-    global_config = {
-        'sas_address': '01',
-        'device_type_id': 8,
-        'casino_id': 8
-    }
+    # Create communicator with correct port
+    port = '/dev/ttyUSB1'
+    print(f"Using port: {port}")
+    comm = SASCommunicator(port, config)
     
     try:
-        communicator = SASCommunicator(config, global_config)
-    except Exception as e:
-        print(f"❌ Failed to initialize SASCommunicator: {e}")
-        print("This test requires a running SAS system. Try testing with the main application instead.")
-        return
-    
-    if not hasattr(communicator, 'sas_money') or not communicator.sas_money:
-        print("❌ SAS money functions not available")
-        return
-    
-    sas_money = communicator.sas_money
-    
-    print("1. Checking current machine status...")
-    try:
-        # Query current balance/status
-        sas_money.komut_bakiye_sorgulama("test", False, "status_check")
-        await asyncio.sleep(2)  # Wait for response
-        print("✅ Status query sent")
-    except Exception as e:
-        print(f"❌ Status query failed: {e}")
-    
-    print("\n2. Attempting to unlock machine...")
-    try:
-        unlock_result = sas_money.komut_unlock_machine()
-        print(f"✅ Unlock command sent, result: {unlock_result}")
-        await asyncio.sleep(1)  # Wait for unlock to take effect
-    except Exception as e:
-        print(f"❌ Unlock failed: {e}")
-    
-    print("\n3. Checking status after unlock...")
-    try:
-        # Query balance again to see if status changed
-        sas_money.komut_bakiye_sorgulama("test", False, "post_unlock_check")
-        await asyncio.sleep(2)  # Wait for response
-        print("✅ Post-unlock status query sent")
-    except Exception as e:
-        print(f"❌ Post-unlock status query failed: {e}")
-    
-    print("\n4. Testing small AFT transfer...")
-    try:
-        # Try a small test transfer
-        transaction_id = sas_money.komut_para_yukle(
+        # Open the port
+        print("Opening SAS port...")
+        if not comm.open_port():
+            print("ERROR: Could not open SAS port")
+            return
+        
+        print("✅ SAS port opened successfully")
+        
+        # Wait a moment for initialization
+        time.sleep(1)
+        
+        # Check initial balance
+        print("\n=== Initial Balance Check ===")
+        money = comm.sas_money
+        result = money.komut_bakiye_sorgulama("unlock_test", False, "initial_balance")
+        if result:
+            print(f"✅ Initial balance query successful")
+        else:
+            print("⚠️  Initial balance query failed")
+        
+        # Wait for response
+        balance_received = money.wait_for_balance_query_completion(timeout=3)
+        print(f"Balance received: {balance_received}")
+        print(f"Current balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
+        
+        # Check machine status
+        print(f"Game Lock Status: {getattr(money, 'game_lock_status', 'Unknown')}")
+        print(f"Available Transfers: {getattr(money, 'available_transfers', 'Unknown')}")
+        print(f"AFT Status: {getattr(money, 'aft_status', 'Unknown')}")
+        
+        # Try different unlock approaches
+        print("\n=== Trying Different Unlock Methods ===")
+        
+        # Method 1: Standard unlock with asset number
+        print("Method 1: Standard unlock with asset number")
+        unlock_cmd = f"01740000006C{money.calculate_crc('01740000006C')}"
+        print(f"Unlock command: {unlock_cmd}")
+        result = comm.send_sas_command(unlock_cmd)
+        print(f"Unlock result: {result}")
+        time.sleep(1)
+        
+        # Method 2: Unlock with zero asset number
+        print("Method 2: Unlock with zero asset number")
+        unlock_cmd2 = f"017400000000{money.calculate_crc('017400000000')}"
+        print(f"Unlock command: {unlock_cmd2}")
+        result2 = comm.send_sas_command(unlock_cmd2)
+        print(f"Unlock result: {result2}")
+        time.sleep(1)
+        
+        # Method 3: AFT Registration to unlock
+        print("Method 3: AFT Registration")
+        reg_result = money.komut_aft_register("unlock_test")
+        print(f"AFT Registration result: {reg_result}")
+        time.sleep(2)
+        
+        # Check balance after unlock attempts
+        print("\n=== Balance Check After Unlock ===")
+        result = money.komut_bakiye_sorgulama("unlock_test", False, "post_unlock_balance")
+        if result:
+            print(f"✅ Post-unlock balance query successful")
+        else:
+            print("⚠️  Post-unlock balance query failed")
+        
+        # Wait for response
+        balance_received = money.wait_for_balance_query_completion(timeout=3)
+        print(f"Balance received: {balance_received}")
+        print(f"Updated balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
+        
+        # Check updated machine status
+        print(f"Game Lock Status: {getattr(money, 'game_lock_status', 'Unknown')}")
+        print(f"Available Transfers: {getattr(money, 'available_transfers', 'Unknown')}")
+        print(f"AFT Status: {getattr(money, 'aft_status', 'Unknown')}")
+        
+        # Try a small AFT transfer
+        print("\n=== Testing Small AFT Transfer ===")
+        transfer_result = money.komut_para_yukle(
             doincreasetransactionid=1,
             transfertype=10,  # Cashable
-            customerbalance=1.0,  # $1.00 test
+            customerbalance=5.0,  # Small amount
             customerpromo=0.0,
             transactionid=9999,
             assetnumber="0000006c",
             registrationkey="00000000000000000000000000000000000000000000"
         )
-        print(f"✅ Test transfer sent, transaction ID: {transaction_id}")
+        print(f"Transfer result: {transfer_result}")
         
-        # Wait for completion
-        result = await sas_money.wait_for_para_yukle_completion(timeout=10)
-        if result is True:
-            print("✅ Test transfer completed successfully!")
-        elif result is False:
-            print("❌ Test transfer failed")
-        else:
-            print("⚠️ Test transfer timed out")
-            
+        # Wait for transfer completion
+        print("Waiting for transfer completion...")
+        transfer_completed = money.wait_for_para_yukle_completion(timeout=10)
+        print(f"Transfer completed: {transfer_completed}")
+        print(f"Transfer status: {money.get_transfer_status_description(money.transfer_status)}")
+        
+        # Final balance check
+        print("\n=== Final Balance Check ===")
+        result = money.komut_bakiye_sorgulama("unlock_test", False, "final_balance")
+        if result:
+            balance_received = money.wait_for_balance_query_completion(timeout=3)
+            print(f"Final balance: Cashable=${money.cashable_balance}, Restricted=${money.restricted_balance}, Non-restricted=${money.non_restricted_balance}")
+        
     except Exception as e:
-        print(f"❌ Test transfer failed: {e}")
-    
-    print("\nTest completed!")
+        print(f"Error in unlock test: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Close the port
+        print("\nClosing SAS port...")
+        comm.close_port()
+        print("✅ Port closed")
 
 if __name__ == "__main__":
-    asyncio.run(test_machine_unlock()) 
+    test_machine_unlock() 
