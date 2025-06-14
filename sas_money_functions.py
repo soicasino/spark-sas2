@@ -376,7 +376,7 @@ class SasMoney:
         command = "0000"  # Transfer Code, Transfer Index
 
         if RealTransferType in [10, 11]:
-            command += f"{RealTransferType:02X}"
+            command += f"{RealTransferType:02d}"  # FIXED: Use decimal format, not hex
         else:
             command += "00"
 
