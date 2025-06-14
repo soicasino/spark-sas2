@@ -617,7 +617,8 @@ class SASCommunicator:
                     print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}  DEBUG: Asset number read from machine")
                     
                     # Store the asset number in the communicator instance
-                    self.asset_number = asset_hex  # Store hex format
+                    # Convert to AFT format (big-endian, 8 characters, lowercase)
+                    self.asset_number = f"{asset_dec:08x}"  # Store in AFT format (0000006c)
                     self.decimal_asset_number = asset_dec  # Store decimal format
                     
                     print(f"[ASSET NO] Asset number read from machine: {asset_dec}")
