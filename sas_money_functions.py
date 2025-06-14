@@ -268,6 +268,7 @@ class SasMoney:
             # Manual credit addition - use provided amounts
             print(f"[MONEY LOAD] Processing as manual credit addition")
             print(f"[MONEY LOAD]   Transfer type: {ttype} (10=cashable, 11=restricted, 0=non-restricted)")
+            RealTransferType = ttype  # Set the real transfer type for manual additions
 
         cbalance_int = int(cbalance * 100)
         cpromo_int = int(cpromo * 100)
@@ -321,6 +322,14 @@ class SasMoney:
 
         command_header += hex(len(command) // 2).replace("0x", "")
         full_command = get_crc(command_header + command)
+        
+        # Debug logging for the constructed command
+        print(f"[MONEY LOAD] AFT Command constructed:")
+        print(f"[MONEY LOAD]   RealTransferType: {RealTransferType}")
+        print(f"[MONEY LOAD]   Command header: {command_header}")
+        print(f"[MONEY LOAD]   Command data: {command}")
+        print(f"[MONEY LOAD]   Full command: {full_command}")
+        
         self.communicator.sas_send_command_with_queue("ParaYukle", full_command, 1)
 
         return actual_transaction_id
