@@ -18,8 +18,23 @@ def test_real_balance():
     config = configparser.ConfigParser()
     config.read('config.ini')
     
-    # Create communicator
-    comm = SASCommunicator('COM3', config)
+    # Create communicator with Linux port
+    # Try common USB serial ports on Linux
+    ports_to_try = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyS0']
+    comm = None
+    
+    for port in ports_to_try:
+        try:
+            print(f"Trying port: {port}")
+            comm = SASCommunicator(port, config)
+            break
+        except Exception as e:
+            print(f"Failed to create communicator for {port}: {e}")
+            continue
+    
+    if not comm:
+        print("ERROR: Could not create communicator for any port")
+        return
     
     try:
         # Open the port
