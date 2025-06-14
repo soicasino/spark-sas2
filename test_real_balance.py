@@ -19,7 +19,7 @@ def test_real_balance():
     config.read('config.ini')
     
     # Create communicator with specified port
-    port = '/dev/ttyUSB0'
+    port = '/dev/ttyUSB1'
     print(f"Using port: {port}")
     comm = SASCommunicator(port, config)
     
