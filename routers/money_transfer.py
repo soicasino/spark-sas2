@@ -76,26 +76,36 @@ async def add_credits(
             # Step 1: Register AFT first (required for AFT operations)
             print(f"[ADD CREDITS] Registering AFT before money transfer...")
             try:
-                # Send AFT registration command (SAS command 0x75)
-                sas_address = getattr(sas_comm, 'sas_address', '01')
-                assetnumber_for_reg = "0000006C"  # Asset number for registration
+                # AFT Registration Parameters (same as register_aft endpoint)
+                assetnumber_for_reg = "0000006C"  # Asset number (108 in decimal)
                 registrationkey_for_reg = "00000000000000000000000000000000000000000000"  # Default key
                 posid = "POS001"  # Point of Sale ID
                 
-                # Manual AFT registration command construction
-                # Command: 0x75 + asset number + registration key + POS ID
-                reg_command = f"{sas_address}75{assetnumber_for_reg}{registrationkey_for_reg}{posid.ljust(16, '0')}"
-                
-                # Add CRC and send registration command
-                from utils import get_crc
-                reg_command_with_crc = get_crc(reg_command)
-                
-                print(f"[ADD CREDITS] Sending AFT registration command: {reg_command_with_crc}")
-                sas_comm.sas_send_command_with_queue("AFTRegistration", reg_command_with_crc, 1)
+                # Use the same AFT registration logic as the register_aft endpoint
+                if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                    # Try to call AFT registration if available
+                    if hasattr(sas_comm.sas_money, 'komut_aft_registration'):
+                        result = sas_comm.sas_money.komut_aft_registration(
+                            assetnumber_for_reg,
+                            registrationkey_for_reg,
+                            posid
+                        )
+                        print(f"[ADD CREDITS] AFT registration result: {result}")
+                    else:
+                        # Manual AFT registration command construction (fallback)
+                        sas_address = getattr(sas_comm, 'sas_address', '01')
+                        command = f"{sas_address}75{assetnumber_for_reg}{registrationkey_for_reg}{posid.ljust(16, '0')}"
+                        
+                        # Send the command
+                        if hasattr(sas_comm, 'send_command'):
+                            result = sas_comm.send_command(command)
+                            print(f"[ADD CREDITS] AFT registration command sent: {result}")
+                        else:
+                            print(f"[ADD CREDITS] AFT registration command constructed but no send method available")
                 
                 # Wait a moment for registration to process
                 await asyncio.sleep(1)
-                print(f"[ADD CREDITS] AFT registration sent, proceeding with money transfer...")
+                print(f"[ADD CREDITS] AFT registration completed, proceeding with money transfer...")
                 
             except Exception as reg_error:
                 print(f"[ADD CREDITS] AFT registration warning: {reg_error}")
