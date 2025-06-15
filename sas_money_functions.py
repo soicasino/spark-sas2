@@ -482,10 +482,19 @@ class SasMoney:
         command += "00"   # Transfer Code
         command += "00"   # Transfer Index
         
-        # Transfer Type Code
-        if real_transfer_type in [10, 11]:
-            command += f"{real_transfer_type:02d}"
+        # Transfer Type Code - FIXED: Use original working logic
+        # Original working code always used "00" for standard cashable transfers
+        # Only special jackpot/bonus transfers used different codes
+        if transfertype == 13:  # Bonus transfer
+            if real_transfer_type == 10:
+                command += "10"  # Cashable bonus
+            elif real_transfer_type == 11:
+                command += "11"  # Restricted bonus
+            else:
+                command += "00"  # Default to cashable
         else:
+            # CRITICAL FIX: Always use "00" for standard transfers
+            # The original working code used "00" for all normal cashable transfers
             command += "00"
         
         # Amounts (as 5-byte BCD strings) - CRITICAL: Use exact BCD format
