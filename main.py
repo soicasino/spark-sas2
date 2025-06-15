@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import datetime
+import time
 
 from sas_web_service import SASWebService
 from routers import system_status, meters, bill_acceptor, machine_control, websocket_routes, card_reader, ip_management, event_management, money_transfer
@@ -284,6 +285,120 @@ async def health_check():
             }
         }
     )
+
+
+@app.get("/api/debug/aft-balance")
+async def debug_aft_balance():
+    """Debug AFT balance query - test different approaches"""
+    try:
+        start_time = time.time()
+        
+        print("\n" + "="*60)
+        print("AFT BALANCE DEBUG - USING EXISTING SAS CONNECTION")
+        print("="*60)
+        
+        # Store original values for comparison
+        original_cashable = sas_money.yanit_bakiye_tutar
+        original_restricted = sas_money.yanit_restricted_amount
+        original_nonrestricted = sas_money.yanit_nonrestricted_amount
+        
+        print(f"[DEBUG] Before query - Cashable: ${original_cashable}, Restricted: ${original_restricted}, Non-restricted: ${original_nonrestricted}")
+        
+        # Test 1: Standard balance query
+        print("\n🔍 TEST 1: Standard balance query (74h)...")
+        sas_money.komut_bakiye_sorgulama("debug_api", False, "api_debug_test")
+        result1 = await sas_money.wait_for_bakiye_sorgulama_completion(timeout=8)
+        
+        test1_cashable = sas_money.yanit_bakiye_tutar
+        test1_restricted = sas_money.yanit_restricted_amount  
+        test1_nonrestricted = sas_money.yanit_nonrestricted_amount
+        
+        print(f"[DEBUG] Test 1 Results - Cashable: ${test1_cashable}, Restricted: ${test1_restricted}, Non-restricted: ${test1_nonrestricted}")
+        
+        # Test 2: Check if we can query with different parameters
+        print("\n🔍 TEST 2: Alternative asset number query...")
+        
+        # Store original asset number
+        original_asset = sas_communicator.asset_number
+        
+        # Try with a different asset number format
+        sas_communicator.asset_number = "0000006D"  # Try different asset
+        
+        sas_money.komut_bakiye_sorgulama("debug_alt", False, "alt_asset_test")
+        result2 = await sas_money.wait_for_bakiye_sorgulama_completion(timeout=5)
+        
+        test2_cashable = sas_money.yanit_bakiye_tutar
+        test2_restricted = sas_money.yanit_restricted_amount
+        test2_nonrestricted = sas_money.yanit_nonrestricted_amount
+        
+        print(f"[DEBUG] Test 2 Results - Cashable: ${test2_cashable}, Restricted: ${test2_restricted}, Non-restricted: ${test2_nonrestricted}")
+        
+        # Restore original asset number
+        sas_communicator.asset_number = original_asset
+        
+        # Test 3: Check communicator state
+        print("\n🔍 TEST 3: Checking communicator state...")
+        print(f"[DEBUG] Current Asset Number: {sas_communicator.asset_number}")
+        print(f"[DEBUG] Last Game Lock Status: {getattr(sas_communicator, 'last_game_lock_status', 'Not available')}")
+        print(f"[DEBUG] Last AFT Status: {getattr(sas_communicator, 'last_aft_status', 'Not available')}")
+        print(f"[DEBUG] Last Available Transfers: {getattr(sas_communicator, 'last_available_transfers', 'Not available')}")
+        
+        # Test 4: BCD parsing verification
+        print("\n🔍 TEST 4: BCD parsing verification...")
+        test_bcd_values = [
+            ("0000000500", "$5.00"),
+            ("0000001000", "$10.00"), 
+            ("0000002000", "$20.00"),
+            ("0000000000", "$0.00"),
+        ]
+        
+        for bcd_val, expected in test_bcd_values:
+            try:
+                parsed = sas_money.bcd_to_int(bcd_val) / 100
+                print(f"[DEBUG] BCD '{bcd_val}' -> ${parsed:.2f} (expected {expected})")
+            except Exception as e:
+                print(f"[DEBUG] BCD parsing error for '{bcd_val}': {e}")
+        
+        execution_time = (time.time() - start_time) * 1000
+        
+        return {
+            "success": True,
+            "message": "AFT balance debug completed",
+            "timestamp": datetime.now().isoformat(),
+            "execution_time_ms": round(execution_time, 1),
+            "debug_results": {
+                "original_balance": {
+                    "cashable": original_cashable,
+                    "restricted": original_restricted,
+                    "nonrestricted": original_nonrestricted
+                },
+                "test1_standard_query": {
+                    "success": result1,
+                    "cashable": test1_cashable,
+                    "restricted": test1_restricted, 
+                    "nonrestricted": test1_nonrestricted
+                },
+                "test2_alt_asset": {
+                    "success": result2,
+                    "cashable": test2_cashable,
+                    "restricted": test2_restricted,
+                    "nonrestricted": test2_nonrestricted
+                },
+                "communicator_state": {
+                    "asset_number": sas_communicator.asset_number,
+                    "game_lock_status": getattr(sas_communicator, 'last_game_lock_status', None),
+                    "aft_status": getattr(sas_communicator, 'last_aft_status', None),
+                    "available_transfers": getattr(sas_communicator, 'last_available_transfers', None)
+                }
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 
 if __name__ == "__main__":
