@@ -50,12 +50,20 @@ class SasMoney:
         """
         Wait for the ParaYukle (money load) transfer to complete.
         Returns True if successful, False if failed, or None if timeout.
+        
+        This matches the original Wait_ParaYukle blocking pattern:
+        1. Reset status to "PENDING" 
+        2. Enter monitoring loop checking global status
+        3. Exit when status changes from "PENDING"
         """
         start = time.time()
-        self.is_waiting_for_para_yukle = 1
         
         print(f"[AFT WAIT] Starting AFT money load wait (timeout={timeout}s)")
-        print(f"[AFT WAIT] Initial status: {self.global_para_yukleme_transfer_status}")
+        
+        # CRITICAL: Reset status before waiting, matching original Wait_ParaYukle logic
+        # In original: Global_ParaYukleme_TransferStatus = "PENDING" 
+        self.global_para_yukleme_transfer_status = "PENDING"
+        print(f"[AFT WAIT] Reset status to PENDING, starting wait loop...")
         
         while time.time() - start < timeout:
             # Add a small delay before checking status to allow background thread to update
@@ -64,24 +72,25 @@ class SasMoney:
             status = self.global_para_yukleme_transfer_status
             elapsed = time.time() - start
             
-            print(f"[AFT WAIT] {elapsed:.1f}s - Current status: {status}")
+            # Only log every 2 seconds to avoid spam
+            if elapsed > 1 and int(elapsed) % 2 == 0:
+                print(f"[AFT WAIT] {elapsed:.1f}s - Current status: {status}")
             
-            if status == "00":  # Success
-                self.is_waiting_for_para_yukle = 0
-                print(f"[AFT WAIT] SUCCESS after {elapsed:.2f}s")
-                return True
-            elif status in ("84", "87", "81", "FF"):  # Error codes
-                self.is_waiting_for_para_yukle = 0
-                print(f"[AFT WAIT] FAILED after {elapsed:.2f}s with status: {status}")
-                return False
-            elif status in ("40", "C0", "C1", "C2"):  # Pending/in-progress codes - keep waiting
-                print(f"[AFT WAIT] Transfer {self.get_transfer_status_description(status).lower()}, continuing to wait...")
-                pass
-            elif status is None:
-                print(f"[AFT WAIT] No response yet, waiting...")
-                pass
-            else:
-                print(f"[AFT WAIT] Unknown status: {status} - {self.get_transfer_status_description(status)}")
+            # Check if status has changed from "PENDING" - this means we got a response
+            if status != "PENDING":
+                if status == "00":  # Success
+                    self.is_waiting_for_para_yukle = 0
+                    print(f"[AFT WAIT] SUCCESS after {elapsed:.2f}s")
+                    return True
+                elif status in ("84", "87", "81", "FF"):  # Error codes
+                    self.is_waiting_for_para_yukle = 0
+                    print(f"[AFT WAIT] FAILED after {elapsed:.2f}s with status: {status}")
+                    return False
+                elif status in ("40", "C0", "C1", "C2"):  # Pending/in-progress codes - keep waiting
+                    print(f"[AFT WAIT] Transfer {self.get_transfer_status_description(status).lower()}, continuing to wait...")
+                    pass
+                else:
+                    print(f"[AFT WAIT] Unknown status: {status} - {self.get_transfer_status_description(status)}")
                 
             # Check every 500ms instead of immediately looping
             await asyncio.sleep(0.4)  # Total 0.5s with the 0.1s above
@@ -470,6 +479,10 @@ class SasMoney:
             # Send command
             result = self.communicator.sas_send_command_with_queue("ParaYukle", final_command, 1)
             print(f"[PARA YUKLE] Command sent successfully: {result}")
+            
+            # CRITICAL: Set waiting flag immediately after sending, matching original pattern
+            # In original: Komut_ParaYukle sets IsWaitingForParaYukle = 1 right after sending
+            self.is_waiting_for_para_yukle = 1
             
             return transactionid
             
@@ -1086,13 +1099,16 @@ class SasMoney:
         """
         Handle AFT money load response from the machine.
         This method parses the SAS 72h response and updates transfer status.
+        
+        CRITICAL: This function ALWAYS processes AFT responses and updates the global status,
+        matching the original Yanit_ParaYukle pattern. The waiting flag is managed separately.
         """
         try:
             print(f"[MONEY LOAD RESPONSE] Received response: {yanit[:20]}...")
             
-            if not self.is_waiting_for_para_yukle:
-                print("[MONEY LOAD RESPONSE] Not waiting for money load response, ignoring")
-                return
+            # REMOVED: Early return check for waiting flag - always process AFT responses
+            # In original: Yanit_ParaYukle always updates Global_ParaYukleme_TransferStatus
+            # regardless of IsWaitingForParaYukle state
                 
             # Parse response according to SAS protocol
             # Format: Address(1) + Command(1) + Length(1) + TransactionBuffer(1) + TransferStatus(1) + ...
@@ -1115,7 +1131,8 @@ class SasMoney:
             
             print(f"[MONEY LOAD RESPONSE] Transfer Status: {transfer_status}")
             
-            # Update global transfer status
+            # CRITICAL: Always update global transfer status - this is what the wait loop monitors
+            # In original: Global_ParaYukleme_TransferStatus = transfer_status
             self.global_para_yukleme_transfer_status = transfer_status
             
             # Parse amounts for logging
@@ -1131,7 +1148,9 @@ class SasMoney:
             # Handle different transfer statuses
             if transfer_status == "00":
                 print(f"[MONEY LOAD RESPONSE] Transfer successful{amounts_info}")
-                self.is_waiting_for_para_yukle = 0
+                # Clear waiting flag only on success or final error
+                if self.is_waiting_for_para_yukle:
+                    self.is_waiting_for_para_yukle = 0
                 
                 # Parse transaction ID for validation if needed
                 try:
@@ -1143,7 +1162,7 @@ class SasMoney:
                     print(f"[MONEY LOAD RESPONSE] Error parsing transaction ID: {e}")
                     
             elif transfer_status in ["87", "84", "FF", "93", "82", "83", "81", "40"]:
-                print(f"[MONEY LOAD RESPONSE] Transfer failed with status: {transfer_status}")
+                print(f"[MONEY LOAD RESPONSE] Transfer status: {transfer_status}")
                 if transfer_status == "87":
                     print("[MONEY LOAD RESPONSE] Machine door open, tilt, or disabled")
                 elif transfer_status == "84":
@@ -1155,7 +1174,7 @@ class SasMoney:
                     return  # Don't clear waiting flag for pending status
                     
                 # For error statuses, clear the waiting flag
-                if transfer_status != "40":
+                if transfer_status != "40" and self.is_waiting_for_para_yukle:
                     self.is_waiting_for_para_yukle = 0
             else:
                 print(f"[MONEY LOAD RESPONSE] Unknown transfer status: {transfer_status}")
@@ -1163,7 +1182,8 @@ class SasMoney:
         except Exception as e:
             print(f"[MONEY LOAD RESPONSE] Error parsing response: {e}")
             # On parse error, clear waiting flag to prevent infinite wait
-            self.is_waiting_for_para_yukle = 0 
+            if self.is_waiting_for_para_yukle:
+                self.is_waiting_for_para_yukle = 0
 
     def yanit_para_sifirla(self, yanit):
         """
