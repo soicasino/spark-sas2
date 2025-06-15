@@ -78,19 +78,22 @@ class AFTTester:
                     if status_code == "00":
                         print("[HANDLER] Success status detected. Resolving future.")
                         self.aft_future.set_result(True)
-                    # Handle other statuses like "pending" (40) if needed
-                    elif status_code == "40":
-                        print("[HANDLER] Transfer pending, continuing to wait...")
-                    elif status_code != "40":
+                    # Handle pending statuses - these are NORMAL, keep waiting
+                    elif status_code in ["40", "C0", "C1", "C2"]:
+                        print(f"[HANDLER] Transfer {status_code} (pending/acknowledged), continuing to wait...")
+                        # Don't resolve the future yet, keep waiting for completion
+                    # Only fail on actual error codes
+                    elif status_code in ["80", "81", "82", "83", "84", "87", "FF"]:
+                        print(f"[HANDLER] Transfer failed with error status: {status_code}")
                         self.aft_future.set_exception(
                             Exception(f"AFT Failed with status: {status_code}")
                         )
         
-        # Handle AFT completion message (exception 69h)
-        elif "01FF69" in response:
+        # Handle AFT completion message (exception 69h) - THIS IS THE KEY!
+        elif response == "69":
              print(f"[HANDLER] AFT Completion (69h) detected: {response}")
              if self.aft_future and not self.aft_future.done():
-                print("[HANDLER] Success status detected from completion message. Resolving future.")
+                print("[HANDLER] AFT completion signal received. Resolving future as SUCCESS.")
                 self.aft_future.set_result(True)
 
     def start(self):
