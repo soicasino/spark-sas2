@@ -41,21 +41,22 @@ class AFTTester:
         print("[POLL_LOOP] Starting background polling...")
         while self.running:
             try:
-                if self.communicator and hasattr(self.communicator, 'is_port_open') and self.communicator.is_port_open:
-                    # Use the communicator's existing polling method
+                if self.communicator and self.communicator.is_port_open:
+                    # Get any incoming data
                     data = self.communicator.get_data_from_sas_port()
                     if data:
                         print(f"[POLL_LOOP] RX: {data}")
                         self.handle_response(data)
+                        # Also let the communicator handle it
+                        self.communicator.handle_received_sas_command(data)
                 
-                # Send a general poll periodically to keep the connection alive
-                if self.communicator:
+                    # Send periodic general poll (alternating 80/81)
                     self.communicator.send_general_poll()
 
-                time.sleep(0.15)  # Poll every 150ms
+                time.sleep(0.1)  # Poll every 100ms (matching working script)
             except Exception as e:
                 print(f"[POLL_LOOP] Error: {e}")
-                time.sleep(1)
+                time.sleep(0.5)
         print("[POLL_LOOP] Stopped.")
 
     def handle_response(self, response: str):
@@ -97,11 +98,18 @@ class AFTTester:
         print("Initializing SAS communication...")
         
         # Initialize communicator with config - use the correct SAS port
-        self.communicator = SASCommunicator('/dev/ttyUSB1', self.config)
+        sas_port = self.config.get('sas', 'port', '/dev/ttyUSB1')
+        print(f"Connecting to SAS port: {sas_port}")
+        
+        self.communicator = SASCommunicator(sas_port, self.config)
+        
+        # Explicitly open the port (this is the key difference!)
+        if not self.communicator.open_port():
+            raise ConnectionError("Failed to open SAS port. Check connection and permissions.")
         
         # Check if port is open
-        if not hasattr(self.communicator, 'is_port_open') or not self.communicator.is_port_open:
-            raise ConnectionError("Failed to open SAS port. Check connection and permissions.")
+        if not self.communicator.is_port_open:
+            raise ConnectionError("SAS port failed to open properly.")
         
         self.money = SasMoney(self.config, self.communicator)
         print("✅ SAS communication initialized.")
@@ -115,8 +123,8 @@ class AFTTester:
         self.running = False
         if self.poll_thread:
             self.poll_thread.join(timeout=1)
-        if self.communicator and hasattr(self.communicator, 'close'):
-            self.communicator.close()
+        if self.communicator:
+            self.communicator.close_port()
         print("Polling stopped and port closed.")
 
     async def run_aft_test(self):
