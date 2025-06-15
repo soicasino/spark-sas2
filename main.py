@@ -290,12 +290,32 @@ async def health_check():
 @app.get("/api/debug/aft-balance")
 async def debug_aft_balance():
     """Debug AFT balance query - test different approaches"""
+    global sas_service
+    
+    if not sas_service or not sas_service.is_initialized:
+        return {
+            "success": False,
+            "error": "SAS service not initialized",
+            "timestamp": datetime.now().isoformat()
+        }
+    
     try:
         start_time = time.time()
         
         print("\n" + "="*60)
         print("AFT BALANCE DEBUG - USING EXISTING SAS CONNECTION")
         print("="*60)
+        
+        # Get references to SAS components
+        sas_money = sas_service.sas_money
+        sas_communicator = sas_service.sas_communicator
+        
+        if not sas_money or not sas_communicator:
+            return {
+                "success": False,
+                "error": "SAS components not available",
+                "timestamp": datetime.now().isoformat()
+            }
         
         # Store original values for comparison
         original_cashable = sas_money.yanit_bakiye_tutar
