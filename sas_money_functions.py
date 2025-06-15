@@ -603,26 +603,9 @@ class SasMoney:
         in the correct (reversed byte) order.
         """
         try:
-            from crccheck.crc import CrcKermit
-            
-            data = bytearray.fromhex(command)
-            crc_instance = CrcKermit()
-            crc_instance.process(data)
-            
-            # The CRC result is returned as bytes
-            crc_bytes = crc_instance.finalbytes()
-            
-            # Format to a hex string
-            crc_hex = crc_bytes.hex().upper()
-            
-            # Pad if necessary to ensure it's 4 characters (2 bytes)
-            crc_hex = crc_hex.zfill(4)
-            
-            # IMPORTANT: The SAS protocol requires the CRC bytes to be reversed.
-            # If crc_hex is "1234", it should be appended as "3412".
-            reversed_crc = crc_hex[2:4] + crc_hex[0:2]
-            
-            return command + reversed_crc
+            # Use the existing get_crc function from utils
+            from utils import get_crc
+            return get_crc(command)
             
         except Exception as e:
             print(f"[CRC] Error calculating CRC: {e}")
