@@ -100,15 +100,14 @@ async def add_credits(
             print(f"[ADD CREDITS] Getting current balance...")
             try:
                 if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                    # Send the transfer command
+                    # Send the transfer command using corrected method signature
                     actual_transaction_id = sas_comm.sas_money.komut_para_yukle(
-                        doincreasetransactionid,
-                        transfertype,
-                        customerbalance,
-                        customerpromo,
-                        transactionid,
-                        assetnumber,
-                        registrationkey
+                        customerbalance=customerbalance,
+                        customerpromo=customerpromo,
+                        transfertype=transfertype,
+                        assetnumber=assetnumber,
+                        registrationkey=registrationkey,
+                        transactionid=transactionid
                     )
                     
                     # Wait for completion with timeout

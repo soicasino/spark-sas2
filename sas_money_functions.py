@@ -441,179 +441,124 @@ class SasMoney:
             self.is_waiting_for_bakiye_sorgulama = False
             raise
 
-    def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance=0.0, customerpromo=0.0, transactionid=0, assetnumber="", registrationkey=""):
+    def komut_para_yukle(self, customerbalance=0.0, customerpromo=0.0, transfertype=10, 
+                         assetnumber=None, registrationkey=None, transactionid=None):
         """
-        CORRECTED: AFT Transfer command using exact logic from original working code.
-        This matches the format from raspberryPython_orj.py that was working.
+        CORRECTED AFT Transfer Command - Using EXACT original working logic
+        
+        This method now uses the exact command construction logic from the original
+        working raspberryPython_orj.py file that successfully updated coin-in meters.
         """
-        print(f"[PARA YUKLE] Starting AFT transfer - Amount: ${customerbalance}, Promo: ${customerpromo}")
-        
-        # Transaction ID management (from original)
-        if doincreasetransactionid == 1:
-            transactionid = self.get_next_transaction_id()
-        elif transactionid == 0:
-            transactionid = self.get_next_transaction_id()
-        
-        print(f"[PARA YUKLE] Using Transaction ID: {transactionid}")
-        
-        # Convert amounts to cents (BCD format requirement)
-        customerbalanceint = int(customerbalance * 100)
-        customerpromoint = int(customerpromo * 100)
-        
-        if customerbalanceint == 0 and customerpromoint == 0:
-            print("[PARA YUKLE] No money to load. Aborting.")
-            return False
-        
-        # Determine real transfer type (from original logic)
-        real_transfer_type = 0
-        if transfertype in [10, 11]:  # Jackpot or Bonus
-            real_transfer_type = transfertype
-        elif transfertype == 13:  # Another type of bonus
-            real_transfer_type = 10  # Assume cashable bonus
-        
-        # SAS Address
-        sas_address = getattr(self.communicator, 'sas_address', '01')
-        
-        # Command Header: Address + Command (length calculated later)
-        command_header = f"{sas_address}72"
-        
-        # Command Body (exact format from original)
-        command = ""
-        command += "00"   # Transfer Code
-        command += "00"   # Transfer Index
-        
-        # Transfer Type Code - FIXED: Use original working logic
-        # Original working code always used "00" for standard cashable transfers
-        # Only special jackpot/bonus transfers used different codes
-        if transfertype == 13:  # Bonus transfer
-            if real_transfer_type == 10:
-                command += "10"  # Cashable bonus
-            elif real_transfer_type == 11:
-                command += "11"  # Restricted bonus
-            else:
-                command += "00"  # Default to cashable
-        else:
-            # CRITICAL FIX: Always use "00" for standard transfers
-            # The original working code used "00" for all normal cashable transfers
-            command += "00"
-        
-        # Amounts (as 5-byte BCD strings) - CRITICAL: Use exact BCD format
-        command += self._add_left_bcd(str(customerbalanceint), 5)
-        command += self._add_left_bcd(str(customerpromoint), 5)
-        command += "0000000000"  # Non-restricted amount (5 bytes)
-        
-        # Transfer Flags (from original logic)
-        # 03 for soft cashout, 07 for hard cashout
-        is_cashout_soft = getattr(self.communicator, 'is_cashout_soft', False)
-        command += "03" if is_cashout_soft else "07"
-        
-        # Asset Number (4 bytes)
-        if assetnumber:
-            # Ensure asset number is 8 hex chars (4 bytes)
-            asset_hex = assetnumber.replace("0x", "").upper().zfill(8)
-            command += asset_hex
-        else:
-            # Use default or from communicator
-            default_asset = getattr(self.communicator, 'asset_number_hex', '01000000')
-            command += default_asset.zfill(8)
-        
-        # Registration Key (20 bytes = 40 hex chars)
-        if registrationkey:
-            # Ensure registration key is 40 hex chars
-            reg_key = registrationkey.replace("0x", "").upper().ljust(40, '0')[:40]
-            command += reg_key
-        else:
-            # Use default (all zeros)
-            command += "0000000000000000000000000000000000000000"
-        
-        # Transaction ID (exact format from original)
-        transaction_id_str = str(transactionid)
-        transaction_id_hex = "".join("{:02x}".format(ord(c)) for c in transaction_id_str)
-        command += self._add_left_bcd(str(len(transaction_id_hex) // 2), 1)  # Length in bytes
-        command += transaction_id_hex
-        
-        # Expiration Date (4 bytes BCD) - not used
-        command += "00000000"
-        
-        # Pool ID (2 bytes)
-        if transfertype == 13 or customerpromo > 0:
-            command += "0030"
-        else:
-            command += "0000"
-        
-        # Receipt data length (1 byte)
-        command += "00"
-        
-        # CRITICAL: Calculate and add command length to header
-        command_length = len(command) // 2  # Convert hex chars to bytes
-        command_header += f"{command_length:02X}"  # Use uppercase hex, zero-padded to 2 digits
-        
-        # Combine header and body
-        full_command = command_header + command
-        
-        # Calculate and append CRC (exact method from original)
-        full_command_with_crc = self._get_crc(full_command)
-        
-        print(f"[PARA YUKLE] Final AFT Command: {full_command_with_crc}")
-        print(f"[PARA YUKLE] Command breakdown:")
-        print(f"  Header: {command_header}")
-        print(f"  Body: {command}")
-        print(f"  Length: {command_length} bytes")
-        
-        # Send the command
         try:
-            result = self.communicator.sas_send_command_with_queue("ParaYukle", full_command_with_crc, 1)
-            print(f"[PARA YUKLE] Command sent successfully: {result}")
+            print(f"[PARA YUKLE] Starting AFT transfer - Amount: ${customerbalance}, Promo: ${customerpromo}")
             
-            # Set waiting flag and operation type
-            self.is_waiting_for_para_yukle = True
-            self.last_aft_operation = "Yukle"
+            # Get asset number and registration key
+            if assetnumber is None:
+                assetnumber = self.communicator.asset_number or "0000006C"
+            if registrationkey is None:
+                registrationkey = self.config.get('sas', 'registrationkey', '0' * 40)
+            
+            # Generate transaction ID if not provided
+            if transactionid is None:
+                transactionid = int(time.time()) % 10000
+            
+            print(f"[PARA YUKLE] Using Transaction ID: {transactionid}")
+            
+            # Convert amounts to cents
+            amount_cents = int(customerbalance * 100)
+            promo_cents = int(customerpromo * 100)
+            
+            # Build command body using EXACT original logic
+            Command = ""
+            Command += "00"  # Transfer Code
+            Command += "00"  # Transfer Index  
+            Command += "00"  # Transfer Type (00 = Cashable, matching original)
+            Command += self._add_left_bcd_original(amount_cents, 5)  # Cashable amount
+            Command += self._add_left_bcd_original(promo_cents, 5)   # Restricted amount
+            Command += "0000000000"  # Non-restricted amount (5 bytes)
+            Command += "07"  # Transfer Flags (Hard mode)
+            Command += assetnumber  # Asset Number (4 bytes)
+            Command += registrationkey  # Registration Key (20 bytes)
+            
+            # Transaction ID - EXACT original logic
+            transaction_id_str = str(transactionid)
+            transaction_id_hex = ''.join('{:02x}'.format(ord(c)) for c in transaction_id_str)
+            Command += self._add_left_bcd_original(len(transaction_id_hex) // 2, 1)  # Length of transaction ID
+            Command += transaction_id_hex  # Transaction ID in hex
+            
+            Command += "00000000"  # Expiration Date (4 bytes)
+            Command += "0000"      # Pool ID (2 bytes)
+            Command += "00"        # Receipt Data Length
+            
+            # Build final command with header - EXACT original method
+            sas_address = "01"
+            command_code = "72"
+            
+            # Calculate length using EXACT original method
+            command_length_hex = hex(int(len(Command)/2)).replace("0x", "").upper().zfill(2)
+            
+            # Assemble final command
+            final_command_no_crc = sas_address + command_code + command_length_hex + Command
+            
+            # Add CRC using corrected method
+            final_command = self._get_crc_original(final_command_no_crc)
+            
+            print(f"[PARA YUKLE] Final AFT Command: {final_command}")
+            print(f"[PARA YUKLE] Command breakdown:")
+            print(f"  Header: {sas_address}{command_code}{command_length_hex}")
+            print(f"  Body: {Command}")
+            print(f"  Length: {len(Command)//2} bytes")
+            
+            # Send command
+            result = self.communicator.sas_send_command_with_queue("ParaYukle", final_command, 1)
+            print(f"[PARA YUKLE] Command sent successfully: {result}")
             
             return transactionid
             
         except Exception as e:
-            print(f"[PARA YUKLE] Error sending command: {e}")
-            return False
-    
-    def _add_left_bcd(self, numbers_str, length_in_bytes):
+            print(f"[PARA YUKLE] Error in komut_para_yukle: {e}")
+            return None
+
+    def _add_left_bcd_original(self, numbers, length_in_bytes):
         """
-        EXACT implementation from original AddLeftBCD function.
-        Pads a string of numbers with leading zeros to meet a specific byte length
-        for BCD (Binary-Coded Decimal) representation.
+        EXACT implementation of AddLeftBCD from original working code
         """
-        # Ensure the input is a string of digits
-        retdata = str(numbers_str)
+        numbers = int(numbers)
+        retdata = str(numbers)
         
-        # Pad with a leading zero if the number of digits is odd
+        # Ensure even number of digits
         if len(retdata) % 2 == 1:
             retdata = "0" + retdata
         
-        # Calculate how many "00" pairs (bytes) are needed for padding
-        current_byte_count = len(retdata) // 2
-        padding_needed = length_in_bytes - current_byte_count
+        # Calculate padding needed
+        count_number = len(retdata) // 2
+        padding_needed = length_in_bytes - count_number
         
-        # Add the padding
-        retdata = "00" * int(padding_needed) + retdata
+        # Add padding
+        for _ in range(padding_needed):
+            retdata = "00" + retdata
+            
         return retdata
-    
-    def _get_crc(self, command):
+
+    def _get_crc_original(self, command):
         """
-        EXACT implementation from original GetCRC function.
-        Calculates the Kermit CRC for a given hex command string and appends it
-        in the correct (reversed byte) order.
+        EXACT implementation of GetCRC from original working code
         """
         try:
-            # Use the existing get_crc function from utils
-            from utils import get_crc
-            return get_crc(command)
+            from crccheck.crc import CrcKermit
+            
+            data = bytearray.fromhex(command)
+            crc_instance = CrcKermit()
+            crc_instance.process(data)
+            crc_bytes = crc_instance.finalbytes()
+            crc_hex = crc_bytes.hex().upper().zfill(4)
+            
+            # SAS requires CRC bytes to be reversed
+            return command + crc_hex[2:4] + crc_hex[0:2]
             
         except Exception as e:
             print(f"[CRC] Error calculating CRC: {e}")
-            # Fallback to existing CRC method if available
-            if hasattr(self.communicator, 'get_crc'):
-                return self.communicator.get_crc(command)
-            else:
-                return command + "0000"  # Fallback
+            return command + "0000"
 
     def komut_para_sifirla(self, doincreaseid, transactionid, assetnumber, registrationkey):
         self.last_para_sifirla_date = datetime.datetime.now()
