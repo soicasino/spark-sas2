@@ -10,6 +10,7 @@ import threading
 from sas_communicator import SASCommunicator
 from sas_money_functions import SasMoney
 from config_manager import ConfigManager
+from utils import get_crc
 
 class ComprehensiveUnlocker:
     def __init__(self):
@@ -121,13 +122,13 @@ class ComprehensiveUnlocker:
         
         # Disable machine
         disable_cmd = self.communicator.sas_address + "8D"
-        disable_crc = self.communicator.get_crc(disable_cmd)
+        disable_crc = get_crc(disable_cmd)
         self.send_sas_command_with_response("DISABLE", disable_crc)
         time.sleep(1)
         
         # Enable machine
         enable_cmd = self.communicator.sas_address + "8E"
-        enable_crc = self.communicator.get_crc(enable_cmd)
+        enable_crc = get_crc(enable_cmd)
         self.send_sas_command_with_response("ENABLE", enable_crc)
         time.sleep(1)
         
@@ -154,7 +155,7 @@ class ComprehensiveUnlocker:
         ]
         
         for cmd_name, cmd in unlock_commands:
-            cmd_crc = self.communicator.get_crc(cmd)
+            cmd_crc = get_crc(cmd)
             response = self.send_sas_command_with_response(cmd_name, cmd_crc)
             time.sleep(0.5)
             
@@ -179,7 +180,7 @@ class ComprehensiveUnlocker:
         
         # Clear host cashout enable
         clear_host_cmd = self.communicator.sas_address + "85"
-        clear_host_crc = self.communicator.get_crc(clear_host_cmd)
+        clear_host_crc = get_crc(clear_host_cmd)
         self.send_sas_command_with_response("CLEAR_HOST_CONTROLS", clear_host_crc)
         time.sleep(1)
         
@@ -188,7 +189,7 @@ class ComprehensiveUnlocker:
         
         # Clear reservation
         clear_res_cmd = self.communicator.sas_address + "8F"
-        clear_res_crc = self.communicator.get_crc(clear_res_cmd)
+        clear_res_crc = get_crc(clear_res_cmd)
         self.send_sas_command_with_response("CLEAR_RESERVATION", clear_res_crc)
         time.sleep(1)
         
@@ -207,7 +208,7 @@ class ComprehensiveUnlocker:
         ]
         
         for cmd_name, cmd in legacy_commands:
-            cmd_crc = self.communicator.get_crc(cmd)
+            cmd_crc = get_crc(cmd)
             self.send_sas_command_with_response(cmd_name, cmd_crc)
             time.sleep(0.5)
         
