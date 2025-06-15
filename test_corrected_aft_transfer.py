@@ -22,7 +22,7 @@ from datetime import datetime
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from sas_communication import SASCommunication
+from sas_communicator import SASCommunicator
 from sas_money_functions import SasMoney
 
 def get_machine_status_via_api():
@@ -82,7 +82,7 @@ def test_corrected_aft_transfer():
     
     try:
         print("🔧 Initializing SAS communication...")
-        sas_comm = SASCommunication()
+        sas_comm = SASCommunicator()
         
         if not sas_comm.is_port_open:
             print("❌ Failed to open SAS communication port")
