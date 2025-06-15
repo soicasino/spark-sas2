@@ -241,6 +241,12 @@ class SASWebService:
         elif command_type == "system_status":
             return self._get_system_status()
             
+        elif command_type == "aft_lock_machine":
+            return self._aft_lock_machine()
+
+        elif command_type == "aft_unlock_machine":
+            return self._aft_unlock_machine()
+            
         else:
             raise Exception(f"Unknown command type: {command_type}")
             
@@ -805,7 +811,7 @@ class SASWebService:
             
         except Exception as e:
             raise Exception(f"Failed to unlock machine: {e}")
-            
+
     def _machine_restart(self) -> Dict[str, Any]:
         """Restart the machine"""
         try:
@@ -822,9 +828,8 @@ class SASWebService:
                 "action": "restart_initiated",
                 "command_sent": "0x0A",
                 "timestamp": datetime.now().isoformat(),
-                "message": "Machine restart initiated successfully"
+                "message": "Restart initiated (placeholder)"
             }
-            
         except Exception as e:
             raise Exception(f"Failed to restart machine: {e}")
             
@@ -1069,4 +1074,67 @@ class SASWebService:
                 "success": False,
                 "error_code": "SAS_012",
                 "message": f"Failed to get last card info: {str(e)}"
-            } 
+            }
+
+    def _aft_lock_machine(self, timeout: int = 15) -> Dict[str, Any]:
+        """
+        Locks the machine for an AFT transfer using a 74h poll and waits for confirmation.
+        """
+        try:
+            if not (self.slot_machine_app and self.slot_machine_app.sas_comm and self.slot_machine_app.sas_comm.sas_money):
+                raise Exception("SAS money functions not available")
+            
+            sas_money = self.slot_machine_app.sas_comm.sas_money
+            
+            print("[AFT LOCK] Sending AFT lock request (74h)...")
+            # NOTE: We use komut_bakiye_sorgulama to send a 74h poll.
+            # The parameters sender=2, isforinfo=0 are interpreted by the lower layer
+            # to request a game lock for AFT.
+            sas_money.komut_bakiye_sorgulama(sender=2, isforinfo=0, sendertext="API-AFT-Lock")
+            
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                # Poll for status
+                sas_money.komut_bakiye_sorgulama(sender=2, isforinfo=1, sendertext="API-AFT-Lock-Status")
+                time.sleep(0.5)
+                
+                lock_status = getattr(sas_money, 'yanit_lock_status', 'FF') # FF is 'Not Locked'
+                print(f"[AFT LOCK] Current lock status: {lock_status}")
+
+                if lock_status == '00': # '00' is 'Locked'
+                    print("[AFT LOCK] Machine is successfully locked.")
+                    return {
+                        "status": "success",
+                        "action": "aft_locked",
+                        "lock_status": "00",
+                        "message": "Machine locked successfully for AFT."
+                    }
+                elif lock_status != '40': # '40' is 'Lock Pending'
+                    # If status is not pending and not locked, it might be an issue.
+                    # We continue polling until timeout.
+                    pass
+
+                time.sleep(0.5)
+            
+            raise Exception("Timeout waiting for machine to lock for AFT.")
+
+        except Exception as e:
+            raise Exception(f"Failed to lock machine for AFT: {e}")
+
+    def _aft_unlock_machine(self) -> Dict[str, Any]:
+        """Unlocks the machine after an AFT transfer, typically by sending a cancel command."""
+        try:
+            if not (self.slot_machine_app and self.slot_machine_app.sas_comm and self.slot_machine_app.sas_comm.sas_money):
+                raise Exception("SAS money functions not available")
+
+            sas_money = self.slot_machine_app.sas_comm.sas_money
+            print("[AFT UNLOCK] Sending AFT cancel transfer to unlock machine...")
+            sas_money.komut_cancel_aft_transfer()
+            
+            return {
+                "status": "success",
+                "action": "aft_unlocked",
+                "message": "AFT unlock (cancel) command sent."
+            }
+        except Exception as e:
+            raise Exception(f"Failed to unlock machine after AFT: {e}") 
