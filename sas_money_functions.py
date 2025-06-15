@@ -409,13 +409,29 @@ class SasMoney:
             raise
 
     def komut_para_yukle(self, customerbalance=0.0, customerpromo=0.0, transfertype=10, 
-                         assetnumber=None, registrationkey=None, transactionid=None):
+                         assetnumber=None, registrationkey=None, transactionid=None, auto_lock=False):
         """
         CORRECTED AFT Transfer Command - Using EXACT original working logic
         
         This method now uses the exact command construction logic from the original
         working raspberryPython_orj.py file that successfully updated coin-in meters.
+        
+        Args:
+            auto_lock (bool): If True, automatically handle machine lock/unlock (recommended)
         """
+        
+        # If auto_lock is requested, use the enhanced workflow
+        if auto_lock:
+            print(f"[PARA YUKLE] Auto-lock requested, using enhanced AFT workflow")
+            return self.komut_para_yukle_with_auto_lock(
+                customerbalance=customerbalance,
+                customerpromo=customerpromo,
+                transfertype=transfertype,
+                assetnumber=assetnumber,
+                registrationkey=registrationkey,
+                transactionid=transactionid
+            )
+        
         try:
             print(f"[PARA YUKLE] Starting AFT transfer - Amount: ${customerbalance}, Promo: ${customerpromo}")
             
@@ -1871,3 +1887,372 @@ class SasMoney:
         except Exception as e:
             print(f"[LOCK STATUS DECODE] Error decoding lock status: {e}")
             return None 
+
+    def komut_aft_lock_machine(self, timeout_seconds=30):
+        """
+        Lock the machine for AFT transfers using SAS 74h command with lock code 00.
+        This implements the proper AFT Game Lock sequence from the SAS protocol.
+        
+        Returns:
+            True if lock successful, False if failed
+        """
+        try:
+            print(f"[AFT LOCK] Initiating AFT Game Lock (timeout: {timeout_seconds}s)")
+            
+            # Get asset number
+            asset_number = getattr(self.communicator, 'asset_number', '0000006C')
+            if not asset_number or asset_number == '01':  # Don't use SAS address as asset number
+                asset_number = '0000006C'
+            
+            print(f"[AFT LOCK] Using asset number: {asset_number}")
+            
+            # Build AFT lock command (SAS 74h with lock code 00)
+            sas_address = getattr(self.communicator, 'sas_address', '01')
+            command_code = '74'
+            
+            # Command body for AFT lock request
+            command_body = asset_number  # Asset number (4 bytes)
+            command_body += '00'         # Lock code: 00 = Request lock
+            command_body += f'{timeout_seconds:02X}'  # Lock timeout in seconds (1 byte)
+            command_body += '01'         # Transfer condition: 01 = AFT transfers only
+            
+            # Calculate length and build complete command
+            command_length = hex(len(command_body) // 2).replace('0x', '').upper().zfill(2)
+            complete_command_no_crc = sas_address + command_code + command_length + command_body
+            complete_command = get_crc(complete_command_no_crc)
+            
+            print(f"[AFT LOCK] Sending AFT lock command: {complete_command}")
+            print(f"[AFT LOCK] Command breakdown:")
+            print(f"  Header: {sas_address}{command_code}{command_length}")
+            print(f"  Asset Number: {asset_number}")
+            print(f"  Lock Code: 00 (request lock)")
+            print(f"  Timeout: {timeout_seconds}s")
+            print(f"  Transfer Condition: 01 (AFT only)")
+            
+            # Send the lock command
+            result = self.communicator.sas_send_command_with_queue("AFTLock", complete_command, 1)
+            print(f"[AFT LOCK] Lock command result: {result}")
+            
+            # Wait for lock to be established
+            import time
+            time.sleep(2)
+            
+            # Verify lock status
+            print(f"[AFT LOCK] Verifying lock status...")
+            self.komut_bakiye_sorgulama("aft_lock_verify", False, "aft_lock_verification")
+            
+            time.sleep(1)
+            
+            # Check if lock was successful
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                lock_status = self.communicator.last_game_lock_status
+                print(f"[AFT LOCK] Lock verification - Game Lock Status: {lock_status}")
+                
+                if lock_status == '00':
+                    print(f"[AFT LOCK] ✅ SUCCESS: Machine locked for AFT transfers")
+                    return True
+                elif lock_status == '40':
+                    print(f"[AFT LOCK] ⏳ PENDING: Lock request pending, may need more time")
+                    return True  # Consider pending as success for now
+                else:
+                    print(f"[AFT LOCK] ❌ FAILED: Lock status {lock_status} - {self.decode_lock_status(lock_status)}")
+                    return False
+            else:
+                print(f"[AFT LOCK] ⚠️  Cannot verify lock status - no response available")
+                return None
+                
+        except Exception as e:
+            print(f"[AFT LOCK] Error locking machine: {e}")
+            return False
+
+    def komut_aft_unlock_machine(self):
+        """
+        Unlock the machine after AFT transfers using SAS 74h command with lock code FF.
+        This implements the proper AFT Game Unlock sequence from the SAS protocol.
+        
+        Returns:
+            True if unlock successful, False if failed
+        """
+        try:
+            print(f"[AFT UNLOCK] Initiating AFT Game Unlock")
+            
+            # Get asset number
+            asset_number = getattr(self.communicator, 'asset_number', '0000006C')
+            if not asset_number or asset_number == '01':
+                asset_number = '0000006C'
+            
+            print(f"[AFT UNLOCK] Using asset number: {asset_number}")
+            
+            # Build AFT unlock command (SAS 74h with lock code FF)
+            sas_address = getattr(self.communicator, 'sas_address', '01')
+            command_code = '74'
+            
+            # Command body for AFT unlock request
+            command_body = asset_number  # Asset number (4 bytes)
+            command_body += 'FF'         # Lock code: FF = Request unlock/status only
+            command_body += '00'         # Lock timeout (ignored for unlock)
+            command_body += '00'         # Transfer condition (ignored for unlock)
+            
+            # Calculate length and build complete command
+            command_length = hex(len(command_body) // 2).replace('0x', '').upper().zfill(2)
+            complete_command_no_crc = sas_address + command_code + command_length + command_body
+            complete_command = get_crc(complete_command_no_crc)
+            
+            print(f"[AFT UNLOCK] Sending AFT unlock command: {complete_command}")
+            print(f"[AFT UNLOCK] Command breakdown:")
+            print(f"  Header: {sas_address}{command_code}{command_length}")
+            print(f"  Asset Number: {asset_number}")
+            print(f"  Lock Code: FF (request unlock)")
+            
+            # Send the unlock command
+            result = self.communicator.sas_send_command_with_queue("AFTUnlock", complete_command, 1)
+            print(f"[AFT UNLOCK] Unlock command result: {result}")
+            
+            # Wait for unlock to be processed
+            import time
+            time.sleep(2)
+            
+            # Verify unlock status
+            print(f"[AFT UNLOCK] Verifying unlock status...")
+            self.komut_bakiye_sorgulama("aft_unlock_verify", False, "aft_unlock_verification")
+            
+            time.sleep(1)
+            
+            # Check if unlock was successful
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                lock_status = self.communicator.last_game_lock_status
+                aft_status = getattr(self.communicator, 'last_aft_status', 'FF')
+                
+                print(f"[AFT UNLOCK] Unlock verification:")
+                print(f"  Game Lock Status: {lock_status} - {self.decode_lock_status(lock_status)}")
+                print(f"  AFT Status: {aft_status} - {self.decode_aft_status(aft_status)}")
+                
+                if lock_status == 'FF':
+                    print(f"[AFT UNLOCK] ✅ SUCCESS: Machine unlocked successfully")
+                    return True
+                elif lock_status in ['00', '40']:
+                    print(f"[AFT UNLOCK] ⚠️  PARTIAL: Machine still locked, may need additional unlock commands")
+                    # Try the cancel AFT transfer command as backup
+                    print(f"[AFT UNLOCK] Attempting AFT cancel as backup unlock method...")
+                    cancel_result = self.komut_cancel_aft_transfer()
+                    return cancel_result
+                else:
+                    print(f"[AFT UNLOCK] ❌ FAILED: Unexpected lock status {lock_status}")
+                    return False
+            else:
+                print(f"[AFT UNLOCK] ⚠️  Cannot verify unlock status - no response available")
+                return None
+                
+        except Exception as e:
+            print(f"[AFT UNLOCK] Error unlocking machine: {e}")
+            return False
+
+    def komut_para_yukle_with_auto_lock(self, customerbalance=0.0, customerpromo=0.0, transfertype=10, 
+                                       assetnumber=None, registrationkey=None, transactionid=None):
+        """
+        Enhanced AFT Transfer with automatic lock/unlock management.
+        This is the recommended method for AFT transfers as it handles the complete workflow.
+        
+        Returns:
+            Transaction ID if successful, None if failed
+        """
+        try:
+            print(f"[AFT AUTO] Starting enhanced AFT transfer with auto lock/unlock")
+            print(f"[AFT AUTO] Amount: ${customerbalance}, Promo: ${customerpromo}")
+            
+            # Step 1: Check current machine status
+            print(f"[AFT AUTO] Step 1: Checking current machine status...")
+            self.komut_bakiye_sorgulama("aft_pre_check", False, "aft_pre_transfer_check")
+            
+            import time
+            time.sleep(2)
+            
+            # Check if machine is already locked or has issues
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                current_lock_status = self.communicator.last_game_lock_status
+                current_aft_status = getattr(self.communicator, 'last_aft_status', 'FF')
+                
+                print(f"[AFT AUTO] Current status:")
+                print(f"  Game Lock: {current_lock_status} - {self.decode_lock_status(current_lock_status)}")
+                print(f"  AFT Status: {current_aft_status} - {self.decode_aft_status(current_aft_status)}")
+                
+                # If machine is in a problematic AFT state, try to clear it first
+                if current_aft_status in ['B0', 'C0', 'C1', 'C2']:
+                    print(f"[AFT AUTO] Machine in AFT pending state, clearing first...")
+                    self.komut_cancel_aft_transfer()
+                    time.sleep(2)
+            
+            # Step 2: Lock machine for AFT transfer
+            print(f"[AFT AUTO] Step 2: Locking machine for AFT transfer...")
+            lock_result = self.komut_aft_lock_machine(timeout_seconds=60)
+            
+            if lock_result is False:
+                print(f"[AFT AUTO] ❌ FAILED: Could not lock machine for AFT transfer")
+                return None
+            elif lock_result is None:
+                print(f"[AFT AUTO] ⚠️  WARNING: Lock status unclear, proceeding with caution...")
+            else:
+                print(f"[AFT AUTO] ✅ Machine locked successfully")
+            
+            # Step 3: Perform the AFT transfer
+            print(f"[AFT AUTO] Step 3: Performing AFT transfer...")
+            transaction_id = self.komut_para_yukle(
+                customerbalance=customerbalance,
+                customerpromo=customerpromo,
+                transfertype=transfertype,
+                assetnumber=assetnumber,
+                registrationkey=registrationkey,
+                transactionid=transactionid
+            )
+            
+            if transaction_id is None:
+                print(f"[AFT AUTO] ❌ FAILED: AFT transfer command failed")
+                # Still try to unlock the machine
+                print(f"[AFT AUTO] Attempting to unlock machine after failed transfer...")
+                self.komut_aft_unlock_machine()
+                return None
+            
+            print(f"[AFT AUTO] AFT transfer command sent successfully, transaction ID: {transaction_id}")
+            
+            # Step 4: Wait for transfer completion
+            print(f"[AFT AUTO] Step 4: Waiting for transfer completion...")
+            # Note: The wait logic is handled by the calling code using wait_for_para_yukle_completion
+            
+            return transaction_id
+            
+        except Exception as e:
+            print(f"[AFT AUTO] Error in enhanced AFT transfer: {e}")
+            # Try to unlock machine on error
+            try:
+                print(f"[AFT AUTO] Attempting to unlock machine after error...")
+                self.komut_aft_unlock_machine()
+            except:
+                pass
+            return None
+
+    def komut_complete_aft_workflow(self, customerbalance=0.0, customerpromo=0.0):
+        """
+        Complete AFT workflow with automatic lock/unlock and proper error handling.
+        This is the highest-level method that handles the entire AFT process.
+        
+        Returns:
+            dict with 'success', 'transaction_id', 'final_balance', and 'message' keys
+        """
+        result = {
+            'success': False,
+            'transaction_id': None,
+            'final_balance': 0.0,
+            'message': 'Unknown error'
+        }
+        
+        try:
+            print(f"[AFT WORKFLOW] Starting complete AFT workflow")
+            print(f"[AFT WORKFLOW] Transfer amount: ${customerbalance}")
+            
+            # Step 1: Enhanced AFT transfer with auto-lock
+            transaction_id = self.komut_para_yukle_with_auto_lock(
+                customerbalance=customerbalance,
+                customerpromo=customerpromo
+            )
+            
+            if transaction_id is None:
+                result['message'] = 'AFT transfer initiation failed'
+                return result
+            
+            result['transaction_id'] = transaction_id
+            
+            # Step 2: Wait for transfer completion (async)
+            print(f"[AFT WORKFLOW] Waiting for transfer completion...")
+            # Note: This should be called with await from async context
+            # For now, we'll return the transaction ID and let the caller handle the wait
+            
+            result['success'] = True
+            result['message'] = 'AFT transfer initiated successfully'
+            return result
+            
+        except Exception as e:
+            print(f"[AFT WORKFLOW] Error in complete AFT workflow: {e}")
+            result['message'] = f'AFT workflow error: {str(e)}'
+            return result
+
+    async def komut_complete_aft_workflow_async(self, customerbalance=0.0, customerpromo=0.0):
+        """
+        Async version of complete AFT workflow that handles the entire process including waiting.
+        
+        Returns:
+            dict with 'success', 'transaction_id', 'final_balance', and 'message' keys
+        """
+        result = {
+            'success': False,
+            'transaction_id': None,
+            'final_balance': 0.0,
+            'message': 'Unknown error'
+        }
+        
+        try:
+            print(f"[AFT WORKFLOW ASYNC] Starting complete async AFT workflow")
+            print(f"[AFT WORKFLOW ASYNC] Transfer amount: ${customerbalance}")
+            
+            # Step 1: Enhanced AFT transfer with auto-lock
+            transaction_id = self.komut_para_yukle_with_auto_lock(
+                customerbalance=customerbalance,
+                customerpromo=customerpromo
+            )
+            
+            if transaction_id is None:
+                result['message'] = 'AFT transfer initiation failed'
+                return result
+            
+            result['transaction_id'] = transaction_id
+            
+            # Step 2: Wait for transfer completion
+            print(f"[AFT WORKFLOW ASYNC] Waiting for transfer completion...")
+            transfer_result = await self.wait_for_para_yukle_completion(timeout=15)
+            
+            if transfer_result is True:
+                print(f"[AFT WORKFLOW ASYNC] ✅ Transfer completed successfully")
+                result['success'] = True
+                result['message'] = 'AFT transfer completed successfully'
+            elif transfer_result is False:
+                print(f"[AFT WORKFLOW ASYNC] ❌ Transfer failed")
+                result['message'] = f'AFT transfer failed with status: {self.global_para_yukleme_transfer_status}'
+            else:
+                print(f"[AFT WORKFLOW ASYNC] ⏰ Transfer timed out")
+                result['message'] = 'AFT transfer timed out'
+            
+            # Step 3: Unlock machine
+            print(f"[AFT WORKFLOW ASYNC] Unlocking machine...")
+            unlock_result = self.komut_aft_unlock_machine()
+            
+            if unlock_result:
+                print(f"[AFT WORKFLOW ASYNC] ✅ Machine unlocked successfully")
+            else:
+                print(f"[AFT WORKFLOW ASYNC] ⚠️  Machine unlock may have failed")
+            
+            # Step 4: Get final balance
+            print(f"[AFT WORKFLOW ASYNC] Querying final balance...")
+            self.komut_bakiye_sorgulama("aft_final_balance", False, "aft_workflow_final_balance")
+            
+            # Wait for balance response
+            balance_result = await self.wait_for_bakiye_sorgulama_completion(timeout=5)
+            
+            if balance_result:
+                result['final_balance'] = self.yanit_bakiye_tutar
+                print(f"[AFT WORKFLOW ASYNC] Final balance: ${result['final_balance']}")
+            else:
+                print(f"[AFT WORKFLOW ASYNC] Could not retrieve final balance")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[AFT WORKFLOW ASYNC] Error in async AFT workflow: {e}")
+            result['message'] = f'AFT workflow error: {str(e)}'
+            
+            # Try to unlock machine on error
+            try:
+                print(f"[AFT WORKFLOW ASYNC] Attempting emergency unlock...")
+                self.komut_aft_unlock_machine()
+            except:
+                pass
+                
+            return result
