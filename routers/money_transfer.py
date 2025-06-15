@@ -80,15 +80,15 @@ async def add_credits(
             )
             print(f"[ADD CREDITS] AFT registration result: {registration_result}")
             
-            # CRITICAL FIX: Unlock machine before transfer if it's locked
-            print(f"[ADD CREDITS] Unlocking machine for AFT transfers...")
+            # CRITICAL FIX: Comprehensive AFT unlock sequence
+            print(f"[ADD CREDITS] Performing comprehensive AFT unlock...")
             try:
-                unlock_result = sas_comm.sas_money.komut_unlock_machine()
-                print(f"[ADD CREDITS] Machine unlock result: {unlock_result}")
-                # Wait a moment for unlock to take effect
-                await asyncio.sleep(0.5)
+                unlock_result = sas_comm.sas_money.komut_comprehensive_aft_unlock()
+                print(f"[ADD CREDITS] Comprehensive AFT unlock result: {unlock_result}")
+                # Wait for unlock to take effect
+                await asyncio.sleep(1.0)
             except Exception as e:
-                print(f"[ADD CREDITS] Warning: Could not unlock machine: {e}")
+                print(f"[ADD CREDITS] Warning: Could not perform AFT unlock: {e}")
                 # Continue anyway - machine might already be unlocked
             
             print(f"[ADD CREDITS] AFT registration completed, proceeding with money transfer...")
