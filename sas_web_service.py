@@ -1076,32 +1076,38 @@ class SASWebService:
                 "message": f"Failed to get last card info: {str(e)}"
             }
 
-    def _aft_lock_machine(self, timeout: int = 15) -> Dict[str, Any]:
+    def _aft_lock_machine(self, timeout: int = 20) -> Dict[str, Any]:
         """
         Locks the machine for an AFT transfer using a 74h poll and waits for confirmation.
+        This version constructs the raw command to ensure the correct lock request is sent.
         """
         try:
             if not (self.slot_machine_app and self.slot_machine_app.sas_comm and self.slot_machine_app.sas_comm.sas_money):
                 raise Exception("SAS money functions not available")
             
-            sas_money = self.slot_machine_app.sas_comm.sas_money
+            sas_comm = self.slot_machine_app.sas_comm
+            sas_money = sas_comm.sas_money
             
-            print("[AFT LOCK] Sending AFT lock request (74h)...")
-            # NOTE: We use komut_bakiye_sorgulama to send a 74h poll.
-            # The parameters sender=2, isforinfo=0 are interpreted by the lower layer
-            # to request a game lock for AFT.
-            sas_money.komut_bakiye_sorgulama(sender=2, isforinfo=0, sendertext="API-AFT-Lock")
+            # Construct the raw 74h lock request command.
+            # Command: 74h, Length: 4, Lock Code: 00 (Request Lock), Timeout: 15s (15h)
+            # The underlying send command function is expected to add the address and calculate the CRC.
+            # We are providing the core command and its data payload.
+            lock_payload = "740400000015" # Cmd, Len, LockCode, Conditions, Timeout
             
+            print(f"[AFT LOCK] Sending raw AFT lock request (74h) with payload: {lock_payload}")
+            sas_comm.sas_send_command_with_queue("AFTLockRequest", lock_payload, 1)
+
             start_time = time.time()
             while time.time() - start_time < timeout:
-                # Poll for status
+                # Poll for status using the existing query function
                 sas_money.komut_bakiye_sorgulama(sender=2, isforinfo=1, sendertext="API-AFT-Lock-Status")
                 time.sleep(0.5)
                 
-                lock_status = getattr(sas_money, 'yanit_lock_status', 'FF') # FF is 'Not Locked'
+                # yanit_lock_status is updated by the response handler for the 74h poll
+                lock_status = getattr(sas_money, 'yanit_lock_status', 'FF')
                 print(f"[AFT LOCK] Current lock status: {lock_status}")
 
-                if lock_status == '00': # '00' is 'Locked'
+                if lock_status == '00':  # '00' is 'Locked'
                     print("[AFT LOCK] Machine is successfully locked.")
                     return {
                         "status": "success",
@@ -1109,14 +1115,11 @@ class SASWebService:
                         "lock_status": "00",
                         "message": "Machine locked successfully for AFT."
                     }
-                elif lock_status != '40': # '40' is 'Lock Pending'
-                    # If status is not pending and not locked, it might be an issue.
-                    # We continue polling until timeout.
-                    pass
-
+                
+                # No need to check for '40' (pending), just keep polling until '00' or timeout
                 time.sleep(0.5)
             
-            raise Exception("Timeout waiting for machine to lock for AFT.")
+            raise Exception(f"Timeout: Machine did not lock within {timeout} seconds. Final status: {lock_status}")
 
         except Exception as e:
             raise Exception(f"Failed to lock machine for AFT: {e}")
