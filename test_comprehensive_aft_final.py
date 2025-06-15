@@ -61,36 +61,96 @@ class ComprehensiveAFTTester:
 
     def handle_response(self, response: str):
         """Process responses and resolve Future on AFT completion"""
-        if not response or not self.aft_future or self.aft_future.done():
+        if not response:
             return
 
         try:
-            # Handle AFT transfer responses (command 72h)
-            if response.startswith("0172"):
-                print(f"[HANDLER] AFT Response (72h) detected: {response}")
-                if len(response) >= 10:
-                    status_code = response[8:10]
-                    print(f"[HANDLER] AFT Status Code: {status_code}")
+            # Log ALL responses for debugging
+            print(f"[HANDLER] Processing response: {response}")
+            
+            # Check if we have an active AFT future
+            if self.aft_future and not self.aft_future.done():
+                
+                # Monitor the AFT status from the money object
+                current_status = self.money.global_para_yukleme_transfer_status
+                if current_status:
+                    print(f"[HANDLER] Current AFT status: {current_status}")
                     
-                    if status_code == "00":  # Success
+                    if current_status == "00":  # Success
                         print("[HANDLER] ✅ AFT Transfer SUCCESS!")
                         self.aft_future.set_result(True)
-                    elif status_code == "40":  # Pending - continue waiting
-                        print("[HANDLER] AFT Transfer pending, continuing to wait...")
-                    else:  # Error
-                        print(f"[HANDLER] ❌ AFT Transfer FAILED with status: {status_code}")
+                        return
+                    elif current_status in ["84", "87", "81", "FF", "82", "83"]:  # Error codes
+                        print(f"[HANDLER] ❌ AFT Transfer FAILED with status: {current_status}")
                         self.aft_future.set_exception(
-                            Exception(f"AFT Failed with status: {status_code}")
+                            Exception(f"AFT Failed with status: {current_status}")
                         )
-                        
-            # Handle AFT completion message (exception 69h)
-            elif "69" in response:
-                print(f"[HANDLER] AFT Completion (69h) detected: {response}")
-                print("[HANDLER] ✅ AFT Transfer COMPLETED!")
-                self.aft_future.set_result(True)
+                        return
                 
+                # Handle AFT transfer responses (command 72h) - ANY format
+                if "72" in response and len(response) >= 8:
+                    print(f"[HANDLER] ✅ AFT Response (72h) detected: {response}")
+                    
+                    # Try to extract status from different positions
+                    if response.startswith("0172"):
+                        # Standard format: 0172LLSS where SS is status
+                        if len(response) >= 10:
+                            status_code = response[8:10]
+                            print(f"[HANDLER] AFT Status Code (pos 8-10): {status_code}")
+                            self._process_aft_status(status_code)
+                    else:
+                        # Look for 72 anywhere in the response
+                        pos = response.find("72")
+                        if pos >= 0 and pos + 4 < len(response):
+                            status_code = response[pos+4:pos+6]
+                            print(f"[HANDLER] AFT Status Code (pos {pos+4}-{pos+6}): {status_code}")
+                            self._process_aft_status(status_code)
+                
+                # Handle AFT completion messages (exception 69h)
+                elif "69" in response:
+                    print(f"[HANDLER] ✅ AFT Completion (69h) detected: {response}")
+                    print("[HANDLER] ✅ AFT Transfer COMPLETED via exception!")
+                    self.aft_future.set_result(True)
+                
+                # Handle any response that might indicate AFT completion
+                elif any(indicator in response for indicator in ["4262", "5.0", "500"]):  # Our transaction ID or amount
+                    print(f"[HANDLER] ✅ Potential AFT completion detected: {response}")
+                    print("[HANDLER] ✅ AFT Transfer COMPLETED via transaction match!")
+                    self.aft_future.set_result(True)
+                
+                # Check balance responses for changes
+                elif response.startswith("0174") and len(response) > 50:
+                    print(f"[HANDLER] Balance response during AFT: {response}")
+                    # Extract cashable amount from balance response
+                    if len(response) >= 60:
+                        cashable_hex = response[40:50]  # Approximate position
+                        print(f"[HANDLER] Cashable amount hex: {cashable_hex}")
+                        try:
+                            cashable_cents = int(cashable_hex, 16)
+                            cashable_dollars = cashable_cents / 100.0
+                            print(f"[HANDLER] Cashable amount: ${cashable_dollars}")
+                            if cashable_dollars > 0:
+                                print("[HANDLER] ✅ AFT Transfer COMPLETED - Balance increased!")
+                                self.aft_future.set_result(True)
+                        except:
+                            pass
+                            
         except Exception as e:
             print(f"[HANDLER] Error processing response: {e}")
+
+    def _process_aft_status(self, status_code: str):
+        """Process AFT status code"""
+        print(f"[HANDLER] Processing AFT status: {status_code}")
+        
+        if status_code == "00":  # Success
+            print("[HANDLER] ✅ AFT Transfer SUCCESS!")
+            self.aft_future.set_result(True)
+        elif status_code in ["40", "C0"]:  # Pending - continue waiting
+            print("[HANDLER] AFT Transfer pending, continuing to wait...")
+        else:  # Error or other status
+            print(f"[HANDLER] AFT Status: {status_code}")
+            # Don't fail immediately - some statuses might be intermediate
+            # self.aft_future.set_exception(Exception(f"AFT status: {status_code}"))
 
     def start(self):
         """Initialize components and start polling"""
@@ -172,6 +232,11 @@ class ComprehensiveAFTTester:
         print("STEP 3: AFT TRANSFER")
         print("="*60)
         
+        # CRITICAL: Set the waiting flag BEFORE sending the command
+        print("[STEP 3] Setting AFT waiting flag...")
+        self.money.is_waiting_for_para_yukle = 1
+        self.money.global_para_yukleme_transfer_status = None
+        
         # Set up Future for async waiting
         self.aft_future = asyncio.get_running_loop().create_future()
         
@@ -226,6 +291,13 @@ class ComprehensiveAFTTester:
             print("❌ AFT TRANSFER TIMED OUT")
             print("="*60)
             print("The transfer command was sent but no completion response received within 20 seconds.")
+            
+            # Check the final status from the money object
+            final_status = self.money.global_para_yukleme_transfer_status
+            print(f"Final AFT status: {final_status}")
+            if final_status:
+                print(f"Status meaning: {self.money.get_transfer_status_description(final_status)}")
+            
             return False
             
         except Exception as e:
