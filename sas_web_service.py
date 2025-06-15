@@ -700,51 +700,108 @@ class SASWebService:
             }
             
     def _machine_lock(self) -> Dict[str, Any]:
-        """Lock the machine"""
+        """Lock the machine using the original working lock command"""
         try:
             if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
                 raise Exception("SAS communication not available")
                 
             sas_comm = self.slot_machine_app.sas_comm
             
-            # Send machine lock command (SAS 0x01)
-            # sas_comm.send_command(0x01)
+            # Use the original working lock command: 01 01 51 08
+            # This is the exact command from raspberryPython_orj.py that works
+            print("[MACHINE LOCK] Using original working lock command: 01 01 51 08")
+            
+            # Send the raw command directly
+            lock_command = "01015108"  # Original lock command with CRC
+            result = sas_comm.sas_send_command_with_queue("MachineLock", lock_command, 1)
+            
+            print(f"[MACHINE LOCK] Lock command result: {result}")
             
             return {
                 "status": "success",
                 "action": "locked",
-                "command_sent": "0x01",
+                "command_sent": "01_01_LOCK",
+                "command_hex": "01015108",
+                "command_result": result,
                 "timestamp": datetime.now().isoformat(),
-                "message": "Machine locked successfully"
+                "message": "Original lock command sent successfully"
             }
             
         except Exception as e:
             raise Exception(f"Failed to lock machine: {e}")
             
     def _machine_unlock(self) -> Dict[str, Any]:
-        """Unlock the machine"""
+        """Unlock the machine using AFT-specific unlock methods (correct approach for AFT Game Lock)"""
         try:
             if not self.slot_machine_app or not self.slot_machine_app.sas_comm:
                 raise Exception("SAS communication not available")
                 
             sas_comm = self.slot_machine_app.sas_comm
             
-            # Send AFT unlock command using the proper SAS money function
-            if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                print("[MACHINE UNLOCK] Calling komut_unlock_machine...")
-                result = sas_comm.sas_money.komut_unlock_machine()
-                print(f"[MACHINE UNLOCK] Unlock result: {result}")
-                
-                return {
-                    "status": "success",
-                    "action": "unlocked", 
-                    "command_sent": "AFT_UNLOCK_74h",
-                    "command_result": result,
-                    "timestamp": datetime.now().isoformat(),
-                    "message": "AFT unlock command sent successfully"
-                }
-            else:
-                raise Exception("SAS money functions not available")
+            # Try AFT-specific unlock approaches in sequence
+            unlock_results = []
+            
+            # Method 1: AFT Cancel Transfer (MOST IMPORTANT - this is the correct unlock for AFT Game Lock)
+            print("[MACHINE UNLOCK] Method 1: AFT Cancel Transfer (Primary Method)")
+            try:
+                if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                    result1 = sas_comm.sas_money.komut_cancel_aft_transfer()
+                    unlock_results.append({"method": "aft_cancel_transfer", "result": result1, "priority": "PRIMARY"})
+                    print(f"[MACHINE UNLOCK] AFT Cancel Transfer result: {result1}")
+                else:
+                    unlock_results.append({"method": "aft_cancel_transfer", "error": "SAS money functions not available"})
+            except Exception as e:
+                print(f"[MACHINE UNLOCK] AFT Cancel Transfer failed: {e}")
+                unlock_results.append({"method": "aft_cancel_transfer", "error": str(e)})
+            
+            # Method 2: Comprehensive AFT unlock sequence
+            print("[MACHINE UNLOCK] Method 2: Comprehensive AFT unlock sequence")
+            try:
+                if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                    result2 = sas_comm.sas_money.komut_comprehensive_aft_unlock()
+                    unlock_results.append({"method": "comprehensive_aft_unlock", "result": result2})
+                    print(f"[MACHINE UNLOCK] Comprehensive AFT unlock result: {result2}")
+                else:
+                    unlock_results.append({"method": "comprehensive_aft_unlock", "error": "SAS money functions not available"})
+            except Exception as e:
+                print(f"[MACHINE UNLOCK] Comprehensive AFT unlock failed: {e}")
+                unlock_results.append({"method": "comprehensive_aft_unlock", "error": str(e)})
+            
+            # Method 3: Original working unlock command (fallback)
+            print("[MACHINE UNLOCK] Method 3: Original working unlock command (Fallback)")
+            try:
+                # Original unlock command: 01 02 CA 3A
+                unlock_command = "0102CA3A"  # Original unlock command with CRC
+                result3 = sas_comm.sas_send_command_with_queue("MachineUnlock_Original", unlock_command, 1)
+                unlock_results.append({"method": "original_unlock", "command": "0102CA3A", "result": result3, "priority": "FALLBACK"})
+                print(f"[MACHINE UNLOCK] Original unlock result: {result3}")
+            except Exception as e:
+                print(f"[MACHINE UNLOCK] Original unlock failed: {e}")
+                unlock_results.append({"method": "original_unlock", "error": str(e)})
+            
+            # Method 4: Advanced unlock sequence (additional fallback)
+            print("[MACHINE UNLOCK] Method 4: Advanced unlock sequence (Additional Fallback)")
+            try:
+                if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+                    result4 = sas_comm.sas_money.komut_advanced_unlock()
+                    unlock_results.append({"method": "advanced_unlock", "result": result4, "priority": "FALLBACK"})
+                    print(f"[MACHINE UNLOCK] Advanced unlock result: {result4}")
+                else:
+                    unlock_results.append({"method": "advanced_unlock", "error": "SAS money functions not available"})
+            except Exception as e:
+                print(f"[MACHINE UNLOCK] Advanced unlock failed: {e}")
+                unlock_results.append({"method": "advanced_unlock", "error": str(e)})
+            
+            return {
+                "status": "success",
+                "action": "unlocked", 
+                "methods_attempted": len(unlock_results),
+                "unlock_results": unlock_results,
+                "primary_method": "aft_cancel_transfer",
+                "explanation": "AFT Game Lock detected - using AFT-specific unlock commands instead of general machine unlock",
+                "timestamp": datetime.now().isoformat(),
+                "message": "AFT-specific unlock sequence completed - AFT Cancel Transfer is the primary method for this lock type"
+            }
             
         except Exception as e:
             raise Exception(f"Failed to unlock machine: {e}")

@@ -128,6 +128,41 @@ export class SASApiClient {
     return this.request("/api/machine/unlock", { method: "POST" });
   }
 
+  // Advanced unlock methods
+  async advancedUnlockMachine() {
+    return this.request("/api/machine/unlock/advanced", { method: "POST" });
+  }
+
+  async clearMachineReservation() {
+    return this.request("/api/machine/unlock/clear-reservation", { method: "POST" });
+  }
+
+  async originalUnlockMachine() {
+    return this.request("/api/machine/unlock/original", { method: "POST" });
+  }
+
+  async originalLockMachine() {
+    return this.request("/api/machine/lock/original", { method: "POST" });
+  }
+
+  async reserveMachine() {
+    return this.request("/api/machine/reserve", { method: "POST" });
+  }
+
+  // AFT-specific unlock methods (CORRECT methods for AFT Game Lock)
+  async cancelAftTransfer() {
+    return this.request("/api/machine/unlock/aft-cancel", { method: "POST" });
+  }
+
+  async comprehensiveAftUnlock() {
+    return this.request("/api/machine/unlock/comprehensive-aft", { method: "POST" });
+  }
+
+  // Simple reservation clear (just SAS 8F command)
+  async clearReservationSimple() {
+    return this.request("/api/machine/clear-reservation-simple", { method: "POST" });
+  }
+
   async controlMachine(action: string, amount?: number) {
     const body: any = { action };
     if (amount !== undefined) {

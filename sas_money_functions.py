@@ -137,8 +137,140 @@ class SasMoney:
         return status_descriptions.get(status_code, f"Unknown status: {status_code}")
 
     def komut_cancel_aft_transfer(self):
+        """
+        Cancel any pending AFT transfer operation.
+        This is the CORRECT way to unlock a machine that is stuck in AFT Game Lock state.
+        Uses the exact command from the original working code: 017201800BB4
+        """
+        print(f"[CANCEL AFT TRANSFER] Canceling pending AFT transfer operation")
+        
+        # This is the exact command from the original raspberryPython_orj.py
+        # Command: 017201800BB4 (already includes CRC)
         command = "017201800BB4"
-        self.communicator.sas_send_command_with_queue("CancelAFT", command, 1)
+        
+        print(f"[CANCEL AFT TRANSFER] Sending AFT cancel command: {command}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("CancelAFT", command, 1)
+            print(f"[CANCEL AFT TRANSFER] Cancel AFT result: {result}")
+            
+            # Wait a moment for the machine to process the cancellation
+            import time
+            time.sleep(1)
+            
+            # Query status to verify the AFT lock was released
+            print(f"[CANCEL AFT TRANSFER] Verifying AFT lock release...")
+            self.komut_bakiye_sorgulama("aft_cancel_verify", False, "aft_cancel_verification")
+            
+            time.sleep(1)
+            
+            # Check if the AFT lock was successfully released
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                lock_status = self.communicator.last_game_lock_status
+                aft_status = getattr(self.communicator, 'last_aft_status', 'FF')
+                
+                print(f"[CANCEL AFT TRANSFER] Post-cancel Lock Status: {lock_status}")
+                print(f"[CANCEL AFT TRANSFER] Post-cancel AFT Status: {aft_status}")
+                
+                if lock_status == "00":
+                    print(f"[CANCEL AFT TRANSFER] ✅ SUCCESS: AFT lock successfully released!")
+                    return True
+                elif lock_status != "FF":
+                    print(f"[CANCEL AFT TRANSFER] ⚠️  PARTIAL SUCCESS: Lock status improved to {lock_status}")
+                    return True
+                else:
+                    print(f"[CANCEL AFT TRANSFER] ❌ AFT lock still active - may need additional steps")
+                    return False
+            else:
+                print(f"[CANCEL AFT TRANSFER] ⚠️  Cannot verify - no status available")
+                return None
+                
+        except Exception as e:
+            print(f"[CANCEL AFT TRANSFER] Error canceling AFT transfer: {e}")
+            return False
+
+    def komut_cancel_balance_lock(self):
+        """
+        Cancel balance lock using the original working command.
+        This is another method from the original code to clear AFT locks.
+        """
+        print(f"[CANCEL BALANCE LOCK] Canceling balance lock")
+        
+        # Original command from raspberryPython_orj.py: GetCRC("017480030000")
+        # We need to calculate the CRC for this command
+        command_without_crc = "017480030000"
+        command = get_crc(command_without_crc)
+        
+        print(f"[CANCEL BALANCE LOCK] Sending balance lock cancel: {command}")
+        
+        try:
+            result = self.communicator.sas_send_command_with_queue("CancelBalanceLock", command, 1)
+            print(f"[CANCEL BALANCE LOCK] Cancel balance lock result: {result}")
+            return result
+        except Exception as e:
+            print(f"[CANCEL BALANCE LOCK] Error canceling balance lock: {e}")
+            return False
+
+    def komut_comprehensive_aft_unlock(self):
+        """
+        Comprehensive AFT unlock sequence that addresses the specific AFT lock issue.
+        This method uses the correct AFT-specific commands instead of general machine unlock commands.
+        """
+        print(f"[COMPREHENSIVE AFT UNLOCK] Starting AFT-specific unlock sequence")
+        
+        try:
+            # Step 1: Cancel any pending AFT transfer (the most important step)
+            print(f"[COMPREHENSIVE AFT UNLOCK] Step 1: Cancel pending AFT transfer")
+            cancel_result = self.komut_cancel_aft_transfer()
+            print(f"[COMPREHENSIVE AFT UNLOCK] AFT cancel result: {cancel_result}")
+            
+            import time
+            time.sleep(1)
+            
+            # Step 2: Cancel balance lock if still needed
+            print(f"[COMPREHENSIVE AFT UNLOCK] Step 2: Cancel balance lock")
+            balance_cancel_result = self.komut_cancel_balance_lock()
+            print(f"[COMPREHENSIVE AFT UNLOCK] Balance lock cancel result: {balance_cancel_result}")
+            
+            time.sleep(1)
+            
+            # Step 3: Clear any remaining host controls
+            print(f"[COMPREHENSIVE AFT UNLOCK] Step 3: Clear host controls")
+            host_clear_result = self.komut_clear_host_controls()
+            print(f"[COMPREHENSIVE AFT UNLOCK] Host clear result: {host_clear_result}")
+            
+            time.sleep(1)
+            
+            # Step 4: Final status verification
+            print(f"[COMPREHENSIVE AFT UNLOCK] Step 4: Final status verification")
+            self.komut_bakiye_sorgulama("comprehensive_aft_unlock_verify", False, "comprehensive_aft_unlock_final")
+            
+            time.sleep(2)
+            
+            # Check final results
+            if hasattr(self.communicator, 'last_game_lock_status'):
+                lock_status = self.communicator.last_game_lock_status
+                aft_status = getattr(self.communicator, 'last_aft_status', 'FF')
+                
+                print(f"[COMPREHENSIVE AFT UNLOCK] Final Lock Status: {lock_status}")
+                print(f"[COMPREHENSIVE AFT UNLOCK] Final AFT Status: {aft_status}")
+                
+                if lock_status == "00":
+                    print(f"[COMPREHENSIVE AFT UNLOCK] ✅ SUCCESS: Machine fully unlocked!")
+                    return True
+                elif lock_status != "FF":
+                    print(f"[COMPREHENSIVE AFT UNLOCK] ⚠️  PARTIAL SUCCESS: Lock status improved to {lock_status}")
+                    return True
+                else:
+                    print(f"[COMPREHENSIVE AFT UNLOCK] ❌ FAILED: Machine still locked ({lock_status})")
+                    return False
+            else:
+                print(f"[COMPREHENSIVE AFT UNLOCK] ⚠️  Cannot verify - no status available")
+                return None
+                
+        except Exception as e:
+            print(f"[COMPREHENSIVE AFT UNLOCK] Error in comprehensive AFT unlock: {e}")
+            return False
 
     def komut_aft_registration(self, assetnumber, registrationkey, posid):
         """

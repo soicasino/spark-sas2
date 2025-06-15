@@ -441,4 +441,346 @@ async def emergency_stop_machine(sas_service: SASWebService = Depends(get_sas_se
         raise HTTPException(
             status_code=500,
             detail=f"Emergency stop error: {str(e)}"
+        )
+
+
+@router.post("/unlock/advanced", response_model=MachineControlResponse)
+async def advanced_unlock_machine(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Advanced unlock sequence that tries multiple approaches to unlock the machine
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            result = sas_comm.sas_money.komut_advanced_unlock()
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="Advanced unlock sequence completed",
+                execution_time_ms=execution_time,
+                data={"advanced_unlock_result": result}
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS money functions not available"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Advanced unlock error: {str(e)}"
+        )
+
+
+@router.post("/unlock/clear-reservation", response_model=MachineControlResponse)
+async def clear_machine_reservation(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Clear machine reservation status and attempt unlock
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            result = sas_comm.sas_money.komut_clear_reservation_sequence()
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="Reservation clearing sequence completed",
+                execution_time_ms=execution_time,
+                data={"reservation_clear_result": result}
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS money functions not available"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Reservation clear error: {str(e)}"
+        )
+
+
+@router.post("/unlock/original", response_model=MachineControlResponse)
+async def original_unlock_machine(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Use the original working unlock command (01 02 CA 3A)
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        # Send original unlock command
+        unlock_command = "0102CA3A"  # Original unlock command with CRC
+        result = sas_comm.sas_send_command_with_queue("OriginalUnlock", unlock_command, 1)
+        
+        execution_time = (datetime.now() - start_time).total_seconds() * 1000
+        
+        return MachineControlResponse(
+            success=True,
+            message="Original unlock command sent",
+            execution_time_ms=execution_time,
+            data={
+                "command_sent": "0102CA3A",
+                "command_result": result
+            }
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Original unlock error: {str(e)}"
+        )
+
+
+@router.post("/lock/original", response_model=MachineControlResponse)
+async def original_lock_machine(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Use the original working lock command (01 01 51 08)
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        # Send original lock command
+        lock_command = "01015108"  # Original lock command with CRC
+        result = sas_comm.sas_send_command_with_queue("OriginalLock", lock_command, 1)
+        
+        execution_time = (datetime.now() - start_time).total_seconds() * 1000
+        
+        return MachineControlResponse(
+            success=True,
+            message="Original lock command sent",
+            execution_time_ms=execution_time,
+            data={
+                "command_sent": "01015108",
+                "command_result": result
+            }
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Original lock error: {str(e)}"
+        )
+
+
+@router.post("/reserve", response_model=MachineControlResponse)
+async def reserve_machine(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Reserve the machine for exclusive access
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            result = sas_comm.sas_money.komut_reserve_machine()
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="Machine reservation command sent",
+                execution_time_ms=execution_time,
+                data={"reserve_result": result}
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS money functions not available"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Machine reserve error: {str(e)}"
+        )
+
+
+@router.post("/unlock/aft-cancel", response_model=MachineControlResponse)
+async def cancel_aft_transfer(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Cancel pending AFT transfer - the CORRECT way to unlock AFT Game Lock
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            result = sas_comm.sas_money.komut_cancel_aft_transfer()
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="AFT transfer cancellation completed",
+                execution_time_ms=execution_time,
+                data={
+                    "aft_cancel_result": result,
+                    "command_sent": "017201800BB4",
+                    "explanation": "This is the correct command to unlock AFT Game Lock state"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS money functions not available"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AFT cancel error: {str(e)}"
+        )
+
+
+@router.post("/unlock/comprehensive-aft", response_model=MachineControlResponse)
+async def comprehensive_aft_unlock(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Comprehensive AFT unlock sequence for stubborn AFT locks
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            result = sas_comm.sas_money.komut_comprehensive_aft_unlock()
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="Comprehensive AFT unlock sequence completed",
+                execution_time_ms=execution_time,
+                data={"comprehensive_aft_unlock_result": result}
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS money functions not available"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Comprehensive AFT unlock error: {str(e)}"
+        )
+
+
+@router.post("/clear-reservation-simple", response_model=MachineControlResponse)
+async def clear_reservation_simple(sas_service: SASWebService = Depends(get_sas_service)):
+    """
+    Simple clear reservation command (SAS 8F) without full sequence
+    """
+    try:
+        start_time = datetime.now()
+        
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS communication not available"
+            )
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
+            result = sas_comm.sas_money.komut_clear_machine_reservation()
+            
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return MachineControlResponse(
+                success=True,
+                message="Simple reservation clear command sent",
+                execution_time_ms=execution_time,
+                data={
+                    "clear_reservation_result": result,
+                    "command_sent": "SAS 8F (Clear Reservation)",
+                    "note": "This is the simple clear command, use /unlock/clear-reservation for full sequence"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="SAS money functions not available"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Simple reservation clear error: {str(e)}"
         ) 

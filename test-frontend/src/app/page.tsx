@@ -210,6 +210,80 @@ export default function SASDashboard() {
     );
   const handleEmergencyStop = () => handleApiCall("emergencyStop", () => sasApi.emergencyStop());
 
+  // AFT-specific unlock methods (CORRECT methods for AFT Game Lock)
+  const handleCancelAftTransfer = () =>
+    handleApiCall(
+      "cancelAftTransfer",
+      () => sasApi.cancelAftTransfer(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
+  const handleComprehensiveAftUnlock = () =>
+    handleApiCall(
+      "comprehensiveAftUnlock",
+      () => sasApi.comprehensiveAftUnlock(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
+  // Advanced unlock methods
+  const handleAdvancedUnlock = () =>
+    handleApiCall(
+      "advancedUnlock",
+      () => sasApi.advancedUnlockMachine(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
+  const handleClearReservation = () =>
+    handleApiCall(
+      "clearReservation",
+      () => sasApi.clearMachineReservation(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
+  const handleClearReservationSimple = () =>
+    handleApiCall(
+      "clearReservationSimple",
+      () => sasApi.clearReservationSimple(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
+  const handleOriginalUnlock = () =>
+    handleApiCall(
+      "originalUnlock",
+      () => sasApi.originalUnlockMachine(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
+  const handleOriginalLock = () =>
+    handleApiCall(
+      "originalLock",
+      () => sasApi.originalLockMachine(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
+  const handleReserveMachine = () =>
+    handleApiCall(
+      "reserveMachine",
+      () => sasApi.reserveMachine(),
+      () => {
+        setTimeout(refreshMachineStatus, 1000);
+      }
+    );
+
   // Event Management Actions
   const handleForceSync = () => handleApiCall("forceSync", () => sasApi.forceSync(), refreshEventStats);
   const handleTestGameEvent = () => handleApiCall("testGameEvent", () => sasApi.testGameEvent());
@@ -338,28 +412,112 @@ export default function SASDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
-                <CardDescription>Common machine operations</CardDescription>
+                <CardDescription>Machine operations - AFT unlock methods prioritized for AFT Game Lock issues</CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Button variant="outline" onClick={handleLockMachine} disabled={loading.lockMachine} className="flex items-center gap-2">
-                  <Lock className="h-4 w-4" />
-                  Lock Machine
-                </Button>
+              <CardContent className="space-y-4">
+                {/* Primary AFT Unlock Methods */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-green-600">🎯 AFT Unlock Methods (Recommended for AFT Game Lock)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <Button
+                      variant="default"
+                      onClick={handleCancelAftTransfer}
+                      disabled={loading.cancelAftTransfer}
+                      className="flex items-center gap-2 bg-green-600 hover:bg-green-700">
+                      <Unlock className="h-4 w-4" />
+                      Cancel AFT Transfer (Primary)
+                    </Button>
 
-                <Button variant="outline" onClick={handleUnlockMachine} disabled={loading.unlockMachine} className="flex items-center gap-2">
-                  <Unlock className="h-4 w-4" />
-                  Unlock Machine
-                </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleComprehensiveAftUnlock}
+                      disabled={loading.comprehensiveAftUnlock}
+                      className="flex items-center gap-2 border-green-600 text-green-600 hover:bg-green-50">
+                      <Unlock className="h-4 w-4" />
+                      Comprehensive AFT Unlock
+                    </Button>
+                  </div>
+                </div>
 
-                <Button variant="destructive" onClick={handleEmergencyStop} disabled={loading.emergencyStop} className="flex items-center gap-2">
-                  <Power className="h-4 w-4" />
-                  Emergency Stop
-                </Button>
+                {/* Machine Reservation Controls */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-purple-600">🔐 Machine Reservation Controls</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleReserveMachine}
+                      disabled={loading.reserveMachine}
+                      className="flex items-center gap-2 border-purple-600 text-purple-600 hover:bg-purple-50">
+                      <Lock className="h-4 w-4" />
+                      Reserve Machine
+                    </Button>
 
-                <Button variant="outline" onClick={handleForceSync} disabled={loading.forceSync} className="flex items-center gap-2">
-                  <RefreshCcw className="h-4 w-4" />
-                  Force Sync
-                </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleClearReservationSimple}
+                      disabled={loading.clearReservationSimple}
+                      className="flex items-center gap-2 border-purple-600 text-purple-600 hover:bg-purple-50">
+                      <Unlock className="h-4 w-4" />
+                      Clear Reservation (Simple)
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={handleClearReservation}
+                      disabled={loading.clearReservation}
+                      className="flex items-center gap-2 border-purple-600 text-purple-600 hover:bg-purple-50">
+                      <RefreshCcw className="h-4 w-4" />
+                      Clear Reservation (Full)
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Standard Machine Controls */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-blue-600">🔧 Standard Machine Controls</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <Button variant="outline" onClick={handleLockMachine} disabled={loading.lockMachine} className="flex items-center gap-2">
+                      <Lock className="h-4 w-4" />
+                      Lock Machine
+                    </Button>
+
+                    <Button variant="outline" onClick={handleUnlockMachine} disabled={loading.unlockMachine} className="flex items-center gap-2">
+                      <Unlock className="h-4 w-4" />
+                      Unlock Machine
+                    </Button>
+
+                    <Button variant="destructive" onClick={handleEmergencyStop} disabled={loading.emergencyStop} className="flex items-center gap-2">
+                      <Power className="h-4 w-4" />
+                      Emergency Stop
+                    </Button>
+
+                    <Button variant="outline" onClick={handleForceSync} disabled={loading.forceSync} className="flex items-center gap-2">
+                      <RefreshCcw className="h-4 w-4" />
+                      Force Sync
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Advanced/Fallback Methods */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-orange-600">⚙️ Advanced/Fallback Methods</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    <Button variant="outline" onClick={handleOriginalUnlock} disabled={loading.originalUnlock} className="flex items-center gap-2 text-xs">
+                      <Unlock className="h-3 w-3" />
+                      Original Unlock
+                    </Button>
+
+                    <Button variant="outline" onClick={handleAdvancedUnlock} disabled={loading.advancedUnlock} className="flex items-center gap-2 text-xs">
+                      <Unlock className="h-3 w-3" />
+                      Advanced Unlock
+                    </Button>
+
+                    <Button variant="outline" onClick={handleClearReservation} disabled={loading.clearReservation} className="flex items-center gap-2 text-xs">
+                      <RefreshCcw className="h-3 w-3" />
+                      Clear Reservation
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
