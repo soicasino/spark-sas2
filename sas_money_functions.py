@@ -585,8 +585,11 @@ class SasMoney:
         This method parses the SAS 74h response and updates balance fields.
         """
         try:
-            print(f"[BALANCE RESPONSE] Received balance response: {yanit}")
+            print(f"[BALANCE RESPONSE] ===== RAW AFT BALANCE RESPONSE =====")
+            print(f"[BALANCE RESPONSE] Raw response: {yanit}")
             print(f"[BALANCE RESPONSE] Response length: {len(yanit)} characters")
+            print(f"[BALANCE RESPONSE] Response bytes: {' '.join([yanit[i:i+2] for i in range(0, len(yanit), 2)])}")
+            print(f"[BALANCE RESPONSE] ============================================")
             
             # FIXED: Always process balance responses, don't check waiting flag
             # The waiting flag check was causing timing issues where responses
@@ -659,6 +662,7 @@ class SasMoney:
             current_cashable_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
             index += 10
             print(f"[BALANCE RESPONSE] Current Cashable Amount (raw): {current_cashable_amount}")
+            print(f"[BALANCE RESPONSE] Cashable amount position in response: characters {index-10} to {index}")
             
             if len(current_cashable_amount) != 10:
                 print(f"[BALANCE RESPONSE] Incomplete cashable amount: {current_cashable_amount}")
@@ -672,38 +676,45 @@ class SasMoney:
             
             # Convert BCD to decimal (divide by 100 for cents to dollars)
             try:
-                cashable_amount = self.bcd_to_int(current_cashable_amount) / 100
-                print(f"[BALANCE RESPONSE] Cashable Amount: {cashable_amount}")
-            except ValueError:
-                print(f"[BALANCE RESPONSE] Error converting cashable amount: {current_cashable_amount}")
+                cashable_amount_raw = self.bcd_to_int(current_cashable_amount)
+                cashable_amount = cashable_amount_raw / 100
+                print(f"[BALANCE RESPONSE] BCD conversion: '{current_cashable_amount}' -> {cashable_amount_raw} cents -> ${cashable_amount}")
+            except ValueError as e:
+                print(f"[BALANCE RESPONSE] Error converting cashable amount: {current_cashable_amount}, error: {e}")
                 cashable_amount = 0
             
             # Current restricted amount (5 bytes BCD)
             current_restricted_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
             index += 10
             print(f"[BALANCE RESPONSE] Current Restricted Amount (raw): {current_restricted_amount}")
+            print(f"[BALANCE RESPONSE] Restricted amount position: characters {index-10} to {index}")
             
             if not self.is_valid_bcd(current_restricted_amount):
                 current_restricted_amount = "0000000000"
             
             try:
-                restricted_amount = self.bcd_to_int(current_restricted_amount) / 100
-                print(f"[BALANCE RESPONSE] Restricted Amount: {restricted_amount}")
-            except ValueError:
+                restricted_amount_raw = self.bcd_to_int(current_restricted_amount)
+                restricted_amount = restricted_amount_raw / 100
+                print(f"[BALANCE RESPONSE] Restricted BCD conversion: '{current_restricted_amount}' -> {restricted_amount_raw} cents -> ${restricted_amount}")
+            except ValueError as e:
+                print(f"[BALANCE RESPONSE] Error converting restricted amount: {current_restricted_amount}, error: {e}")
                 restricted_amount = 0
             
             # Current non-restricted amount (5 bytes BCD)
             current_nonrestricted_amount = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
             index += 10
             print(f"[BALANCE RESPONSE] Current Non-restricted Amount (raw): {current_nonrestricted_amount}")
+            print(f"[BALANCE RESPONSE] Non-restricted amount position: characters {index-10} to {index}")
             
             if not self.is_valid_bcd(current_nonrestricted_amount):
                 current_nonrestricted_amount = "0000000000"
             
             try:
-                nonrestricted_amount = self.bcd_to_int(current_nonrestricted_amount) / 100
-                print(f"[BALANCE RESPONSE] Non-restricted Amount: {nonrestricted_amount}")
-            except ValueError:
+                nonrestricted_amount_raw = self.bcd_to_int(current_nonrestricted_amount)
+                nonrestricted_amount = nonrestricted_amount_raw / 100
+                print(f"[BALANCE RESPONSE] Non-restricted BCD conversion: '{current_nonrestricted_amount}' -> {nonrestricted_amount_raw} cents -> ${nonrestricted_amount}")
+            except ValueError as e:
+                print(f"[BALANCE RESPONSE] Error converting non-restricted amount: {current_nonrestricted_amount}, error: {e}")
                 nonrestricted_amount = 0
             
             # Update balance fields
