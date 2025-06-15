@@ -36,7 +36,7 @@ class MeterRequest(BaseModel):
 
 class MoneyTransferRequest(BaseModel):
     """Request model for money transfer operations"""
-    transfer_type: TransferType = Field(description="Type of transfer")
+    transfer_type: TransferType = Field(TransferType.CASHABLE, description="Type of transfer (defaults to cashable)")
     amount: float = Field(gt=0, description="Amount to transfer (must be positive)")
     transaction_id: Optional[str] = Field(None, description="Custom transaction ID")
     
