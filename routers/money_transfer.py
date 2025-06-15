@@ -56,7 +56,7 @@ async def add_credits(
         # AFT Cash-In Parameters (based on para_commands.py.ref)
         doincreasetransactionid = 1  # Always increment transaction ID
         transfertype = int(request.transfer_type)  # 10=cashable, 11=restricted, 00=non-restricted
-        customerbalance = float(request.amount)  # Amount in dollars
+        amount = float(request.amount)  # Amount in dollars
         customerpromo = 0.0  # No promotional amount for basic transfers
         
         # Generate transaction ID or use provided one
@@ -86,19 +86,14 @@ async def add_credits(
             print("[ADD CREDITS] Starting enhanced AFT workflow with auto-lock...")
             
             try:
-                # Use the new complete AFT workflow method
+                # Call the enhanced AFT workflow (async method)
                 result = await sas_comm.sas_money.komut_complete_aft_workflow_async(
-                    customerbalance=customerbalance,
-                    customerpromo=customerpromo,
-                    transfertype=transfertype,
-                    assetnumber=assetnumber,
-                    registrationkey=registrationkey,
-                    transactionid=transactionid,
-                    timeout=15
+                    customerbalance=amount,
+                    customerpromo=0.0
                 )
                 
-                if result and result.get("success"):
-                    print(f"[ADD CREDITS] Enhanced AFT workflow completed successfully")
+                if result:
+                    print("[ADD CREDITS] Enhanced AFT workflow completed successfully")
                     
                     # Get the updated balance from the result
                     balance_data = result.get("balance", {})
@@ -129,128 +124,83 @@ async def add_credits(
                         }
                     )
                 else:
-                    # Enhanced workflow failed, fall back to manual lock/unlock
-                    error_msg = result.get("error", "Unknown error") if result else "No result returned"
-                    print(f"[ADD CREDITS] Enhanced workflow failed: {error_msg}")
-                    print(f"[ADD CREDITS] Falling back to manual lock/unlock method...")
+                    print("[ADD CREDITS] Enhanced AFT workflow failed, trying fallback...")
+                    raise Exception("Enhanced AFT workflow returned False")
                     
-                    # Manual lock/unlock fallback
-                    lock_success = sas_comm.sas_money.komut_aft_lock_machine(timeout_seconds=10)
-                    if not lock_success:
-                        raise HTTPException(status_code=500, detail="Failed to lock machine for AFT transfer")
-                    
-                    try:
-                        # Send the transfer command using the original method
-                        actual_transaction_id = sas_comm.sas_money.komut_para_yukle(
-                            customerbalance=customerbalance,
-                            customerpromo=customerpromo,
-                            transfertype=transfertype,
-                            assetnumber=assetnumber,
-                            registrationkey=registrationkey,
-                            transactionid=transactionid
-                        )
-                        
-                        # Wait for completion with timeout
-                        print(f"[ADD CREDITS] Waiting for AFT response...")
-                        wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=8)
-                        
-                        if wait_result is True:
-                            # Success - AFT completed
-                            print(f"[ADD CREDITS] AFT transfer completed successfully")
-                            
-                            # Query updated balance after successful AFT transfer
-                            print(f"[ADD CREDITS] Querying updated balance...")
-                            try:
-                                # Send balance query to get updated amounts
-                                sas_comm.sas_money.komut_bakiye_sorgulama("add_credits_api", False, "post_aft_balance")
-                                
-                                # Wait for balance response
-                                balance_result = await sas_comm.sas_money.wait_for_bakiye_sorgulama_completion(timeout=3)
-                                
-                                if balance_result:
-                                    updated_cashable = sas_comm.sas_money.yanit_bakiye_tutar
-                                    updated_restricted = sas_comm.sas_money.yanit_restricted_amount  
-                                    updated_nonrestricted = sas_comm.sas_money.yanit_nonrestricted_amount
-                                    total_balance = updated_cashable + updated_restricted + updated_nonrestricted
-                                    
-                                    print(f"[ADD CREDITS] Updated balance: Cashable=${updated_cashable:.2f}, Restricted=${updated_restricted:.2f}, Non-restricted=${updated_nonrestricted:.2f}")
-                                else:
-                                    print(f"[ADD CREDITS] Balance query timeout - using default values")
-                                    updated_cashable = request.amount  # Assume the added amount
-                                    updated_restricted = 0
-                                    updated_nonrestricted = 0
-                                    total_balance = updated_cashable
-                                    
-                            except Exception as balance_error:
-                                print(f"[ADD CREDITS] Error querying balance: {balance_error}")
-                                # Use default values if balance query fails
-                                updated_cashable = request.amount
-                                updated_restricted = 0
-                                updated_nonrestricted = 0
-                                total_balance = updated_cashable
-                            
-                            execution_time = (datetime.now() - start_time).total_seconds() * 1000
-                            return MachineControlResponse(
-                                success=True,
-                                message=f"Credit addition of ${request.amount:.2f} completed successfully",
-                                execution_time_ms=execution_time,
-                                data={
-                                    "action": "add_credits",
-                                    "amount": request.amount,
-                                    "credits": int(request.amount * 100),
-                                    "transaction_id": actual_transaction_id,
-                                    "transfer_type": request.transfer_type,
-                                    "transfer_type_name": get_transfer_type_name(request.transfer_type),
-                                    "status": "completed_manual_lock",
-                                    "updated_balance": {
-                                        "cashable": float(updated_cashable),
-                                        "restricted": float(updated_restricted),
-                                        "nonrestricted": float(updated_nonrestricted),
-                                        "total": float(total_balance)
-                                    }
-                                }
-                            )
-                        elif wait_result is False:
-                            # Transfer failed
-                            status_code = sas_comm.sas_money.global_para_yukleme_transfer_status
-                            status_desc = sas_comm.sas_money.get_transfer_status_description(status_code)
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"AFT credit transfer failed: {status_desc} (Code: {status_code})"
-                            )
-                        else:
-                            # Timeout - but AFT command was sent successfully
-                            print(f"[ADD CREDITS] AFT timeout - machine may not support AFT responses")
-                            print(f"[ADD CREDITS] Command was sent successfully, assuming it worked")
-                            
-                            execution_time = (datetime.now() - start_time).total_seconds() * 1000
-                            return MachineControlResponse(
-                                success=True,
-                                message=f"Credit addition of ${request.amount:.2f} sent to machine (no response confirmation)",
-                                execution_time_ms=execution_time,
-                                data={
-                                    "action": "add_credits",
-                                    "amount": request.amount,
-                                    "credits": int(request.amount * 100),
-                                    "transaction_id": actual_transaction_id,
-                                    "transfer_type": request.transfer_type,
-                                    "transfer_type_name": get_transfer_type_name(request.transfer_type),
-                                    "status": "sent_no_confirmation",
-                                    "note": "Machine may not support AFT response confirmation"
-                                }
-                            )
-                    finally:
-                        # Always unlock the machine
-                        print("[ADD CREDITS] Unlocking machine after manual AFT...")
-                        unlock_success = sas_comm.sas_money.komut_aft_unlock_machine()
-                        print(f"[ADD CREDITS] Machine unlock result: {unlock_success}")
-            
             except Exception as enhanced_error:
                 print(f"[ADD CREDITS] Enhanced AFT workflow error: {enhanced_error}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Enhanced AFT workflow failed: {str(enhanced_error)}"
-                )
+                
+                # Fallback to manual lock/unlock process
+                print("[ADD CREDITS] Falling back to manual lock/unlock process...")
+                
+                try:
+                    # Manual lock
+                    print("[ADD CREDITS] Manually locking machine...")
+                    lock_result = sas_comm.sas_money.komut_aft_lock_machine()
+                    if not lock_result:
+                        print("[ADD CREDITS] Manual lock failed")
+                        raise Exception("Failed to lock machine for AFT transfer")
+                    
+                    # Execute transfer
+                    print("[ADD CREDITS] Executing AFT transfer...")
+                    transaction_id = sas_comm.sas_money.komut_para_yukle(
+                        customerbalance=amount,
+                        customerpromo=0.0,
+                        transfertype=10,
+                        assetnumber=assetnumber,
+                        registrationkey=registrationkey
+                    )
+                    
+                    if transaction_id is None:
+                        raise Exception("AFT transfer command failed")
+                    
+                    # Wait for completion
+                    print("[ADD CREDITS] Waiting for AFT completion...")
+                    wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=15)
+                    
+                    if wait_result is True:
+                        print("[ADD CREDITS] AFT transfer completed successfully")
+                        
+                        # Manual unlock
+                        print("[ADD CREDITS] Manually unlocking machine...")
+                        unlock_result = sas_comm.sas_money.komut_aft_unlock_machine()
+                        
+                        return MachineControlResponse(
+                            success=True,
+                            message=f"Credit addition of ${request.amount:.2f} completed successfully",
+                            execution_time_ms=execution_time,
+                            data={
+                                "action": "add_credits",
+                                "amount": request.amount,
+                                "credits": int(request.amount * 100),
+                                "transaction_id": transaction_id,
+                                "transfer_type": request.transfer_type,
+                                "transfer_type_name": get_transfer_type_name(request.transfer_type),
+                                "status": "completed_manual_lock",
+                                "updated_balance": {
+                                    "cashable": float(amount),
+                                    "restricted": 0.0,
+                                    "nonrestricted": 0.0,
+                                    "total": float(amount)
+                                }
+                            }
+                        )
+                    else:
+                        # Unlock on failure
+                        sas_comm.sas_money.komut_aft_unlock_machine()
+                        raise Exception(f"AFT transfer failed or timed out: {wait_result}")
+                        
+                except Exception as fallback_error:
+                    print(f"[ADD CREDITS] Fallback method also failed: {fallback_error}")
+                    # Try to unlock machine in case it's stuck
+                    try:
+                        sas_comm.sas_money.komut_aft_unlock_machine()
+                    except:
+                        pass
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Both enhanced and fallback AFT methods failed: {str(fallback_error)}"
+                    )
 
         except Exception as e:
             raise HTTPException(
