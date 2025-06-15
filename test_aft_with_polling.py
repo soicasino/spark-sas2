@@ -96,8 +96,8 @@ class AFTTester:
         """Initializes components and starts polling."""
         print("Initializing SAS communication...")
         
-        # Initialize communicator with config
-        self.communicator = SASCommunicator('COM1', self.config)
+        # Initialize communicator with config - use the correct SAS port
+        self.communicator = SASCommunicator('/dev/ttyUSB1', self.config)
         
         # Check if port is open
         if not hasattr(self.communicator, 'is_port_open') or not self.communicator.is_port_open:
