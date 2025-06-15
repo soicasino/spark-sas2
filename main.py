@@ -430,6 +430,100 @@ async def debug_aft_balance():
         }
 
 
+@app.get("/api/debug/machine-debt")
+async def debug_machine_debt():
+    """Analyze machine debt state to understand why AFT balance shows 0"""
+    global sas_service
+    
+    if not sas_service or not sas_service.is_initialized:
+        return {
+            "success": False,
+            "error": "SAS service not initialized",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    try:
+        start_time = time.time()
+        
+        print("\n" + "="*60)
+        print("MACHINE DEBT ANALYSIS - AFT BALANCE ISSUE")
+        print("="*60)
+        
+        # Get current meters to calculate debt
+        print("[DEBT ANALYSIS] Getting current meters...")
+        meters_result = await sas_service.execute_command_async("get_meters", {"meter_type": "comprehensive"}, timeout=10)
+        
+        if meters_result.get("status") != "success":
+            return {
+                "success": False,
+                "error": "Failed to get meters",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        meters = meters_result.get("result", {}).get("meters", {})
+        
+        # Calculate debt
+        coin_in = meters.get("total_coin_in", 0.0)
+        coin_out = meters.get("total_coin_out", 0.0)
+        calculated_balance = coin_in - coin_out
+        
+        # Get current AFT balance
+        print("[DEBT ANALYSIS] Getting AFT balance...")
+        balance_result = await sas_service.execute_command_async("get_balance", {}, timeout=8)
+        
+        aft_balance = 0.0
+        if balance_result.get("status") == "success":
+            balance_data = balance_result.get("result", {})
+            aft_balance = balance_data.get("total_balance", 0.0)
+        
+        # Analysis
+        is_in_debt = calculated_balance < 0
+        debt_amount = abs(calculated_balance) if is_in_debt else 0
+        
+        print(f"[DEBT ANALYSIS] Coin In: {coin_in}")
+        print(f"[DEBT ANALYSIS] Coin Out: {coin_out}")
+        print(f"[DEBT ANALYSIS] Calculated Balance: {calculated_balance}")
+        print(f"[DEBT ANALYSIS] AFT Balance: {aft_balance}")
+        print(f"[DEBT ANALYSIS] Machine in debt: {is_in_debt}")
+        print(f"[DEBT ANALYSIS] Debt amount: {debt_amount}")
+        
+        execution_time = (time.time() - start_time) * 1000
+        
+        return {
+            "success": True,
+            "message": "Machine debt analysis completed",
+            "timestamp": datetime.now().isoformat(),
+            "execution_time_ms": round(execution_time, 1),
+            "analysis": {
+                "financial_state": {
+                    "coin_in": coin_in,
+                    "coin_out": coin_out,
+                    "calculated_balance": calculated_balance,
+                    "aft_displayed_balance": aft_balance,
+                    "is_in_debt": is_in_debt,
+                    "debt_amount": debt_amount
+                },
+                "explanation": {
+                    "why_zero_balance": "Machine has negative calculated balance - AFT credits go toward debt repayment" if is_in_debt else "Machine has positive balance - investigate other causes",
+                    "solution": f"Transfer at least {debt_amount:.2f} credits to clear debt, then additional credits will show in balance" if is_in_debt else "Debt is not the issue - investigate AFT configuration",
+                    "normal_behavior": is_in_debt
+                },
+                "recommendations": [
+                    f"Clear machine debt by transferring {debt_amount:.2f} credits" if is_in_debt else "Debt is not the issue",
+                    "Test with small transfer after debt is cleared" if is_in_debt else "Check AFT configuration",
+                    "Monitor balance after debt clearance" if is_in_debt else "Review SAS AFT setup"
+                ]
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
     
