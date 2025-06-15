@@ -306,16 +306,25 @@ async def debug_aft_balance():
         print("AFT BALANCE DEBUG - USING EXISTING SAS CONNECTION")
         print("="*60)
         
-        # Get references to SAS components
-        sas_money = sas_service.sas_money
-        sas_communicator = sas_service.sas_communicator
-        
-        if not sas_money or not sas_communicator:
+        # Get references to SAS components through the slot machine app
+        if not sas_service.slot_machine_app or not sas_service.slot_machine_app.sas_comm:
             return {
                 "success": False,
-                "error": "SAS components not available",
+                "error": "SAS communication not available",
                 "timestamp": datetime.now().isoformat()
             }
+        
+        sas_comm = sas_service.slot_machine_app.sas_comm
+        
+        if not hasattr(sas_comm, 'sas_money') or not sas_comm.sas_money:
+            return {
+                "success": False,
+                "error": "SAS money functions not available",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        sas_money = sas_comm.sas_money
+        sas_communicator = sas_comm
         
         # Store original values for comparison
         original_cashable = sas_money.yanit_bakiye_tutar
