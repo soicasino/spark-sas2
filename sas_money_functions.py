@@ -441,134 +441,187 @@ class SasMoney:
             self.is_waiting_for_bakiye_sorgulama = False
             raise
 
-    def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance, customerpromo, transactionid, assetnumber, registrationkey):
+    def komut_para_yukle(self, doincreasetransactionid, transfertype, customerbalance=0.0, customerpromo=0.0, transactionid=0, assetnumber="", registrationkey=""):
         """
-        Constructs and sends a command to load money onto the gaming machine.
-        This function handles different transfer types like regular cash-in, jackpots, and bonuses.
-        It builds a SAS AFT command (72h) with the appropriate details, matching the reference logic.
+        CORRECTED: AFT Transfer command using exact logic from original working code.
+        This matches the format from raspberryPython_orj.py that was working.
         """
-        self.last_para_yukle_date = datetime.datetime.now()
+        print(f"[PARA YUKLE] Starting AFT transfer - Amount: ${customerbalance}, Promo: ${customerpromo}")
         
-        # Debug logging for input parameters
-        print(f"[MONEY LOAD] komut_para_yukle called with:")
-        print(f"[MONEY LOAD]   doincreasetransactionid: {doincreasetransactionid}")
-        print(f"[MONEY LOAD]   transfertype: {transfertype}")
-        print(f"[MONEY LOAD]   customerbalance: {customerbalance}")
-        print(f"[MONEY LOAD]   customerpromo: {customerpromo}")
-        print(f"[MONEY LOAD]   transactionid: {transactionid}")
-        print(f"[MONEY LOAD]   assetnumber: {assetnumber}")
-        print(f"[MONEY LOAD]   registrationkey: {registrationkey}")
-
-        # --- Transaction ID logic (keep your class logic) ---
-        if doincreasetransactionid:
-            actual_transaction_id = self.get_next_transaction_id()
-        else:
-            actual_transaction_id = transactionid
-
-        # --- Special transfer type handling (reference logic) ---
-        RealTransferType = 0
-        # These should be class attributes or fetched from config as needed
-        G_Machine_IsBonusCashable = getattr(self, 'G_Machine_IsBonusCashable', 0)
-        G_Config_IsCashoutSoft = getattr(self, 'G_Config_IsCashoutSoft', 0)
-        JackpotWonAmount = getattr(self, 'JackpotWonAmount', 0)
-        Billacceptor_LastCredit = getattr(self, 'Billacceptor_LastCredit', 0)
-
-        # Copy input values to local vars for mutation
-        cbalance = customerbalance
-        cpromo = customerpromo
-        ttype = transfertype
-
-        # FIXED: Only treat as jackpot if this is an actual jackpot payout (not manual credit addition)
-        # For manual credit additions, transfer types 10/11 should be treated as cashable/restricted
-        # Only override balance for actual jackpot payouts (when JackpotWonAmount > 0)
-        if ttype in [10, 11] and JackpotWonAmount > 0:  # Actual jackpot payout
-            print(f"[MONEY LOAD] Processing as jackpot payout: {JackpotWonAmount}")
-            RealTransferType = ttype
-            cbalance = JackpotWonAmount
-            cpromo = 0
-        elif ttype == 13:  # Bonus
-            print(f"[MONEY LOAD] Processing as bonus transfer")
-            RealTransferType = 10
-            cbalance = JackpotWonAmount
-            cpromo = 0
-            if G_Machine_IsBonusCashable == 0:
-                RealTransferType = 0
-        elif ttype == 1:  # Bill Acceptor
-            print(f"[MONEY LOAD] Processing as bill acceptor transfer: {Billacceptor_LastCredit}")
-            cbalance = Billacceptor_LastCredit
-            cpromo = 0
-            ttype = 0
-        else:
-            # Manual credit addition - use provided amounts
-            print(f"[MONEY LOAD] Processing as manual credit addition")
-            print(f"[MONEY LOAD]   Transfer type: {ttype} (10=cashable, 11=restricted, 0=non-restricted)")
-            RealTransferType = ttype  # Set the real transfer type for manual additions
-
-        cbalance_int = int(cbalance * 100)
-        cpromo_int = int(cpromo * 100)
+        # Transaction ID management (from original)
+        if doincreasetransactionid == 1:
+            transactionid = self.get_next_transaction_id()
+        elif transactionid == 0:
+            transactionid = self.get_next_transaction_id()
         
-        print(f"[MONEY LOAD] Final amounts: cbalance={cbalance}, cpromo={cpromo}")
-        print(f"[MONEY LOAD] Final amounts (cents): cbalance_int={cbalance_int}, cpromo_int={cpromo_int}")
-
-        # Early exit if nothing to load
-        if cbalance == 0 and cpromo == 0:
-            self.is_waiting_for_para_yukle = 0
-            # Optionally: self.CashIn_CompletedBy = "No-Money"
-            print("[MONEY LOAD] No money to load - both cbalance and cpromo are 0.")
-            return None
-
-        # --- Command construction (reference logic) ---
-        # FIXED: Command should start with SAS address, not asset number
+        print(f"[PARA YUKLE] Using Transaction ID: {transactionid}")
+        
+        # Convert amounts to cents (BCD format requirement)
+        customerbalanceint = int(customerbalance * 100)
+        customerpromoint = int(customerpromo * 100)
+        
+        if customerbalanceint == 0 and customerpromoint == 0:
+            print("[PARA YUKLE] No money to load. Aborting.")
+            return False
+        
+        # Determine real transfer type (from original logic)
+        real_transfer_type = 0
+        if transfertype in [10, 11]:  # Jackpot or Bonus
+            real_transfer_type = transfertype
+        elif transfertype == 13:  # Another type of bonus
+            real_transfer_type = 10  # Assume cashable bonus
+        
+        # SAS Address
         sas_address = getattr(self.communicator, 'sas_address', '01')
-        command_header = sas_address + "72"
-        command = "0000"  # Transfer Code, Transfer Index
-
-        if RealTransferType in [10, 11]:
-            command += f"{RealTransferType:02d}"  # FIXED: Use decimal format, not hex
+        
+        # Command Header: Address + Command (length calculated later)
+        command_header = f"{sas_address}72"
+        
+        # Command Body (exact format from original)
+        command = ""
+        command += "00"   # Transfer Code
+        command += "00"   # Transfer Index
+        
+        # Transfer Type Code
+        if real_transfer_type in [10, 11]:
+            command += f"{real_transfer_type:02d}"
         else:
             command += "00"
-
-        if ttype == 13:
-            if G_Machine_IsBonusCashable == 1:
-                command += add_left_bcd(str(cbalance_int), 5)
-                command += add_left_bcd("0", 5)
-                command += add_left_bcd("0", 5)
-            else:  # Promo-based bonus
-                command += add_left_bcd("0", 5)
-                command += add_left_bcd(str(cbalance_int), 5)
-                command += add_left_bcd("0", 5)
+        
+        # Amounts (as 5-byte BCD strings) - CRITICAL: Use exact BCD format
+        command += self._add_left_bcd(str(customerbalanceint), 5)
+        command += self._add_left_bcd(str(customerpromoint), 5)
+        command += "0000000000"  # Non-restricted amount (5 bytes)
+        
+        # Transfer Flags (from original logic)
+        # 03 for soft cashout, 07 for hard cashout
+        is_cashout_soft = getattr(self.communicator, 'is_cashout_soft', False)
+        command += "03" if is_cashout_soft else "07"
+        
+        # Asset Number (4 bytes)
+        if assetnumber:
+            # Ensure asset number is 8 hex chars (4 bytes)
+            asset_hex = assetnumber.replace("0x", "").upper().zfill(8)
+            command += asset_hex
         else:
-            command += add_left_bcd(str(cbalance_int), 5)
-            command += add_left_bcd(str(cpromo_int), 5)
-            command += "0000000000"
-
-        # Transfer flag
-        command += "03" if G_Config_IsCashoutSoft == 1 else "07"
-        command += assetnumber
-        command += registrationkey
-
-        # Transaction ID as hex string
-        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in str(actual_transaction_id))
-        command += add_left_bcd(str(len(transaction_id_hex) // 2), 1)
+            # Use default or from communicator
+            default_asset = getattr(self.communicator, 'asset_number_hex', '01000000')
+            command += default_asset.zfill(8)
+        
+        # Registration Key (20 bytes = 40 hex chars)
+        if registrationkey:
+            # Ensure registration key is 40 hex chars
+            reg_key = registrationkey.replace("0x", "").upper().ljust(40, '0')[:40]
+            command += reg_key
+        else:
+            # Use default (all zeros)
+            command += "0000000000000000000000000000000000000000"
+        
+        # Transaction ID (exact format from original)
+        transaction_id_str = str(transactionid)
+        transaction_id_hex = "".join("{:02x}".format(ord(c)) for c in transaction_id_str)
+        command += self._add_left_bcd(str(len(transaction_id_hex) // 2), 1)  # Length in bytes
         command += transaction_id_hex
-        command += "00000000"  # Expiration Date
-        # Pool ID
-        command += "0030" if ttype == 13 or cpromo > 0 else "0000"
-        command += "00"  # Receipt data length
-
-        command_header += hex(len(command) // 2).replace("0x", "")
-        full_command = get_crc(command_header + command)
         
-        # Debug logging for the constructed command
-        print(f"[MONEY LOAD] AFT Command constructed:")
-        print(f"[MONEY LOAD]   RealTransferType: {RealTransferType}")
-        print(f"[MONEY LOAD]   Command header: {command_header}")
-        print(f"[MONEY LOAD]   Command data: {command}")
-        print(f"[MONEY LOAD]   Full command: {full_command}")
+        # Expiration Date (4 bytes BCD) - not used
+        command += "00000000"
         
-        self.communicator.sas_send_command_with_queue("ParaYukle", full_command, 1)
-
-        return actual_transaction_id
+        # Pool ID (2 bytes)
+        if transfertype == 13 or customerpromo > 0:
+            command += "0030"
+        else:
+            command += "0000"
+        
+        # Receipt data length (1 byte)
+        command += "00"
+        
+        # CRITICAL: Calculate and add command length to header
+        command_length = len(command) // 2  # Convert hex chars to bytes
+        command_header += f"{command_length:02x}"
+        
+        # Combine header and body
+        full_command = command_header + command
+        
+        # Calculate and append CRC (exact method from original)
+        full_command_with_crc = self._get_crc(full_command)
+        
+        print(f"[PARA YUKLE] Final AFT Command: {full_command_with_crc}")
+        print(f"[PARA YUKLE] Command breakdown:")
+        print(f"  Header: {command_header}")
+        print(f"  Body: {command}")
+        print(f"  Length: {command_length} bytes")
+        
+        # Send the command
+        try:
+            result = self.communicator.sas_send_command_with_queue("ParaYukle", full_command_with_crc, 1)
+            print(f"[PARA YUKLE] Command sent successfully: {result}")
+            
+            # Set waiting flag and operation type
+            self.is_waiting_for_para_yukle = True
+            self.last_aft_operation = "Yukle"
+            
+            return transactionid
+            
+        except Exception as e:
+            print(f"[PARA YUKLE] Error sending command: {e}")
+            return False
+    
+    def _add_left_bcd(self, numbers_str, length_in_bytes):
+        """
+        EXACT implementation from original AddLeftBCD function.
+        Pads a string of numbers with leading zeros to meet a specific byte length
+        for BCD (Binary-Coded Decimal) representation.
+        """
+        # Ensure the input is a string of digits
+        retdata = str(numbers_str)
+        
+        # Pad with a leading zero if the number of digits is odd
+        if len(retdata) % 2 == 1:
+            retdata = "0" + retdata
+        
+        # Calculate how many "00" pairs (bytes) are needed for padding
+        current_byte_count = len(retdata) // 2
+        padding_needed = length_in_bytes - current_byte_count
+        
+        # Add the padding
+        retdata = "00" * int(padding_needed) + retdata
+        return retdata
+    
+    def _get_crc(self, command):
+        """
+        EXACT implementation from original GetCRC function.
+        Calculates the Kermit CRC for a given hex command string and appends it
+        in the correct (reversed byte) order.
+        """
+        try:
+            from crccheck.crc import CrcKermit
+            
+            data = bytearray.fromhex(command)
+            crc_instance = CrcKermit()
+            crc_instance.process(data)
+            
+            # The CRC result is returned as bytes
+            crc_bytes = crc_instance.finalbytes()
+            
+            # Format to a hex string
+            crc_hex = crc_bytes.hex().upper()
+            
+            # Pad if necessary to ensure it's 4 characters (2 bytes)
+            crc_hex = crc_hex.zfill(4)
+            
+            # IMPORTANT: The SAS protocol requires the CRC bytes to be reversed.
+            # If crc_hex is "1234", it should be appended as "3412".
+            reversed_crc = crc_hex[2:4] + crc_hex[0:2]
+            
+            return command + reversed_crc
+            
+        except Exception as e:
+            print(f"[CRC] Error calculating CRC: {e}")
+            # Fallback to existing CRC method if available
+            if hasattr(self.communicator, 'get_crc'):
+                return self.communicator.get_crc(command)
+            else:
+                return command + "0000"  # Fallback
 
     def komut_para_sifirla(self, doincreaseid, transactionid, assetnumber, registrationkey):
         self.last_para_sifirla_date = datetime.datetime.now()
@@ -1468,6 +1521,11 @@ class SasMoney:
         """
         Check if the machine is ready for AFT transfers by querying status.
         Returns True if ready, False if locked or unavailable.
+        
+        IMPORTANT: SAS Protocol Lock Status Values:
+        - FF = NOT LOCKED (machine is available)
+        - 40 = LOCK PENDING 
+        - 00 = LOCKED (machine is locked)
         """
         print(f"[AFT STATUS CHECK] Checking machine AFT status")
         
@@ -1486,26 +1544,21 @@ class SasMoney:
             print(f"[AFT STATUS CHECK] Current Lock Status: {lock_status}")
             print(f"[AFT STATUS CHECK] Current AFT Status: {aft_status}")
             
-            # Analyze the status codes
-            if lock_status == "00":
-                print(f"[AFT STATUS CHECK] ✅ Machine is unlocked")
+            # CORRECTED: Analyze the status codes according to SAS protocol
+            if lock_status == "FF":
+                print(f"[AFT STATUS CHECK] ✅ Machine is NOT LOCKED (FF = available for AFT)")
                 return True
-            elif lock_status == "FF":
-                print(f"[AFT STATUS CHECK] ⚠️  Machine reports all locks (FF) - checking if test/simulation mode")
-                # Check if AFT is actually working despite lock status
-                # In test mode, machines often report FF locks but still process AFT commands
-                if aft_status in ["B0", "A0", "90", "80"]:  # Common AFT states (including registered states)
-                    print(f"[AFT STATUS CHECK] ✅ AFT appears functional despite lock status (test/simulation mode)")
-                    print(f"[AFT STATUS CHECK] 💡 Proceeding with AFT operations - machine may be in test mode")
-                    return True
-                else:
-                    print(f"[AFT STATUS CHECK] ❌ Machine is fully locked and AFT non-functional")
-                    return False
+            elif lock_status == "00":
+                print(f"[AFT STATUS CHECK] ❌ Machine is LOCKED (00 = locked state)")
+                return False
+            elif lock_status == "40":
+                print(f"[AFT STATUS CHECK] ⏳ Machine lock PENDING (40 = transitioning)")
+                return False
             else:
-                print(f"[AFT STATUS CHECK] ⚠️  Machine partially locked: {lock_status}")
-                # For partial locks, still try AFT if status looks reasonable
-                if aft_status in ["B0", "A0", "90", "80"]:
-                    print(f"[AFT STATUS CHECK] ⚠️  Partial locks but AFT may still work")
+                print(f"[AFT STATUS CHECK] ⚠️  Unknown lock status: {lock_status}")
+                # For unknown status, check if AFT appears functional
+                if aft_status in ["B0", "A0", "90", "80"]:  # Common AFT states
+                    print(f"[AFT STATUS CHECK] ⚠️  Unknown lock but AFT may still work")
                     return True
                 else:
                     return False

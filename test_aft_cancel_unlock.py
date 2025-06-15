@@ -53,29 +53,43 @@ def print_status_analysis(status_data):
     print(f"   Lock Status: {lock_status}")
     print(f"   AFT Status:  {aft_status}")
     
-    # Analyze lock status
+    # CORRECTED: Analyze lock status according to SAS protocol
+    # FF = NOT LOCKED, 00 = LOCKED, 40 = LOCK PENDING
     if lock_status == "FF":
-        print(f"   🔒 DIAGNOSIS: Machine in FULL LOCK state (all 8 lock bits active)")
-        print(f"      This typically indicates AFT Game Lock, not hardware lock")
+        print(f"   ✅ DIAGNOSIS: Machine is NOT LOCKED (FF = available for AFT)")
+        print(f"      This means the machine is ready for AFT operations")
     elif lock_status == "00":
-        print(f"   ✅ DIAGNOSIS: Machine UNLOCKED")
+        print(f"   🔒 DIAGNOSIS: Machine is LOCKED (00 = locked state)")
+        print(f"      This means the machine is unavailable for AFT operations")
+    elif lock_status == "40":
+        print(f"   ⏳ DIAGNOSIS: Machine lock PENDING (40 = transitioning)")
+        print(f"      This means the machine is in transition state")
     else:
-        print(f"   ⚠️  DIAGNOSIS: Partial lock state ({lock_status})")
+        print(f"   ⚠️  DIAGNOSIS: Unknown lock state ({lock_status})")
     
     # Analyze AFT status
     if aft_status == "B0":
         print(f"   🎯 AFT DIAGNOSIS: AFT Enabled but RESTRICTED (176 decimal)")
-        print(f"      This confirms AFT Game Lock - machine waiting for AFT operation")
+        print(f"      This indicates AFT is configured but may have limitations")
     elif aft_status == "00":
-        print(f"   ✅ AFT DIAGNOSIS: AFT Normal state")
+        print(f"   ❌ AFT DIAGNOSIS: AFT Disabled")
+    elif aft_status == "01":
+        print(f"   ✅ AFT DIAGNOSIS: AFT Enabled - Full functionality")
     else:
         print(f"   ⚠️  AFT DIAGNOSIS: AFT status {aft_status}")
     
-    # Overall diagnosis
+    # Overall diagnosis - CORRECTED
     if lock_status == "FF" and aft_status == "B0":
-        print(f"\n🎯 CONCLUSION: Machine is stuck in AFT GAME LOCK state")
-        print(f"   ✅ Correct unlock method: AFT Cancel Transfer (017201800BB4)")
-        print(f"   ❌ Wrong methods: General unlock commands (0102...)")
+        print(f"\n🎯 CONCLUSION: Machine is AVAILABLE but AFT has restrictions")
+        print(f"   ✅ Machine Status: Ready for operations (FF = not locked)")
+        print(f"   ⚠️  AFT Status: Restricted mode - may need configuration")
+        print(f"   💡 Recommendation: Try AFT operations - machine should accept them")
+    elif lock_status == "FF":
+        print(f"\n✅ CONCLUSION: Machine is AVAILABLE for AFT operations")
+        print(f"   Machine is not locked and ready for AFT transfers")
+    elif lock_status == "00":
+        print(f"\n❌ CONCLUSION: Machine is LOCKED and unavailable")
+        print(f"   Need to unlock machine before AFT operations")
 
 def test_aft_cancel_unlock():
     """Test the AFT cancel transfer unlock method"""
