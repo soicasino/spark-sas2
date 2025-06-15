@@ -11,7 +11,7 @@ from models.requests import MoneyTransferRequest, CashoutRequest
 from models.responses import MachineControlResponse, ErrorResponse
 from sas_web_service import SASWebService
 from services.event_service import event_service
-from ..websocket_manager import connection_manager
+from websocket_manager import connection_manager
 
 router = APIRouter(prefix="/api/money", tags=["Money Transfer"])
 
