@@ -16,6 +16,11 @@ async def get_sas_service() -> SASWebService:
     """Dependency to get SAS service instance"""
     # This will be injected from the main app
     from main import sas_service
+    if sas_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="SAS service not available - service may be starting up or failed to initialize"
+        )
     return sas_service
 
 
@@ -55,22 +60,75 @@ async def get_system_status(
         )
 
 
-@router.get("/health")
-async def health_check(
-    sas_service: SASWebService = Depends(get_sas_service),
-    client_ip: str = Depends(verify_ip_access)
-):
+@router.get("/basic-status")
+async def get_basic_status(client_ip: str = Depends(verify_ip_access)):
     """
-    Simple health check endpoint for load balancers and monitoring
+    Get basic system status without requiring full SAS service initialization
+    This endpoint works even when SAS service is not available
     """
     try:
+        from main import sas_service
+        
+        basic_status = {
+            "api_running": True,
+            "timestamp": datetime.now().isoformat(),
+            "sas_service_available": sas_service is not None,
+        }
+        
+        if sas_service is not None:
+            basic_status.update({
+                "sas_initialized": sas_service.is_initialized,
+                "sas_running": sas_service.web_service_running,
+                "sas_connected": sas_service.system_status.get("sas_connected", False),
+                "last_communication": sas_service.system_status.get("last_communication"),
+                "port_info": sas_service.system_status.get("port_info"),
+                "asset_number": sas_service.system_status.get("asset_number")
+            })
+        else:
+            basic_status.update({
+                "sas_initialized": False,
+                "sas_running": False,
+                "sas_connected": False,
+                "error": "SAS service failed to initialize"
+            })
+        
+        return {
+            "success": True,
+            "message": "Basic status retrieved successfully",
+            "data": basic_status
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Basic status error: {str(e)}"
+        )
+
+
+@router.get("/health")
+async def health_check(client_ip: str = Depends(verify_ip_access)):
+    """
+    Simple health check endpoint for load balancers and monitoring
+    This endpoint works even when SAS service is not available
+    """
+    try:
+        from main import sas_service
+        
+        if sas_service is None:
+            return {
+                "status": "unhealthy",
+                "timestamp": datetime.now().isoformat(),
+                "initialized": False,
+                "service_running": False,
+                "sas_connected": False,
+                "error": "SAS service not initialized"
+            }
+        
         is_healthy = (
             sas_service.is_initialized and 
             sas_service.web_service_running and
             sas_service.system_status.get("sas_connected", False)
         )
-        
-        status_code = 200 if is_healthy else 503
         
         return {
             "status": "healthy" if is_healthy else "unhealthy",
