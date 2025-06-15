@@ -72,12 +72,12 @@ def test_aft_transfer_via_api(amount=5.00):
         # Use the money transfer API endpoint
         transfer_data = {
             "amount": amount,
-            "transfer_type": "cashable",
-            "description": f"Test transfer ${amount}"
+            "transfer_type": "10",  # 10 = cashable credits
+            "transaction_id": None  # Let system generate
         }
         
         response = requests.post(
-            "http://localhost:8000/api/money/transfer", 
+            "http://localhost:8000/api/money/add-credits", 
             json=transfer_data,
             timeout=30
         )
