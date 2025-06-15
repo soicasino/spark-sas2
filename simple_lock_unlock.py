@@ -33,7 +33,7 @@ class SimpleLockUnlock:
         """Background polling loop"""
         while self.running:
             try:
-                if self.communicator and self.communicator.is_open:
+                if self.communicator and self.communicator.is_port_open:
                     # Simple general poll
                     response = self.communicator.read_data(timeout=0.1)
                     if response:
@@ -53,7 +53,7 @@ class SimpleLockUnlock:
             result = self.communicator.sas_send_command_with_queue(
                 command_name, 
                 command_hex, 
-                expected_length=1  # Expecting simple ACK
+                0  # do_save_db parameter
             )
             
             if result:
