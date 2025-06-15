@@ -537,7 +537,7 @@ class SasMoney:
         
         # CRITICAL: Calculate and add command length to header
         command_length = len(command) // 2  # Convert hex chars to bytes
-        command_header += f"{command_length:02x}"
+        command_header += f"{command_length:02X}"  # Use uppercase hex, zero-padded to 2 digits
         
         # Combine header and body
         full_command = command_header + command
