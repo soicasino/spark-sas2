@@ -265,10 +265,11 @@ class SasMoney:
                 return False
                 
             elif status == "C0":
-                print(f"[ORIGINAL WAIT] Status C0 - Transfer acknowledged/pending")
+                print(f"[ORIGINAL WAIT] Status C0 - Transfer acknowledged/pending - continuing to wait...")
                 # In original, this calls Komut_Interragition("C0") but then continues waiting
-                # We'll continue the loop and let it process
-                pass
+                # Reset status to continue monitoring for final result
+                self.global_para_yukleme_transfer_status = "PENDING"
+                last_command_time = current_time  # Reset command timeout
                 
             elif status == "00":
                 print(f"[ORIGINAL WAIT] Status 00 - SUCCESS!")
@@ -2505,11 +2506,11 @@ class SasMoney:
                 return False
                 
             elif status == "C0":
-                print(f"[ORIGINAL WAIT] Status C0 - Not compatible with current transfer")
-                # In original, this calls Komut_Interragition("C0")
-                # For now, we'll treat it as completion pending
-                self.is_waiting_for_para_yukle = 0
-                return False
+                print(f"[ORIGINAL WAIT] Status C0 - Transfer acknowledged/pending - continuing to wait...")
+                # In original, this calls Komut_Interragition("C0") but then continues waiting
+                # Reset status to continue monitoring for final result
+                self.global_para_yukleme_transfer_status = "PENDING"
+                last_command_time = current_time  # Reset command timeout
                 
             elif status == "00":
                 print(f"[ORIGINAL WAIT] Status 00 - SUCCESS!")
