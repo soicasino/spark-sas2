@@ -600,7 +600,7 @@ class SasMoney:
 
     def _get_crc_original(self, command):
         """
-        FINAL CORRECTED CRC implementation - This version correctly reverses the bytes.
+        FINAL CORRECTED CRC implementation - Matches exactly the working utils.get_crc function.
         """
         try:
             from crccheck.crc import CrcKermit
@@ -608,7 +608,8 @@ class SasMoney:
             data = bytearray.fromhex(command)
             crc_instance = CrcKermit()
             crc_instance.process(data)
-            crc_hex = crc_instance.hexversion() # Get as a hex string like "0D37"
+            crc_hex = crc_instance.finalbytes().hex().upper()
+            crc_hex = crc_hex.zfill(4)
             
             # SAS requires the 2 CRC bytes to be reversed.
             # For a CRC of 0x0D37, the bytes are 0D and 37. They must be sent as 37 0D.
