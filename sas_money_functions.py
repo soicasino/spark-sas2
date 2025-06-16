@@ -336,6 +336,10 @@ class SasMoney:
             
             time.sleep(1)
             
+            # CRITICAL: Wait for init response before proceeding (timing fix)
+            print("[AFT REGISTRATION] Waiting for init response...")
+            time.sleep(2)  # Allow init command to process
+            
             # Step 2: Complete registration with asset number and POS ID
             print("[AFT REGISTRATION] Step 2: Complete registration")
             
@@ -386,6 +390,10 @@ class SasMoney:
             print(f"[AFT REGISTRATION] Complete registration command: {complete_command}")
             result2 = self.communicator.sas_send_command_with_queue("AFTRegComplete", complete_command, 1)
             print(f"[AFT REGISTRATION] Complete registration result: {result2}")
+            
+            # CRITICAL: Wait for registration to complete before returning (timing fix)
+            print("[AFT REGISTRATION] Waiting for registration to complete...")
+            time.sleep(3)  # Allow registration to process fully
             
             print("[AFT REGISTRATION] AFT registration completed")
             return True
