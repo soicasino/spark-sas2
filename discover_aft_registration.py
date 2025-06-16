@@ -34,7 +34,7 @@ class AFTRegistrationDiscovery:
             
             # Find and connect to SAS port
             print("Finding SAS port...")
-            port_info = self.port_mgr.find_sas_port()
+            port_info = self.port_mgr.find_sas_port(self.config)
             
             if not port_info:
                 print("❌ No SAS port found!")
