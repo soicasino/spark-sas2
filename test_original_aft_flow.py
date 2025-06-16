@@ -69,7 +69,7 @@ class OriginalAFTFlowTest:
         print(f"   Asset Number (little-endian): {self.asset_number_le}")
         print(f"   Registration Key: {self.registration_key}")
         print(f"   SAS Address: {self.sas_address}")
-        print(f"   Port: /dev/ttyUSB0")
+        print(f"   Port: /dev/ttyUSB1")
     
     def connect_serial(self):
         """Connect to SAS serial port /dev/ttyUSB1"""
@@ -135,7 +135,23 @@ class OriginalAFTFlowTest:
             self.serial_port.flush()
             time.sleep(0.3)
             
-            print(f"🔍 [CONNECT] All test commands sent. If no data received above, machine may be:")
+            # Test 4: Exception Reset (clear error state)
+            exception_reset = "017E00E837"  # Exception reset command
+            print(f"🔍 [CONNECT] Test 4: Exception reset: {exception_reset}")
+            command_bytes = bytes.fromhex(exception_reset)
+            self.serial_port.write(command_bytes)
+            self.serial_port.flush()
+            time.sleep(0.3)
+            
+            print(f"🔍 [CONNECT] All test commands sent.")
+            print(f"🔍 [CONNECT] === MACHINE STATE DIAGNOSIS ===")
+            print(f"🔍 [CONNECT] If seeing continuous 01 bytes:")
+            print(f"🔍 [CONNECT] - Machine is responding but in error state")
+            print(f"🔍 [CONNECT] - Try machine reset or clear error conditions")
+            print(f"🔍 [CONNECT] - Check machine display for tilt/error messages")
+            print(f"🔍 [CONNECT] - Machine may need door opened/closed cycle")
+            print(f"🔍 [CONNECT] ")
+            print(f"🔍 [CONNECT] If no data received:")
             print(f"🔍 [CONNECT] - Not powered on")
             print(f"🔍 [CONNECT] - Not in SAS mode") 
             print(f"🔍 [CONNECT] - Using different SAS address")
@@ -158,8 +174,36 @@ class OriginalAFTFlowTest:
                     
                     print(f"🔍 [SERIAL] <<<< RECEIVED DATA: {hex_data}")
                     
-                    # Process complete messages
-                    while len(buffer) >= 6:  # Minimum message length
+                    # Handle special case: continuous 01 bytes (machine error/polling state)
+                    if hex_data == "01":
+                        # Count consecutive 01 bytes
+                        if not hasattr(self, '_consecutive_01_count'):
+                            self._consecutive_01_count = 0
+                        self._consecutive_01_count += 1
+                        
+                        if self._consecutive_01_count == 1:
+                            print(f"⚠️  [SERIAL] Machine sending 01 bytes - possible error state or polling")
+                        elif self._consecutive_01_count == 10:
+                            print(f"⚠️  [SERIAL] Machine in continuous 01 state - this indicates:")
+                            print(f"⚠️  [SERIAL] - Machine may be in error/tilt state")  
+                            print(f"⚠️  [SERIAL] - SAS address conflict (machine expects different address)")
+                            print(f"⚠️  [SERIAL] - Machine not ready for SAS communication")
+                            print(f"⚠️  [SERIAL] - Need to clear machine state or reset")
+                        elif self._consecutive_01_count % 50 == 0:
+                            print(f"⚠️  [SERIAL] Still receiving 01 bytes ({self._consecutive_01_count} total)")
+                        
+                        # Don't process 01 bytes as normal messages
+                        buffer = ""  # Clear buffer
+                        continue
+                    else:
+                        # Reset 01 counter when we get other data
+                        if hasattr(self, '_consecutive_01_count'):
+                            if self._consecutive_01_count > 0:
+                                print(f"🔍 [SERIAL] Normal data received after {self._consecutive_01_count} x 01 bytes")
+                            self._consecutive_01_count = 0
+                    
+                    # Process complete messages (skip if buffer only contains 01s)
+                    while len(buffer) >= 6 and buffer != "01" * (len(buffer) // 2):  # Minimum message length
                         # Find message start (address)
                         if buffer.startswith(self.sas_address.upper()):
                             try:
@@ -170,7 +214,7 @@ class OriginalAFTFlowTest:
                                     length = int(length_hex, 16)
                                     total_length = 6 + (length * 2)  # Header + data + CRC
                                     
-                                    print(f"🔍 [SERIAL] Message detected - Command: {command}, Length: {length}, Total: {total_length}")
+                                    print(f"🔍 [SERIAL] Valid message detected - Command: {command}, Length: {length}, Total: {total_length}")
                                     
                                     if len(buffer) >= total_length:
                                         message = buffer[:total_length]
@@ -188,8 +232,13 @@ class OriginalAFTFlowTest:
                                 buffer = buffer[2:]
                         else:
                             # Remove invalid character
-                            print(f"🔍 [SERIAL] Invalid start byte, removing: {buffer[:2] if len(buffer) >= 2 else buffer}")
-                            buffer = buffer[2:] if len(buffer) >= 2 else ""
+                            if len(buffer) >= 2:
+                                invalid_char = buffer[:2]
+                                if invalid_char != "01":  # Don't spam about 01 bytes
+                                    print(f"🔍 [SERIAL] Invalid start byte, removing: {invalid_char}")
+                                buffer = buffer[2:]
+                            else:
+                                buffer = ""
                 else:
                     # Periodically log that we're listening
                     if hasattr(self, '_debug_counter'):
