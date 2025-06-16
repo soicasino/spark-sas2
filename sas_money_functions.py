@@ -101,6 +101,120 @@ class SasMoney:
         print(f"[AFT WAIT] Final status: {self.global_para_yukleme_transfer_status}")
         return None
 
+    def wait_for_para_yukle_completion_blocking(self, timeout=15):
+        """
+        BLOCKING wait for ParaYukle completion - matches original Wait_ParaYukle exactly
+        
+        This is the synchronous version that mirrors the original working code's approach:
+        - Uses class attributes instead of global variables
+        - Blocks execution until response received or timeout
+        - Continuously polls the status variable updated by response handler
+        
+        Returns:
+            True: Transfer successful (status "00")
+            False: Transfer failed (error status)
+            None: Timeout occurred
+        """
+        start_time = time.time()
+        
+        print(f"[AFT BLOCKING WAIT] Starting AFT money load blocking wait (timeout={timeout}s)")
+        
+        # CRITICAL: Reset status to None before waiting - this is checked by the loop
+        # In original: Global_ParaYukleme_TransferStatus = "PENDING" or None
+        self.global_para_yukleme_transfer_status = None
+        self.is_waiting_for_para_yukle = 1  # Set waiting flag - response handler checks this
+        
+        # Counter for periodic logging (matches original SayKomutBekliyor pattern)
+        loop_counter = 0
+        
+        print(f"[AFT BLOCKING WAIT] Reset status to None, starting blocking wait loop...")
+        
+        # Main wait loop - matches original while (IsWaitingForParaYukle==1) pattern
+        while self.is_waiting_for_para_yukle == 1:
+            time.sleep(0.003)  # Match original 3ms sleep
+            
+            elapsed = time.time() - start_time
+            loop_counter += 1
+            
+            # Check timeout
+            if elapsed > timeout:
+                print(f"[AFT BLOCKING WAIT] TIMEOUT after {elapsed:.2f}s")
+                self.is_waiting_for_para_yukle = 0
+                return None
+            
+            # Periodic status logging (every ~1000 loops = ~3 seconds)
+            if loop_counter % 1000 == 0:
+                status = self.global_para_yukleme_transfer_status
+                print(f"[AFT BLOCKING WAIT] {elapsed:.1f}s - Status: {status}, Loop: {loop_counter}")
+            
+            # Check current transfer status (updated by yanit_para_yukle)
+            status = self.global_para_yukleme_transfer_status
+            
+            if status == "00":  # Success
+                print(f"[AFT BLOCKING WAIT] SUCCESS after {elapsed:.2f}s, loops: {loop_counter}")
+                self.is_waiting_for_para_yukle = 0
+                return True
+                
+            elif status == "87":  # Machine door open, tilt, or disabled
+                print(f"[AFT BLOCKING WAIT] FAILED: Machine door open/tilt/disabled (87) after {elapsed:.2f}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "84":  # Transfer amount exceeds limit
+                print(f"[AFT BLOCKING WAIT] FAILED: Transfer amount too large (84) after {elapsed:.2f}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "FF":  # No transfer information available
+                print(f"[AFT BLOCKING WAIT] FAILED: No transfer information (FF) after {elapsed:.2f}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "93":  # Asset number mismatch
+                print(f"[AFT BLOCKING WAIT] FAILED: Asset number mismatch (93) after {elapsed:.2f}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "82":  # Registration key mismatch
+                print(f"[AFT BLOCKING WAIT] FAILED: Registration key mismatch (82) after {elapsed:.2f}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "81":  # Transaction ID not unique
+                print(f"[AFT BLOCKING WAIT] FAILED: Transaction ID not unique (81) after {elapsed:.2f}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "40":  # Transfer pending - continue waiting
+                if loop_counter % 2000 == 0:  # Log every ~6 seconds for pending
+                    print(f"[AFT BLOCKING WAIT] Transfer pending (40) - continuing to wait...")
+                continue
+                
+            elif status == "MT":  # Machine needs command resent
+                print(f"[AFT BLOCKING WAIT] Machine requesting command resend (MT) - but we don't resend in this implementation")
+                # In original, this would trigger Komut_ParaYukle(0,transfertype) 
+                # For now, we just log and continue waiting
+                continue
+                
+            # If status is None, we're still waiting for first response - continue
+            # Any other unknown status - log but continue waiting
+            if status is not None and status not in ["40", "MT"]:
+                if loop_counter % 1000 == 0:
+                    print(f"[AFT BLOCKING WAIT] Unknown status: {status} - continuing to wait")
+        
+        # If we exit the loop but is_waiting_for_para_yukle != 1, something cleared it
+        final_status = self.global_para_yukleme_transfer_status
+        elapsed = time.time() - start_time
+        print(f"[AFT BLOCKING WAIT] Wait loop exited after {elapsed:.2f}s, final status: {final_status}")
+        
+        # Check final status to determine result
+        if final_status == "00":
+            return True
+        elif final_status in ["87", "84", "FF", "93", "82", "81"]:
+            return False
+        else:
+            return None  # Unclear result
+
     async def wait_for_para_sifirla_completion(self, timeout=10):
         """
         Wait for the ParaSifirla (cashout) transfer to complete.
@@ -437,13 +551,19 @@ class SasMoney:
     def komut_para_yukle(self, customerbalance=0.0, customerpromo=0.0, transfertype=10, 
                          assetnumber=None, registrationkey=None, transactionid=None, auto_lock=False):
         """
-        CORRECTED AFT Transfer Command - Using EXACT original working logic
+        FIXED AFT Transfer Command - Using EXACT original working command structure
         
-        This method now uses the exact command construction logic from the original
-        working raspberryPython_orj.py file that successfully updated coin-in meters.
+        This method now exactly matches the original working command building pattern
+        identified in the user's analysis table, addressing all critical differences.
         
         Args:
-            auto_lock (bool): If True, automatically handle machine lock/unlock (recommended)
+            customerbalance (float): Amount in dollars to transfer
+            customerpromo (float): Promotional amount (not used in simple transfers)
+            transfertype (int): Transfer type (10=cashable, 11=restricted, etc.)
+            assetnumber (str): Asset number (hex format, e.g., "0000006C") 
+            registrationkey (str): 40-character hex registration key
+            transactionid (int): Transaction ID
+            auto_lock (bool): If True, automatically handle machine lock/unlock
         """
         
         # If auto_lock is requested, use the enhanced workflow
@@ -459,17 +579,122 @@ class SasMoney:
             )
         
         try:
-            print(f"[PARA YUKLE] Starting AFT transfer - Amount: ${customerbalance}, Promo: ${customerpromo}")
+            print(f"[PARA YUKLE] ===== STARTING AFT TRANSFER =====")
+            print(f"[PARA YUKLE] Amount: ${customerbalance}, Promo: ${customerpromo}, Type: {transfertype}")
             
-            # Get asset number and registration key
+            # FIXED: Get SAS address from communicator (matches table analysis)
+            sas_address = getattr(self.communicator, 'sas_address', '01')
+            print(f"[PARA YUKLE] SAS Address: {sas_address}")
+            
+            # FIXED: Get asset number - ensure proper format
             if assetnumber is None:
-                assetnumber = self.communicator.asset_number or "0000006C"
-            if registrationkey is None:
-                registrationkey = self.config.get('sas', 'registrationkey', '0' * 40)
+                assetnumber = getattr(self.communicator, 'asset_number', "0000006C")
+            print(f"[PARA YUKLE] Asset Number: {assetnumber}")
             
-            # Generate transaction ID if not provided
+            # FIXED: Get registration key - ensure 40 characters
+            if registrationkey is None:
+                registrationkey = "0000000000000000000000000000000000000000"  # All zeros (confirmed working)
+            print(f"[PARA YUKLE] Registration Key: {registrationkey}")
+            
+            # FIXED: Generate transaction ID if not provided
             if transactionid is None:
                 transactionid = int(time.time()) % 10000
+            print(f"[PARA YUKLE] Transaction ID: {transactionid}")
+            
+            # FIXED: Convert amount to cents and ensure integer
+            customerbalanceint = int(customerbalance * 100)
+            print(f"[PARA YUKLE] Amount in cents: {customerbalanceint}")
+            
+            # ===== COMMAND BUILDING - EXACT ORIGINAL STRUCTURE =====
+            print(f"[PARA YUKLE] Building command body...")
+            
+            # Initialize command body (matches original step-by-step approach)
+            command_body = ""
+            
+            # Transfer Code + Transfer Index + Transfer Type (always "000000")
+            command_body += "00"  # Transfer Code (always 00 for AFT)
+            command_body += "00"  # Transfer Index (always 00 for new transfer)  
+            command_body += "00"  # Transfer Type (00 = Cashable credit to gaming machine)
+            print(f"[PARA YUKLE] Transfer codes: 000000")
+            
+            # FIXED: Amount in BCD format (matches original customerbalanceint:010d approach)
+            # Original: command_body += f"{customerbalanceint:010d}" (BCD amount)
+            amount_bcd = f"{customerbalanceint:010d}"  # 10 digits, zero-padded
+            command_body += amount_bcd
+            print(f"[PARA YUKLE] Cashable amount BCD: {amount_bcd}")
+            
+            # FIXED: Restricted and Non-restricted amounts (always zeros for simple transfers)
+            # Original: command_body += "0000000000" * 2 (Promo amounts)
+            command_body += "0000000000"  # Restricted amount (5 bytes BCD)
+            command_body += "0000000000"  # Non-restricted amount (5 bytes BCD)  
+            print(f"[PARA YUKLE] Restricted amounts: 0000000000 + 0000000000")
+            
+            # FIXED: Transfer flags (match original "07", not "0F")
+            # Original: command_body += "07" (Flags)
+            # Current: Command += "0F" (transfer flag - hard mode) <- WRONG!
+            command_body += "07"  # Transfer Flags (07 = Transfer to gaming machine)
+            print(f"[PARA YUKLE] Transfer flags: 07")
+            
+            # FIXED: Asset number (use exactly as provided)
+            # Original: command_body += "01000000" (Asset number) <- This was wrong too
+            # Should use actual asset number from machine
+            command_body += assetnumber  # Asset Number (4 bytes hex)
+            print(f"[PARA YUKLE] Asset number: {assetnumber}")
+            
+            # FIXED: Registration key (use exactly as provided)
+            # Original: command_body += "0" * 40 (Registration Key) <- Placeholder
+            # New: Use actual registration key
+            command_body += registrationkey  # Registration Key (20 bytes = 40 hex chars)
+            print(f"[PARA YUKLE] Registration key: {registrationkey}")
+            
+            # FIXED: Transaction ID in proper hex format
+            transaction_id_str = str(transactionid)
+            transaction_id_hex = ''.join(f"{ord(c):02x}" for c in transaction_id_str)
+            transaction_id_length = len(transaction_id_hex) // 2
+            
+            # Add transaction ID length + transaction ID
+            command_body += f"{transaction_id_length:02x}"  # Length of transaction ID
+            command_body += transaction_id_hex             # Transaction ID in hex
+            print(f"[PARA YUKLE] Transaction ID: length={transaction_id_length:02x}, hex={transaction_id_hex}")
+            
+            # Expiration date, Pool ID, Receipt data
+            command_body += "00000000"  # Expiration Date (4 bytes - no expiration)
+            command_body += "0000"      # Pool ID (2 bytes - default pool)
+            command_body += "00"        # Receipt Data Length (0 = no receipt data)
+            print(f"[PARA YUKLE] Footer: expiration=00000000, pool=0000, receipt=00")
+            
+            # ===== COMMAND HEADER CONSTRUCTION =====
+            print(f"[PARA YUKLE] Building command header...")
+            
+            # FIXED: Header construction (matches original approach)
+            # Original: command_header = f"{sas_address}72"
+            command_code = "72"
+            
+            # FIXED: Length calculation (matches original)
+            # Original: command_length_hex = f"{len(command_body) // 2:02X}"
+            command_length_hex = f"{len(command_body) // 2:02X}"
+            print(f"[PARA YUKLE] Command length: {len(command_body) // 2} bytes = {command_length_hex}")
+            
+            # FIXED: Final command assembly (matches original)
+            # Original: full_command_no_crc = command_header + command_length_hex + command_body
+            full_command_no_crc = sas_address + command_code + command_length_hex + command_body
+            print(f"[PARA YUKLE] Command before CRC: {full_command_no_crc}")
+            
+            # FIXED: CRC calculation (matches original approach)
+            # Original: final_command = _get_crc(full_command_no_crc)
+            final_command = self._get_crc_original(full_command_no_crc)
+            
+            print(f"[PARA YUKLE] ===== FINAL AFT COMMAND =====")
+            print(f"[PARA YUKLE] Complete command: {final_command}")
+            print(f"[PARA YUKLE] Command breakdown:")
+            print(f"[PARA YUKLE]   Header: {sas_address}{command_code}{command_length_hex}")
+            print(f"[PARA YUKLE]   Body: {command_body}")
+            print(f"[PARA YUKLE]   Total Length: {len(final_command)} characters")
+            print(f"[PARA YUKLE] =====================================")
+            
+            # Send command using communicator
+            print(f"[PARA YUKLE] Sending AFT command to machine...")
+            result = self.communicator.sas_send_command_with_queue("ParaYukle", final_command, 1)
             
             print(f"[PARA YUKLE] Using Transaction ID: {transactionid}")
             
@@ -477,15 +702,15 @@ class SasMoney:
             amount_cents = int(customerbalance * 100)
             promo_cents = int(customerpromo * 100)
             
-            # Build command body using EXACT original logic
+            # Build command body using EXACT original logic from raspberryPython_orj.py
             Command = ""
-            Command += "00"  # Transfer Code
-            Command += "00"  # Transfer Index  
-            Command += "00"  # Transfer Type (00 = Cashable, matching original)
-            Command += self._add_left_bcd_original(amount_cents, 5)  # Cashable amount
-            Command += self._add_left_bcd_original(promo_cents, 5)   # Restricted amount
-            Command += "0000000000"  # Non-restricted amount (5 bytes)
-            Command += "07"  # Transfer Flags (Hard mode)
+            Command += "00"        # Transfer Code (always 00 for AFT)
+            Command += "00"        # Transfer Index (always 00 for new transfer)
+            Command += "00"        # Transfer Type (00 = Cashable credit to gaming machine)
+            Command += self._add_left_bcd_original(amount_cents, 5)  # Cashable amount (5 bytes BCD)
+            Command += "0000000000"  # Restricted amount (5 bytes BCD) - always 0 for simple credit
+            Command += "0000000000"  # Non-restricted amount (5 bytes BCD) - always 0 for simple credit
+            Command += "07"        # Transfer Flags (07 = Transfer to gaming machine)
             Command += assetnumber  # Asset Number (4 bytes)
             Command += registrationkey  # Registration Key (20 bytes)
             
@@ -495,9 +720,9 @@ class SasMoney:
             Command += self._add_left_bcd_original(len(transaction_id_hex) // 2, 1)  # Length of transaction ID
             Command += transaction_id_hex  # Transaction ID in hex
             
-            Command += "00000000"  # Expiration Date (4 bytes)
-            Command += "0000"      # Pool ID (2 bytes)
-            Command += "00"        # Receipt Data Length
+            Command += "00000000"  # Expiration Date (4 bytes - 00000000 = no expiration)
+            Command += "0000"      # Pool ID (2 bytes - 0000 = default pool)
+            Command += "00"        # Receipt Data Length (0 = no receipt data)
             
             # Build final command with header - EXACT original method
             sas_address = "01"
@@ -1142,90 +1367,146 @@ class SasMoney:
         Handle AFT money load response from the machine.
         This method parses the SAS 72h response and updates transfer status.
         
-        CRITICAL: This function ALWAYS processes AFT responses and updates the global status,
-        matching the original Yanit_ParaYukle pattern. The waiting flag is managed separately.
+        CRITICAL: This method must update self.global_para_yukleme_transfer_status
+        to coordinate with the blocking wait pattern (wait_for_para_yukle_completion_blocking)
+        
+        This mirrors the original Yanit_ParaYukle function that updated Global_ParaYukleme_TransferStatus
         """
         try:
-            print(f"[MONEY LOAD RESPONSE] Received response: {yanit[:20]}...")
+            print(f"[MONEY LOAD RESPONSE] ===== AFT TRANSFER RESPONSE =====")
+            print(f"[MONEY LOAD RESPONSE] Raw response: {yanit}")
+            print(f"[MONEY LOAD RESPONSE] Response length: {len(yanit)} characters")
+            print(f"[MONEY LOAD RESPONSE] Is waiting for response: {self.is_waiting_for_para_yukle}")
+            print(f"[MONEY LOAD RESPONSE] ========================================")
             
-            # REMOVED: Early return check for waiting flag - always process AFT responses
-            # In original: Yanit_ParaYukle always updates Global_ParaYukleme_TransferStatus
-            # regardless of IsWaitingForParaYukle state
-                
+            # CRITICAL: Always process AFT transfer responses, regardless of waiting flag
+            # The original Yanit_ParaYukle always updated Global_ParaYukleme_TransferStatus
+            # when any 72h response was received
+            
+            if len(yanit) < 12:
+                print(f"[MONEY LOAD RESPONSE] Response too short: {len(yanit)} characters")
+                # Even on short response, signal error status if we're waiting
+                if self.is_waiting_for_para_yukle:
+                    self.global_para_yukleme_transfer_status = "FF"  # Error status
+                return
+            
             # Parse response according to SAS protocol
-            # Format: Address(1) + Command(1) + Length(1) + TransactionBuffer(1) + TransferStatus(1) + ...
+            # Format: Address(2) + Command(2) + Length(2) + TransactionBuffer(2) + TransferStatus(2) + ...
             index = 0
             
-            # Skip address and command
-            index += 4  # Address(2) + Command(2)
-            
-            # Get length
-            length = yanit[index:index+2]
+            address = yanit[index:index+2]
             index += 2
+            print(f"[MONEY LOAD RESPONSE] Address: {address}")
             
-            # Get transaction buffer
-            transaction_buffer = yanit[index:index+2]
+            command = yanit[index:index+2]
             index += 2
+            print(f"[MONEY LOAD RESPONSE] Command: {command}")
             
-            # Get transfer status (most important field)
-            transfer_status = yanit[index:index+2]
+            # Validate command is 72 (AFT transfer response)
+            if command.upper() != "72":
+                print(f"[MONEY LOAD RESPONSE] Unexpected command: {command}, expected 72")
+                # Signal error if we're waiting
+                if self.is_waiting_for_para_yukle:
+                    self.global_para_yukleme_transfer_status = "FF"
+                return
+            
+            length_hex = yanit[index:index+2]
             index += 2
+            print(f"[MONEY LOAD RESPONSE] Length: {length_hex}")
             
-            print(f"[MONEY LOAD RESPONSE] Transfer Status: {transfer_status}")
+            transaction_buffer = yanit[index:index+2] if index + 2 <= len(yanit) else "00"
+            index += 2
+            print(f"[MONEY LOAD RESPONSE] Transaction Buffer: {transaction_buffer}")
             
-            # CRITICAL: Always update global transfer status - this is what the wait loop monitors
+            # CRITICAL: Extract transfer status - this is what the blocking wait monitors
+            transfer_status = yanit[index:index+2] if index + 2 <= len(yanit) else "FF"
+            index += 2
+            print(f"[MONEY LOAD RESPONSE] *** TRANSFER STATUS: {transfer_status} ***")
+            
+            # CRITICAL: Update global status variable immediately - this is what blocking wait checks
             # In original: Global_ParaYukleme_TransferStatus = transfer_status
             self.global_para_yukleme_transfer_status = transfer_status
+            print(f"[MONEY LOAD RESPONSE] *** GLOBAL STATUS UPDATED TO: {transfer_status} ***")
             
-            # Parse amounts for logging
+            # Get status description for logging
+            status_description = self.get_transfer_status_description(transfer_status)
+            print(f"[MONEY LOAD RESPONSE] Status Description: {status_description}")
+            
+            # Parse amounts for informational logging
             amounts_info = ""
             try:
-                if len(yanit) > 14:
-                    cashable_amount = yanit[14:24]  # 10 chars for BCD amount
-                    promo_amount = yanit[24:34] if len(yanit) > 24 else "0000000000"
-                    amounts_info = f" (C:{cashable_amount} P:{promo_amount})"
+                if len(yanit) > 24:  # Ensure we have enough data for amounts
+                    # Cashable amount (5 bytes BCD = 10 hex chars)
+                    cashable_amount_hex = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
+                    index += 10
+                    
+                    # Promo amount (5 bytes BCD = 10 hex chars)
+                    promo_amount_hex = yanit[index:index+10] if index + 10 <= len(yanit) else "0000000000"
+                    index += 10
+                    
+                    # Convert to dollar amounts for display
+                    cashable_amount = self.bcd_to_int(cashable_amount_hex) / 100
+                    promo_amount = self.bcd_to_int(promo_amount_hex) / 100
+                    amounts_info = f" (C:${cashable_amount:.2f} P:${promo_amount:.2f})"
+                    print(f"[MONEY LOAD RESPONSE] Amounts: Cashable=${cashable_amount:.2f}, Promo=${promo_amount:.2f}")
             except Exception as e:
                 print(f"[MONEY LOAD RESPONSE] Error parsing amounts: {e}")
             
-            # Handle different transfer statuses
+            # Handle different transfer statuses (for logging and potential actions)
             if transfer_status == "00":
-                print(f"[MONEY LOAD RESPONSE] Transfer successful{amounts_info}")
-                # Clear waiting flag only on success or final error
-                if self.is_waiting_for_para_yukle:
-                    self.is_waiting_for_para_yukle = 0
+                print(f"[MONEY LOAD RESPONSE] ✅ TRANSFER SUCCESSFUL{amounts_info}")
                 
-                # Parse transaction ID for validation if needed
-                try:
-                    if len(yanit) > 50:  # Ensure we have enough data
-                        # Transaction ID is at the end, preceded by its length
-                        # This is a simplified parsing - adjust based on actual response format
-                        pass
-                except Exception as e:
-                    print(f"[MONEY LOAD RESPONSE] Error parsing transaction ID: {e}")
-                    
-            elif transfer_status in ["87", "84", "FF", "93", "82", "83", "81", "40"]:
-                print(f"[MONEY LOAD RESPONSE] Transfer status: {transfer_status}")
-                if transfer_status == "87":
-                    print("[MONEY LOAD RESPONSE] Machine door open, tilt, or disabled")
-                elif transfer_status == "84":
-                    print("[MONEY LOAD RESPONSE] Transfer amount exceeds machine limit")
-                elif transfer_status == "81":
-                    print("[MONEY LOAD RESPONSE] Transaction ID not unique")
-                elif transfer_status == "40":
-                    print("[MONEY LOAD RESPONSE] Transfer pending - continuing to wait")
-                    return  # Don't clear waiting flag for pending status
-                    
-                # For error statuses, clear the waiting flag
-                if transfer_status != "40" and self.is_waiting_for_para_yukle:
-                    self.is_waiting_for_para_yukle = 0
+            elif transfer_status == "40":
+                print(f"[MONEY LOAD RESPONSE] ⏱️  TRANSFER PENDING - continuing to wait{amounts_info}")
+                # NOTE: Don't clear waiting flag for pending status
+                return
+                
+            elif transfer_status == "87":
+                print(f"[MONEY LOAD RESPONSE] ❌ TRANSFER FAILED: Machine door open, tilt, or disabled")
+                
+            elif transfer_status == "84":
+                print(f"[MONEY LOAD RESPONSE] ❌ TRANSFER FAILED: Transfer amount exceeds machine limit")
+                
+            elif transfer_status == "82":
+                print(f"[MONEY LOAD RESPONSE] ❌ TRANSFER FAILED: Registration key mismatch")
+                
+            elif transfer_status == "81":
+                print(f"[MONEY LOAD RESPONSE] ❌ TRANSFER FAILED: Transaction ID not unique")
+                
+            elif transfer_status == "FF":
+                print(f"[MONEY LOAD RESPONSE] ❌ TRANSFER FAILED: No transfer information available")
+                
+            elif transfer_status == "93":
+                print(f"[MONEY LOAD RESPONSE] ❌ TRANSFER FAILED: Asset number mismatch")
+                
+            elif transfer_status == "83":
+                print(f"[MONEY LOAD RESPONSE] ❌ TRANSFER FAILED: No POS ID configured")
+                
             else:
-                print(f"[MONEY LOAD RESPONSE] Unknown transfer status: {transfer_status}")
+                print(f"[MONEY LOAD RESPONSE] ⚠️  Unknown transfer status: {transfer_status}")
+            
+            # Parse transaction ID for validation if available
+            try:
+                if len(yanit) > 50:  # Ensure we have enough data
+                    # Transaction ID is typically near the end of the response
+                    # Format varies - this is a simplified check
+                    print(f"[MONEY LOAD RESPONSE] Transaction data available for validation")
+            except Exception as e:
+                print(f"[MONEY LOAD RESPONSE] Error parsing transaction data: {e}")
+            
+            print(f"[MONEY LOAD RESPONSE] Response processing complete")
+            print(f"[MONEY LOAD RESPONSE] Final status in global variable: {self.global_para_yukleme_transfer_status}")
+            print(f"[MONEY LOAD RESPONSE] Blocking wait should now detect this status and proceed")
                 
         except Exception as e:
-            print(f"[MONEY LOAD RESPONSE] Error parsing response: {e}")
-            # On parse error, clear waiting flag to prevent infinite wait
+            print(f"[MONEY LOAD RESPONSE] ❌ ERROR parsing response: {e}")
+            print(f"[MONEY LOAD RESPONSE] Raw response: {yanit}")
+            
+            # CRITICAL: On parse error, signal error status if we're waiting
+            # This prevents infinite wait in blocking loop
             if self.is_waiting_for_para_yukle:
-                self.is_waiting_for_para_yukle = 0
+                self.global_para_yukleme_transfer_status = "FF"  # Error status
+                print(f"[MONEY LOAD RESPONSE] Set error status due to parse error")
 
     def yanit_para_sifirla(self, yanit):
         """

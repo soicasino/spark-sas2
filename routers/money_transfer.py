@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 from decimal import Decimal
 import asyncio
+import time
 
 from models.requests import MoneyTransferRequest, CashoutRequest
 from models.responses import MachineControlResponse, ErrorResponse
@@ -74,9 +75,9 @@ async def add_credits(
         
         # Execute AFT credit transfer using SAS money functions
         try:
-            # Use test pattern registration key to see if it works
-            registrationkey = "1234567890ABCDEF1234567890ABCDEF12345678"
-            print(f"[ADD CREDITS] Using test registration key: {registrationkey}")
+            # Use all-zeros registration key (confirmed working with this machine)
+            registrationkey = "0000000000000000000000000000000000000000"
+            print(f"[ADD CREDITS] Using all-zeros registration key: {registrationkey}")
             
             # Register AFT before transfer
             print(f"[ADD CREDITS] Registering AFT before money transfer...")
@@ -145,65 +146,195 @@ async def add_credits(
                         raise Exception("Failed to lock machine for AFT transfer")
                     
                     # Execute transfer
-                    print("[ADD CREDITS] Executing AFT transfer...")
+                    print(f"[ADD CREDITS] Executing AFT transfer...")
                     transaction_id = sas_comm.sas_money.komut_para_yukle(
                         customerbalance=amount,
-                        customerpromo=0.0,
-                        transfertype=10,
-                        assetnumber=assetnumber,
-                        registrationkey=registrationkey
+                        transactionid=None,  # Let it generate
+                        assetnumber=sas_comm.asset_number,
+                        registrationkey="0000000000000000000000000000000000000000"
                     )
                     
                     if transaction_id is None:
-                        raise Exception("AFT transfer command failed")
+                        raise HTTPException(status_code=500, detail="Failed to initiate AFT transfer")
                     
-                    # Wait for completion
-                    print("[ADD CREDITS] Waiting for AFT completion...")
-                    wait_result = await sas_comm.sas_money.wait_for_para_yukle_completion(timeout=15)
+                    print(f"[ADD CREDITS] AFT transfer initiated with transaction ID: {transaction_id}")
+                    
+                    # FIXED: Use blocking wait pattern that matches original working code
+                    # This replaces the async wait with synchronous blocking wait
+                    print(f"[ADD CREDITS] Starting blocking wait for AFT completion...")
+                    wait_result = sas_comm.sas_money.wait_for_para_yukle_completion_blocking(timeout=15)
+                    
+                    print(f"[ADD CREDITS] Blocking wait completed with result: {wait_result}")
                     
                     if wait_result is True:
-                        print("[ADD CREDITS] AFT transfer completed successfully")
+                        print(f"[ADD CREDITS] ✅ AFT transfer successful!")
                         
-                        # Manual unlock
-                        print("[ADD CREDITS] Manually unlocking machine...")
-                        unlock_result = sas_comm.sas_money.komut_aft_unlock_machine()
+                        # Wait a moment then query final balance
+                        time.sleep(1)
+                        print(f"[ADD CREDITS] Querying final balance...")
+                        sas_comm.sas_money.komut_bakiye_sorgulama("final_balance", False, "post_transfer_balance")
                         
-                        return MachineControlResponse(
-                            success=True,
-                            message=f"Credit addition of ${request.amount:.2f} completed successfully",
-                            execution_time_ms=execution_time,
-                            data={
-                                "action": "add_credits",
-                                "amount": request.amount,
-                                "credits": int(request.amount * 100),
-                                "transaction_id": transaction_id,
-                                "transfer_type": request.transfer_type,
-                                "transfer_type_name": get_transfer_type_name(request.transfer_type),
-                                "status": "completed_manual_lock",
-                                "updated_balance": {
-                                    "cashable": float(amount),
-                                    "restricted": 0.0,
-                                    "nonrestricted": 0.0,
-                                    "total": float(amount)
-                                }
-                            }
-                        )
+                        # Wait for balance response
+                        balance_wait_result = await sas_comm.sas_money.wait_for_bakiye_sorgulama_completion(timeout=3)
+                        if balance_wait_result:
+                            final_balance = sas_comm.sas_money.yanit_bakiye_tutar
+                            print(f"[ADD CREDITS] Final balance: ${final_balance}")
+                        else:
+                            print(f"[ADD CREDITS] Warning: Could not get final balance")
+                            final_balance = 0
+                        
+                        return {
+                            "success": True,
+                            "message": f"Successfully added ${amount} credit",
+                            "transaction_id": transaction_id,
+                            "final_balance": final_balance,
+                            "transfer_status": sas_comm.sas_money.global_para_yukleme_transfer_status
+                        }
+                    elif wait_result is False:
+                        # Transfer failed
+                        status = sas_comm.sas_money.global_para_yukleme_transfer_status
+                        error_msg = f"AFT transfer failed with status: {status}"
+                        print(f"[ADD CREDITS] ❌ {error_msg}")
+                        
+                        return {
+                            "success": False,
+                            "message": error_msg,
+                            "transaction_id": transaction_id,
+                            "transfer_status": status,
+                            "error_code": status
+                        }
                     else:
-                        # Unlock on failure
-                        sas_comm.sas_money.komut_aft_unlock_machine()
-                        raise Exception(f"AFT transfer failed or timed out: {wait_result}")
+                        # Timeout
+                        print(f"[ADD CREDITS] ⏰ AFT transfer timed out")
                         
+                        return {
+                            "success": False, 
+                            "message": "AFT transfer timed out - no response from machine",
+                            "transaction_id": transaction_id,
+                            "transfer_status": sas_comm.sas_money.global_para_yukleme_transfer_status,
+                            "error_code": "TIMEOUT"
+                        }
+                    
                 except Exception as fallback_error:
                     print(f"[ADD CREDITS] Fallback method also failed: {fallback_error}")
                     # Try to unlock machine in case it's stuck
                     try:
                         sas_comm.sas_money.komut_aft_unlock_machine()
-                    except:
-                        pass
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Both enhanced and fallback AFT methods failed: {str(fallback_error)}"
-                    )
+                    except Exception as unlock_error:
+                        print(f"[ADD CREDITS] Unlock failed: {unlock_error}")
+                    
+                    # Final attempt: Use simple synchronous AFT transfer with blocking wait
+                    print("[ADD CREDITS] Final attempt: Simple synchronous AFT with blocking wait...")
+                    
+                    try:
+                        # Execute simple AFT transfer without auto-lock
+                        transaction_id = sas_comm.sas_money.komut_para_yukle(
+                            customerbalance=amount,
+                            customerpromo=0.0,
+                            transfertype=10,
+                            assetnumber=assetnumber,
+                            registrationkey=registrationkey,
+                            auto_lock=False  # Use simple AFT without auto-lock
+                        )
+                        
+                        if transaction_id is None:
+                            raise Exception("AFT transfer command failed")
+                        
+                        print(f"[ADD CREDITS] AFT command sent, transaction ID: {transaction_id}")
+                        print("[ADD CREDITS] Using BLOCKING wait (matches original working code)...")
+                        
+                        # Use the NEW blocking wait pattern that exactly matches the original
+                        wait_result = sas_comm.sas_money.wait_for_para_yukle_completion_blocking(timeout=15)
+                        
+                        if wait_result is True:
+                            print("[ADD CREDITS] ✅ BLOCKING WAIT SUCCESS - AFT transfer completed!")
+                            
+                            # Query updated balance
+                            print("[ADD CREDITS] Querying updated balance...")
+                            sas_comm.sas_money.komut_bakiye_sorgulama("add_credits_success", False, "post_transfer_balance")
+                            await asyncio.sleep(2)  # Give time for balance response
+                            
+                            updated_cashable = getattr(sas_comm.sas_money, 'yanit_bakiye_tutar', 0.0)
+                            updated_restricted = getattr(sas_comm.sas_money, 'yanit_restricted_amount', 0.0)
+                            updated_nonrestricted = getattr(sas_comm.sas_money, 'yanit_nonrestricted_amount', 0.0)
+                            total_balance = updated_cashable + updated_restricted + updated_nonrestricted
+                            
+                            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                            
+                            return MachineControlResponse(
+                                success=True,
+                                message=f"💰 Credit addition of ${request.amount:.2f} completed successfully using blocking wait",
+                                execution_time_ms=execution_time,
+                                data={
+                                    "action": "add_credits",
+                                    "amount": request.amount,
+                                    "credits": int(request.amount * 100),
+                                    "transaction_id": transaction_id,
+                                    "transfer_type": request.transfer_type,
+                                    "transfer_type_name": get_transfer_type_name(request.transfer_type),
+                                    "status": "completed_blocking_wait",
+                                    "method": "blocking_synchronous_aft",
+                                    "updated_balance": {
+                                        "cashable": float(updated_cashable),
+                                        "restricted": float(updated_restricted),
+                                        "nonrestricted": float(updated_nonrestricted),
+                                        "total": float(total_balance)
+                                    }
+                                }
+                            )
+                            
+                        elif wait_result is False:
+                            # Transfer failed with error status
+                            final_status = getattr(sas_comm.sas_money, 'global_para_yukleme_transfer_status', 'Unknown')
+                            error_msg = f"AFT transfer failed with status: {final_status}"
+                            print(f"[ADD CREDITS] ❌ BLOCKING WAIT FAILED: {error_msg}")
+                            
+                            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                            return MachineControlResponse(
+                                success=False,
+                                message=f"❌ Credit addition failed: {error_msg}",
+                                execution_time_ms=execution_time,
+                                data={
+                                    "action": "add_credits",
+                                    "amount": request.amount,
+                                    "transaction_id": transaction_id,
+                                    "error": error_msg,
+                                    "final_status": final_status,
+                                    "method": "blocking_synchronous_aft"
+                                }
+                            )
+                            
+                        else:
+                            # Timeout
+                            print("[ADD CREDITS] ⏱️ BLOCKING WAIT TIMEOUT")
+                            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                            return MachineControlResponse(
+                                success=False,
+                                message="⏱️ Credit addition timed out - no response from machine",
+                                execution_time_ms=execution_time,
+                                data={
+                                    "action": "add_credits",
+                                    "amount": request.amount,
+                                    "transaction_id": transaction_id,
+                                    "error": "timeout",
+                                    "method": "blocking_synchronous_aft"
+                                }
+                            )
+                    
+                    except Exception as simple_error:
+                        print(f"[ADD CREDITS] ❌ Simple AFT also failed: {simple_error}")
+                        execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                        return MachineControlResponse(
+                            success=False,
+                            message=f"❌ All AFT methods failed: {simple_error}",
+                            execution_time_ms=execution_time,
+                            data={
+                                "action": "add_credits",
+                                "amount": request.amount,
+                                "error": str(simple_error),
+                                "attempted_methods": ["enhanced_workflow", "manual_lock_unlock", "simple_blocking"]
+                            }
+                        )
 
         except Exception as e:
             raise HTTPException(
