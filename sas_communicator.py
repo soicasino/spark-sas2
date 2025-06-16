@@ -472,9 +472,9 @@ class SASCommunicator:
                 (lambda d: d[0:4] == "0174", lambda d: self._handle_balance_response(d)),  # FIXED: Actually call handler
                 (lambda d: d.startswith("01FF54BDB1"), lambda d: print("Progressive win")),
                 (lambda d: d == "01FF29DF19", lambda d: print("Bill acceptor hardware failure!")),
-                (lambda d: d == "00", lambda d: print("Simple ACK")),
-                (lambda d: d == "01", lambda d: print("Simple ACK")),
-                (lambda d: d == "51", lambda d: print("Simple ACK")),
+                (lambda d: d == "00", lambda d: None),
+                (lambda d: d == "01", lambda d: None),
+                (lambda d: d == "51", lambda d: None),
                 (lambda d: d.startswith("01FF69DB5B") or d == "FF69DB5B" or d == "69DB5B" or d == "69", lambda d: self._handle_aft_completion(d)),
                 (lambda d: "01FF66" in d, lambda d: print("Cashout is pressed or Hopper Limit Reached")),
                 (lambda d: d[0:6] == "01FF8A", lambda d: print("Game Recall Entry Displayed")),
@@ -484,7 +484,7 @@ class SASCommunicator:
                 (lambda d: d[0:4] == "011F" and len(d) > 10, lambda d: print("Send gaming machine ID & information")),
                 (lambda d: d[0:6] == "019400", lambda d: print("Handpay is reseted")),
                 (lambda d: d[0:4] == "0154", lambda d: self._handle_sas_version_response(d)),
-                (lambda d: d == "1F", lambda d: print("Simple ACK")),
+                (lambda d: d == "1F", lambda d: None),
                 # Suppress real time reporting print
                 (lambda d: d == "01FF001CA5" or d == "01FF1F6A4D" or d == "01FF709BD6", lambda d: None),
                 (lambda d: d[0:6] == "01FF88", lambda d: print("Reel N has stopped")),
