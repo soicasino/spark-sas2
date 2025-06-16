@@ -846,22 +846,35 @@ class SASCommunicator:
             return None
     
     def get_asset_number_for_aft(self) -> str:
-        """Get asset number for AFT operations."""
+        """Get asset number for AFT operations in the correct format for the machine."""
         try:
-            # Try to read from machine first
-            machine_asset = self.read_asset_number_from_machine()
-            if machine_asset is not None:
-                # Convert to hex format (8 characters, big endian)
-                return f"{machine_asset:08X}"
+            # CRITICAL FIX: Return the ORIGINAL machine format, not converted format
+            # The machine provides asset number in little-endian format (6C000000)
+            # and expects it back in the SAME format for AFT operations
             
-            # Fall back to default
-            print(f"[ASSET NO] Using default asset number")
-            return "0000006C"  # 108 in hex
+            if hasattr(self, 'asset_number_hex') and self.asset_number_hex:
+                # Use the stored original hex format from the machine
+                print(f"[ASSET NO] Using stored original machine format: {self.asset_number_hex}")
+                return self.asset_number_hex
+            elif hasattr(self, 'asset_number') and self.asset_number:
+                # Use the stored asset number (should be in machine format)
+                print(f"[ASSET NO] Using stored asset number: {self.asset_number}")
+                return self.asset_number
+            else:
+                # Try to read from machine if we don't have it stored
+                machine_asset = self.read_asset_number_from_machine()
+                if machine_asset is not None and hasattr(self, 'asset_number'):
+                    print(f"[ASSET NO] Using freshly read asset number: {self.asset_number}")
+                    return self.asset_number
+                else:
+                    # Fall back to little-endian format (machine expects this format)
+                    print(f"[ASSET NO] Using default asset number in little-endian format")
+                    return "6C000000"  # 108 in little-endian format (machine format)
             
         except Exception as e:
             print(f"[ASSET NO] Error getting asset number: {e}")
-            # Ultimate fallback
-            return "0000006C"  # 108 in hex
+            # Ultimate fallback - use machine format, not big-endian
+            return "6C000000"  # 108 in little-endian format
 
     def find_ports_with_card_reader(self, port_list):
         """
