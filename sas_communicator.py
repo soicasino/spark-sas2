@@ -791,7 +791,8 @@ class SASCommunicator:
                 
                 # Specific exceptions like working code
                 if tdata == "01FF69DB5B":
-                    print("AFT Transfer is completed")
+                    # AFT completion is handled by _handle_aft_completion() - don't duplicate
+                    print("AFT Transfer completion detected (handled by dedicated handler)")
                 elif tdata.startswith("01FF7E"):
                     print("Game started")
                 elif tdata.startswith("01FF7F"):
@@ -829,13 +830,15 @@ class SASCommunicator:
                     asset_dec = int(reversed_hex, 16)
                     print(f"[ASSET NO] HEX: {asset_hex}  DEC: {asset_dec}  DEBUG: Asset number read from machine")
                     
-                    # FIXED: Store the asset number in the communicator instance
-                    # Convert decimal to proper AFT format (big-endian, 8 characters, lowercase)
-                    self.asset_number = f"{asset_dec:08x}"  # Store in AFT format (0000006c)
-                    self.decimal_asset_number = asset_dec  # Store decimal format
+                    # CRITICAL FIX: Store the asset number in ORIGINAL MACHINE FORMAT
+                    # The machine sends asset number in little-endian format and expects it back the same way
+                    # DO NOT convert to big-endian - use the original format from the machine
+                    self.asset_number_hex = asset_hex.upper()  # Store original machine format (6C000000)
+                    self.asset_number = asset_hex.upper()      # Also store in main field for compatibility
+                    self.decimal_asset_number = asset_dec      # Store decimal format for display
                     
-                    print(f"[ASSET NO] Asset number stored in AFT format: {self.asset_number}")
-                    print(f"[ASSET NO] Asset number read from machine: {asset_dec}")
+                    print(f"[ASSET NO] Asset number stored in ORIGINAL machine format: {self.asset_number_hex}")
+                    print(f"[ASSET NO] Asset number decimal: {asset_dec}")
                     return asset_dec
             
             print("[ASSET NO] Could not read asset number from SAS.")
