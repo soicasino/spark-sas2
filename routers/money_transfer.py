@@ -79,12 +79,16 @@ async def add_credits(
             registrationkey = "0000000000000000000000000000000000000000"
             print(f"[ADD CREDITS] Using all-zeros registration key: {registrationkey}")
             
-            # Register AFT before transfer
+            # Register AFT before transfer - CRITICAL for working AFT
             print(f"[ADD CREDITS] Registering AFT before money transfer...")
             registration_result = sas_comm.sas_money.komut_aft_registration(
                 assetnumber, registrationkey, "POS001"
             )
             print(f"[ADD CREDITS] AFT registration result: {registration_result}")
+            
+            # CRITICAL: Wait for AFT registration to be fully processed by machine
+            print(f"[ADD CREDITS] Waiting for AFT registration to be processed...")
+            await asyncio.sleep(3)  # Allow registration to fully complete
             
             # Use the DIRECT AFT approach that matches the original working code
             print(f"[ADD CREDITS] ===== ATTEMPTING DIRECT AFT TRANSFER (ORIGINAL WORKING APPROACH) =====")
@@ -121,10 +125,14 @@ async def add_credits(
                 if wait_result is True:
                     print(f"[ADD CREDITS] ✅ BLOCKING WAIT SUCCESS - Direct AFT transfer completed!")
                     
+                    # CRITICAL: Wait for machine balance to update after AFT completion
+                    print(f"[ADD CREDITS] Waiting for machine balance to update after AFT completion...")
+                    await asyncio.sleep(5)  # Allow machine to process and update internal balance
+                    
                     # Query updated balance
                     print(f"[ADD CREDITS] Querying updated balance...")
                     sas_comm.sas_money.komut_bakiye_sorgulama("add_credits_success", False, "post_transfer_balance")
-                    await asyncio.sleep(2)  # Give time for balance response
+                    await asyncio.sleep(3)  # Give extra time for balance response
                     
                     updated_cashable = getattr(sas_comm.sas_money, 'yanit_bakiye_tutar', 0.0)
                     updated_restricted = getattr(sas_comm.sas_money, 'yanit_restricted_amount', 0.0)

@@ -769,15 +769,55 @@ class SASCommunicator:
                     self.sas_money.global_para_silme_transfer_status = "00"  # Success
                     print(f"Updated cashout status to: 00 (Success)")
             
-            # CRITICAL FIX: Automatically query balance after AFT completion
-            # This will update the balance display to show the new credits
-            print("[AFT COMPLETION] Querying balance to update display...")
+            # CRITICAL FIX: Wait before querying balance and retry until balance updates
+            # This ensures the machine has processed the AFT credits internally
+            print("[AFT COMPLETION] Waiting for machine to process AFT credits...")
+            import asyncio
+            import time
+            
+            async def delayed_balance_update():
+                try:
+                    # Wait for machine to fully process the AFT credits
+                    await asyncio.sleep(3)
+                    
+                    # Query balance multiple times until we see the update
+                    for attempt in range(5):
+                        print(f"[AFT COMPLETION] Balance query attempt {attempt + 1}/5...")
+                        
+                        # Store previous balance
+                        prev_balance = getattr(self.sas_money, 'yanit_bakiye_tutar', 0.0)
+                        
+                        # Query the current balance
+                        self.sas_money.komut_bakiye_sorgulama("aft_completion", False, f"post_aft_balance_update_{attempt}")
+                        
+                        # Wait for response
+                        await asyncio.sleep(2)
+                        
+                        # Check if balance updated
+                        new_balance = getattr(self.sas_money, 'yanit_bakiye_tutar', 0.0)
+                        print(f"[AFT COMPLETION] Balance check {attempt + 1}: ${new_balance:.2f} (was ${prev_balance:.2f})")
+                        
+                        if new_balance != prev_balance or new_balance > 0:
+                            print(f"[AFT COMPLETION] ✅ Balance updated successfully: ${new_balance:.2f}")
+                            break
+                        
+                        await asyncio.sleep(1)  # Wait before next attempt
+                    
+                except Exception as balance_error:
+                    print(f"[AFT COMPLETION] Error in delayed balance update: {balance_error}")
+            
+            # Run the delayed balance update in background
             try:
-                # Query the current balance to get updated amounts
-                self.sas_money.komut_bakiye_sorgulama("aft_completion", False, "post_aft_balance_update")
-                print("[AFT COMPLETION] Balance query sent - balance should update shortly")
-            except Exception as balance_error:
-                print(f"[AFT COMPLETION] Error querying balance after AFT completion: {balance_error}")
+                asyncio.create_task(delayed_balance_update())
+                print("[AFT COMPLETION] Scheduled delayed balance update")
+            except Exception as task_error:
+                print(f"[AFT COMPLETION] Error scheduling balance update: {task_error}")
+                # Fallback to immediate query
+                try:
+                    self.sas_money.komut_bakiye_sorgulama("aft_completion", False, "post_aft_balance_update_fallback")
+                    print("[AFT COMPLETION] Fallback balance query sent")
+                except Exception as fallback_error:
+                    print(f"[AFT COMPLETION] Fallback balance query error: {fallback_error}")
                     
         except Exception as e:
             print(f"Error handling AFT completion: {e}")
