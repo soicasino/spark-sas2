@@ -6,7 +6,13 @@ This will help determine if AFT is properly enabled.
 
 import sys
 import time
+import os
+
+# Add the current directory to Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from sas_communicator import SASCommunicator
+from config_manager import ConfigManager
 
 def check_aft_capability(sas_comm):
     """Check if the machine supports AFT transfers"""
@@ -105,9 +111,14 @@ def main():
     print("This script will check if AFT is properly enabled on your machine.")
     
     try:
-        # Initialize SAS communication
-        sas_comm = SASCommunicator()
-        if not sas_comm.initialize():
+        # Initialize config and communicator
+        config = ConfigManager()
+        sas_port = config.get('sas', 'port', '/dev/ttyUSB1')
+        
+        print(f"Connecting to SAS port: {sas_port}")
+        sas_comm = SASCommunicator(sas_port, config)
+        
+        if not sas_comm.open_port():
             print("❌ Failed to initialize SAS communication")
             return
         
@@ -127,7 +138,7 @@ def main():
         try:
             reg_result = sas_comm.sas_money.komut_aft_registration(
                 "0000006c", 
-                "00000000000000000000000000000000000000000000", 
+                "1234567890ABCDEF1234567890ABCDEF12345678",  # Use test pattern
                 "TEST01"
             )
             print(f"[REG TEST] Registration result: {reg_result}")
@@ -148,7 +159,7 @@ def main():
         print(f"❌ Error: {e}")
     finally:
         try:
-            sas_comm.close()
+            sas_comm.close_port()
         except:
             pass
 
