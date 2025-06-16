@@ -501,11 +501,14 @@ class SASCommunicator:
 
             # AFT registration response (0x73)
             if tdata.startswith("0173"):
-                print("DEBUG: AFT registration response detected")
+                print(f"DEBUG: AFT registration response detected: {tdata}")
+                print(f"DEBUG: Response length: {len(tdata)} characters")
                 # Call the new AFT registration response handler
                 if hasattr(self.sas_money, 'yanit_aft_registration'):
+                    print("DEBUG: Calling yanit_aft_registration handler")
                     self.sas_money.yanit_aft_registration(tdata)
                 else:
+                    print("DEBUG: yanit_aft_registration method not found")
                     # Fallback to old asset number handling
                     asset_hex = tdata[8:16]
                     if len(asset_hex) % 2 != 0:
@@ -518,6 +521,14 @@ class SASCommunicator:
                     print("DEBUG: get_meter call finished")
                 print("DEBUG: Returning after AFT registration handling")
                 return
+            elif "73" in tdata:
+                print(f"DEBUG: Possible AFT registration response (contains 73): {tdata}")
+            
+            # Check for "Register Gaming Machine Response" text
+            if "Register Gaming Machine Response" in str(tdata):
+                print(f"DEBUG: Register Gaming Machine Response detected but not parsed: {tdata}")
+                print(f"DEBUG: This might be a text response instead of hex data")
+                
             # SAS Version response (0x54) (fallback)
             if tdata.startswith("0154"):
                 self._handle_sas_version_response(tdata)
