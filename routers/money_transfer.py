@@ -31,7 +31,7 @@ async def add_credits(
     """
     Add credits to the slot machine using AFT (Advanced Funds Transfer)
     
-    - **transfer_type**: Type of transfer ("10" for cashable, "11" for restricted, "00" for non-restricted)
+    - **transfer_type**: Type of transfer ("00" for cashable, "11" for restricted/jackpot, based on original working code)
     - **amount**: Amount to transfer in dollars (will be converted to credits)
     - **transaction_id**: Optional custom transaction ID
     """
@@ -56,7 +56,7 @@ async def add_credits(
         
         # AFT Cash-In Parameters (based on para_commands.py.ref)
         doincreasetransactionid = 1  # Always increment transaction ID
-        transfertype = int(request.transfer_type)  # 10=cashable, 11=restricted, 00=non-restricted
+        transfertype = int(request.transfer_type)  # 00=cashable, 11=restricted/jackpot (per original code)
         amount = float(request.amount)  # Amount in dollars
         customerpromo = 0.0  # No promotional amount for basic transfers
         
@@ -547,9 +547,9 @@ async def cancel_aft_transfer(sas_service: SASWebService = Depends(get_sas_servi
 def get_transfer_type_name(transfer_type: str) -> str:
     """Get human-readable name for transfer type"""
     type_names = {
-        "00": "Non-Restricted",
-        "10": "Cashable", 
-        "11": "Restricted"
+        "00": "Cashable",     # Fixed: 00 is cashable per original code
+        "10": "Jackpot",      # 10 is for jackpots in original
+        "11": "Restricted"    # 11 is restricted jackpot
     }
     return type_names.get(transfer_type, "Unknown")
 

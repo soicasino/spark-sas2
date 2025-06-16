@@ -15,9 +15,9 @@ class MeterType(str, Enum):
 
 
 class TransferType(str, Enum):
-    CASHABLE = "10"
-    RESTRICTED = "11"
-    NONRESTRICTED = "00"
+    CASHABLE = "00"      # Fixed: Original code uses 0 for cashable, not 10
+    RESTRICTED = "11"    # Jackpot/restricted transfers
+    NONRESTRICTED = "00" # Same as cashable for this machine
 
 
 class MeterRequest(BaseModel):
@@ -43,7 +43,7 @@ class MoneyTransferRequest(BaseModel):
     class Config:
         schema_extra = {
             "example": {
-                "transfer_type": "10",
+                "transfer_type": "00",  # Fixed: 00=cashable (original working code)
                 "amount": 100.50,
                 "transaction_id": "TXN123456"
             }

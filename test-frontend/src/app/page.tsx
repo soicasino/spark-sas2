@@ -35,7 +35,7 @@ export default function SASDashboard() {
   // Money transfer state
   const [transferAmount, setTransferAmount] = useState<string>("");
   // Allow SAS codes ("10", "11", "00") and "subtract"
-  const [transferType, setTransferType] = useState<string>("10");
+  const [transferType, setTransferType] = useState<string>("00"); // Fixed: Use "00" for cashable (per original code)
 
   // WebSocket connection
   const [wsClient] = useState(() => new SASWebSocketClient());
@@ -673,7 +673,7 @@ export default function SASDashboard() {
                             id="add-credits"
                             name="transfer-type"
                             checked={transferType !== "subtract"}
-                            onChange={() => setTransferType("10")}
+                            onChange={() => setTransferType("00")} // Fixed: Use "00" for cashable
                           />
                           <Label htmlFor="add-credits">Add Credits</Label>
                           <select
