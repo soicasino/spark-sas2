@@ -3,13 +3,8 @@ import serial
 import time
 import datetime
 import platform
+import termios  # For Linux parity control
 from typing import Optional
-
-# Import termios - will only be used on non-Windows systems
-try:
-    import termios
-except ImportError:
-    termios = None
 from crccheck.crc import CrcKermit
 from decimal import Decimal
 from card_reader import CardReader  # Import the CardReader class
@@ -75,9 +70,9 @@ class SASCommunicator:
             self.serial_port.rtscts = False
             self.serial_port.dsrdtr = False
             
-            if not self.is_communication_by_windows:
-                self.serial_port.dtr = True
-                self.serial_port.rts = False
+            # CRITICAL: DTR/RTS settings from working code
+            self.serial_port.dtr = True
+            self.serial_port.rts = False
             
             self.serial_port.open()
             self.is_port_open = True
@@ -177,42 +172,29 @@ class SASCommunicator:
                         self._send_sas_port(command_hex[2:])
                         
                 else:
-                    # *CRITICAL* Linux termios logic for MARK/SPACE parity
-                    if termios is None:
-                        print("Warning: termios not available, falling back to basic send")
-                        self._send_sas_port(command_hex)
-                        return
-                        
-                    saswaittime = 0.001
+                    # Linux with termios - EXACTLY like working code
+                    saswaittime = 0.001  # From working code comment: "2020-12-25 test ok gibi.."
                     
-                    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port.fileno())
+                    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port)
                     
-                    # CMSPAR is not defined in the standard termios, but its value is 0o10000000000 on Linux
-                    # We use the raw value.
-                    CMSPAR = 0o10000000000 
+                    CMSPAR = 0x40000000  # EXACTLY like working code
                     
-                    # Set MARK parity for the first byte
-                    cflag |= (termios.PARENB | CMSPAR | termios.PARODD)
-                    termios.tcsetattr(self.serial_port.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                    # MARK parity for first byte
+                    cflag |= termios.PARENB | CMSPAR | termios.PARODD
+                    termios.tcsetattr(self.serial_port, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
                     
                     self._send_sas_port(command_hex[0:2])
                     
                     if len(command_hex) > 2:
                         time.sleep(saswaittime)
                         
-                        # Set SPACE parity for the rest of the message
-                        iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port.fileno())
-                        cflag |= (termios.PARENB | CMSPAR)
+                        # SPACE parity for rest
+                        iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port)
+                        cflag |= termios.PARENB
                         cflag &= ~termios.PARODD
-                        termios.tcsetattr(self.serial_port.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                        termios.tcsetattr(self.serial_port, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
                         
                         self._send_sas_port(command_hex[2:])
-                        
-                        # IMPORTANT: Reset parity to NONE after sending to be ready for next command
-                        time.sleep(0.001) # Small delay to ensure command is sent
-                        iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port.fileno())
-                        cflag &= ~(termios.PARENB | CMSPAR)
-                        termios.tcsetattr(self.serial_port.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
                         
             except Exception as e:
                 print(f"Error in send_sas_command: {e}")
