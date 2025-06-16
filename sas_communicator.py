@@ -136,9 +136,37 @@ class SASCommunicator:
             self.last_80_time = datetime.datetime.now()
             self.last_sent_poll_type = 80
 
+        # AFT-specific logging
+        is_aft_command = False
+        command_type = ""
+        if len(command_hex) >= 4:
+            cmd_code = command_hex[2:4]
+            if cmd_code == "72":
+                is_aft_command = True
+                command_type = "AFT TRANSFER"
+            elif cmd_code == "73":
+                is_aft_command = True
+                command_type = "AFT REGISTRATION"
+            elif cmd_code == "74":
+                is_aft_command = True
+                command_type = "AFT BALANCE QUERY"
+        
+        if is_aft_command:
+            print(f"")
+            print(f"🔄 ========== {command_type} COMMAND ==========")
+            print(f"📤 RAW COMMAND SENT: {command_hex}")
+            print(f"📤 Command Length: {len(command_hex)} characters ({len(command_hex)//2} bytes)")
+            if len(command_hex) >= 6:
+                address = command_hex[0:2]
+                cmd = command_hex[2:4]
+                length = command_hex[4:6]
+                print(f"📤 Header: Address={address}, Command={cmd}, Length={length}")
+            print(f"==========================================")
+        
         # Log like working code
         if len(command_hex) >= 3:
-            print("TX: ", self.device_type_id, command_hex, self.serial_port.port, datetime.datetime.now())
+            if not is_aft_command:  # Don't double-log AFT commands
+                print("TX: ", self.device_type_id, command_hex, self.serial_port.port, datetime.datetime.now())
 
         # CRITICAL: Device type specific sending logic - EXACTLY like working code
         if self.device_type_id == 1 or self.device_type_id == 4:
@@ -591,16 +619,24 @@ class SASCommunicator:
     def _handle_balance_response(self, tdata):
         """Handle balance query response"""
         try:
-            print("Balance response received")
+            print(f"")
+            print(f"📥 ========== AFT BALANCE RESPONSE ==========")
+            print(f"📥 RAW RESPONSE RECEIVED: {tdata}")
+            print(f"📥 Response Length: {len(tdata)} characters ({len(tdata)//2} bytes)")
+            print(f"==========================================")
+            
             self.sas_money.yanit_bakiye_sorgulama(tdata)
         except Exception as e:
-            print(f"Error parsing balance response: {e}")
+            print(f"📥 Error parsing balance response: {e}")
 
     def _handle_aft_registration_response(self, tdata):
         """Handle AFT registration response"""
         try:
-            print(f"DEBUG: AFT registration response detected: {tdata}")
-            print(f"DEBUG: Response length: {len(tdata)} characters")
+            print(f"")
+            print(f"📥 ========== AFT REGISTRATION RESPONSE ==========")
+            print(f"📥 RAW RESPONSE RECEIVED: {tdata}")
+            print(f"📥 Response Length: {len(tdata)} characters ({len(tdata)//2} bytes)")
+            print(f"===============================================")
             
             # Call the AFT registration response handler
             if hasattr(self.sas_money, 'yanit_aft_registration'):
@@ -629,10 +665,11 @@ class SASCommunicator:
     def _handle_aft_response(self, tdata):
         """Handle AFT response - FIXED to guarantee response handler is called"""
         try:
-            print(f"[AFT RESPONSE HANDLER] ===== AFT RESPONSE RECEIVED =====")
-            print(f"[AFT RESPONSE HANDLER] Raw response: {tdata}")
-            print(f"[AFT RESPONSE HANDLER] Response length: {len(tdata)} characters")
-            print(f"[AFT RESPONSE HANDLER] ==========================================")
+            print(f"")
+            print(f"📥 ========== AFT TRANSFER RESPONSE ==========")
+            print(f"📥 RAW RESPONSE RECEIVED: {tdata}")
+            print(f"📥 Response Length: {len(tdata)} characters ({len(tdata)//2} bytes)")
+            print(f"==============================================")
             
             if len(tdata) < 8:
                 print("[AFT RESPONSE HANDLER] AFT response too short")
@@ -655,19 +692,19 @@ class SASCommunicator:
                 print(f"[AFT RESPONSE HANDLER] Invalid length in AFT response: {length_hex}")
                 length = 0
             
-            print(f"[AFT RESPONSE HANDLER] Parsed header:")
-            print(f"[AFT RESPONSE HANDLER]   Address: {address}")
-            print(f"[AFT RESPONSE HANDLER]   Command: {command}")
-            print(f"[AFT RESPONSE HANDLER]   Length: {length}")
+            print(f"📥 Parsed Header:")
+            print(f"📥   Address: {address}")
+            print(f"📥   Command: {command}")
+            print(f"📥   Length: {length}")
             
             if len(tdata) >= 8:
                 # Extract key fields based on actual response format
                 transaction_buffer = tdata[6:8]
                 transfer_status = tdata[8:10] if len(tdata) >= 10 else "FF"
                 
-                print(f"[AFT RESPONSE HANDLER] AFT Details:")
-                print(f"[AFT RESPONSE HANDLER]   Transaction Buffer: {transaction_buffer}")
-                print(f"[AFT RESPONSE HANDLER]   Transfer Status: {transfer_status}")
+                print(f"📥 AFT Response Details:")
+                print(f"📥   Transaction Buffer: {transaction_buffer}")
+                print(f"📥   Transfer Status: {transfer_status}")
                 
                 # Common AFT status codes for logging
                 status_messages = {
@@ -684,11 +721,11 @@ class SASCommunicator:
                 }
                 
                 status_msg = status_messages.get(transfer_status, f"Unknown status: {transfer_status}")
-                print(f"[AFT RESPONSE HANDLER] Transfer Status: {transfer_status} - {status_msg}")
+                print(f"📥 Transfer Status: {transfer_status} - {status_msg}")
             
             # CRITICAL FIX: ALWAYS call the money response handler, just like original working code
             # The original Yanit_ParaYukle was ALWAYS called for ANY 72h response
-            print("[AFT RESPONSE HANDLER] *** CALLING yanit_para_yukle (GUARANTEED) ***")
+            print("📥 *** CALLING yanit_para_yukle (GUARANTEED) ***")
             
             if self.sas_money:
                 # Call the handler directly - no hasattr check needed
