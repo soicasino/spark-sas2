@@ -1,204 +1,237 @@
 #!/usr/bin/env python3
 """
-Corrected AFT Test with Continuous Polling
-
-This script demonstrates the correct way to test AFT by using a dedicated
-background thread to continuously poll for SAS messages. This solves the
-timing issue where asynchronous responses from the machine were being missed.
+Test AFT transfers using the EXACT production code pattern.
+This mimics how the main application works with proper port finding and polling.
 """
 
 import sys
-import os
 import time
 import threading
-import asyncio
-from typing import Optional
+import os
 
-# Add the project root to Python path
+# Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from sas_communicator import SASCommunicator
-from sas_money_functions import SasMoney
 from config_manager import ConfigManager
-from utils import get_crc
+from port_manager import PortManager
+from sas_communicator import SASCommunicator
 
-class AFTTester:
-    """A test harness that includes a vital background polling thread."""
-
+class ProductionStyleAFTTester:
+    """AFT tester that follows the exact production code pattern"""
+    
     def __init__(self):
-        self.running = False
-        self.poll_thread = None
-        self.communicator: Optional[SASCommunicator] = None
-        self.money: Optional[SasMoney] = None
-        self.aft_future: Optional[asyncio.Future] = None
         self.config = ConfigManager()
-
-    def _poll_loop(self):
-        """
-        A dedicated background thread to continuously poll for SAS messages.
-        This is critical for catching unsolicited responses like AFT completion.
-        """
-        print("[POLL_LOOP] Starting background polling...")
-        while self.running:
-            try:
-                if self.communicator and self.communicator.is_port_open:
-                    # Get any incoming data
-                    data = self.communicator.get_data_from_sas_port()
-                    if data:
-                        print(f"[POLL_LOOP] RX: {data}")
-                        self.handle_response(data)
-                        # Also let the communicator handle it
-                        self.communicator.handle_received_sas_command(data)
-                
-                    # Send periodic general poll (alternating 80/81)
-                    self.communicator.send_general_poll()
-
-                time.sleep(0.1)  # Poll every 100ms (matching working script)
-            except Exception as e:
-                print(f"[POLL_LOOP] Error: {e}")
-                time.sleep(0.5)
-        print("[POLL_LOOP] Stopped.")
-
-    def handle_response(self, response: str):
-        """
-        Processes responses from the polling loop.
-        If it's the AFT response we are waiting for, it resolves the Future.
-        """
-        if not response:
-            return
-
-        # Handle AFT transfer responses (command 72h)
-        if response.startswith("0172"):
-            print(f"[HANDLER] AFT Response (72h) detected: {response}")
-            if self.aft_future and not self.aft_future.done():
-                # Extract status code from position 8-10 in the response
-                if len(response) >= 10:
-                    status_code = response[8:10]
-                    print(f"[HANDLER] AFT Status Code: {status_code}")
-                    if status_code == "00":
-                        print("[HANDLER] Success status detected. Resolving future.")
-                        self.aft_future.set_result(True)
-                    # Handle pending statuses - these are NORMAL, keep waiting
-                    elif status_code in ["40", "C0", "C1", "C2"]:
-                        print(f"[HANDLER] Transfer {status_code} (pending/acknowledged), continuing to wait...")
-                        # Don't resolve the future yet, keep waiting for completion
-                    # Only fail on actual error codes
-                    elif status_code in ["80", "81", "82", "83", "84", "87", "FF"]:
-                        print(f"[HANDLER] Transfer failed with error status: {status_code}")
-                        self.aft_future.set_exception(
-                            Exception(f"AFT Failed with status: {status_code}")
-                        )
+        self.port_mgr = PortManager()
+        self.sas_comm = None
+        self.running = False
+        self.sas_poll_timer = None
         
-        # Handle AFT completion message (exception 69h) - THIS IS THE KEY!
-        elif response == "69":
-             print(f"[HANDLER] AFT Completion (69h) detected: {response}")
-             if self.aft_future and not self.aft_future.done():
-                print("[HANDLER] AFT completion signal received. Resolving future as SUCCESS.")
-                self.aft_future.set_result(True)
-
-    def start(self):
-        """Initializes components and starts polling."""
+    def initialize_sas(self):
+        """Initialize SAS communication - EXACT copy from production code"""
         print("Initializing SAS communication...")
         
-        # Initialize communicator with config - use the correct SAS port
-        sas_port = self.config.get('sas', 'port', '/dev/ttyUSB1')
-        print(f"Connecting to SAS port: {sas_port}")
+        # Find SAS port using production method
+        sas_port, device_type = self.port_mgr.find_sas_port(self.config)
         
-        self.communicator = SASCommunicator(sas_port, self.config)
-        
-        # Explicitly open the port (this is the key difference!)
-        if not self.communicator.open_port():
-            raise ConnectionError("Failed to open SAS port. Check connection and permissions.")
-        
-        # Check if port is open
-        if not self.communicator.is_port_open:
-            raise ConnectionError("SAS port failed to open properly.")
-        
-        self.money = SasMoney(self.config, self.communicator)
-        print("✅ SAS communication initialized.")
-
-        self.running = True
-        self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
-        self.poll_thread.start()
-
-    def stop(self):
-        """Stops polling and closes the port."""
-        self.running = False
-        if self.poll_thread:
-            self.poll_thread.join(timeout=1)
-        if self.communicator:
-            self.communicator.close_port()
-        print("Polling stopped and port closed.")
-
-    async def run_aft_test(self):
-        """Executes the full AFT test sequence."""
-        print("\n--- STEP 1: AFT Registration (Command 73h) ---")
-        # In a real app, you'd get these from a secure source
-        asset_number = "0000006C"
-        registration_key = "0000000000000000000000000000000000000000"
-        pos_id = "POS1"
-        
-        try:
-            self.money.komut_aft_registration(asset_number, registration_key, pos_id)
-            await asyncio.sleep(2)  # Wait for registration to process
-        except Exception as e:
-            print(f"Registration failed: {e}")
-            return False
-
-        print("\n--- STEP 2: AFT Transfer (Command 72h) ---")
-        self.aft_future = asyncio.get_running_loop().create_future()
-        
-        # Call the corrected transfer function from sas_money_functions.py
-        transaction_id = self.money.komut_para_yukle(
-            doincreasetransactionid=1,
-            transfertype=0,  # Cashable
-            customerbalance=1.00,  # 1.00 TL
-            customerpromo=0.0,
-            transactionid=0,  # Let the function generate it
-            assetnumber=asset_number,
-            registrationkey=registration_key
-        )
-        print(f"Transfer command sent with transaction ID: {transaction_id}")
-        
-        print("\n--- STEP 3: Waiting for AFT completion response... ---")
-        try:
-            # Wait for the future to be resolved by the polling handler
-            result = await asyncio.wait_for(self.aft_future, timeout=15.0)
-            if result:
-                print("\n--- ✅ AFT Transfer Succeeded! ---")
+        if sas_port:
+            print(f"Using SAS port: {sas_port}, device type: {device_type}")
+            self.config.set('machine', 'devicetypeid', str(device_type))
+            
+            self.sas_comm = SASCommunicator(sas_port, self.config)
+            if self.sas_comm.open_port():
+                print("SAS communication initialized successfully!")
                 
-                # Check meters to see if coin-in updated
-                print("\n--- STEP 4: Checking meters for coin-in update ---")
-                await asyncio.sleep(1)  # Give machine time to update meters
+                # Trigger asset number read like production code
+                self.sas_comm.send_sas_command(self.sas_comm.sas_address + '7301FF')
+                time.sleep(1.0)  # Wait for asset number response
                 
-                # Trigger meter query
-                self.money.komut_get_meter(isall=0)
-                await asyncio.sleep(3)  # Wait for meter response
+                # Request meters like production code
+                print("[INFO] Requesting meters after asset number read...")
+                self.sas_comm.sas_money.get_meter(isall=0)
                 
                 return True
-        except asyncio.TimeoutError:
-            print("\n--- ❌ AFT Transfer Timed Out. No response received. ---")
-            return False
-        except Exception as e:
-            print(f"\n--- ❌ AFT Transfer Failed with error: {e} ---")
+            else:
+                print("Failed to open SAS port")
+                return False
+        else:
+            print("No SAS port found")
             return False
 
-async def main():
-    tester = AFTTester()
+    def sas_polling_loop(self):
+        """SAS polling loop - EXACT copy from production code"""
+        if not self.running or not self.sas_comm or not self.sas_comm.is_port_open:
+            return
+        
+        # Send poll
+        self.sas_comm.send_general_poll()
+        
+        # Check for response
+        time.sleep(0.05)  # Give time for response
+        response = self.sas_comm.get_data_from_sas_port()
+        if response:
+            self.sas_comm.handle_received_sas_command(response)
+        
+        # Schedule next poll - EXACT timing from production
+        if self.running:
+            self.sas_poll_timer = threading.Timer(0.04, self.sas_polling_loop)  # 40ms like working code
+            self.sas_poll_timer.daemon = True
+            self.sas_poll_timer.start()
+
+    def test_sas_commands(self):
+        """Test basic SAS commands - EXACT copy from production code"""
+        if not self.sas_comm:
+            print("SAS not initialized")
+            return
+            
+        print("Testing SAS commands...")
+        
+        # Test SAS version
+        print("Requesting SAS version...")
+        self.sas_comm.request_sas_version()
+        time.sleep(0.2)
+        response = self.sas_comm.get_data_from_sas_port()
+        if response:
+            self.sas_comm.handle_received_sas_command(response)
+        
+        time.sleep(1)
+        
+        # Test balance query
+        print("Requesting balance info...")
+        self.sas_comm.request_balance_info()
+        time.sleep(0.2)
+        response = self.sas_comm.get_data_from_sas_port()
+        if response:
+            self.sas_comm.handle_received_sas_command(response)
+
+    def test_aft_registration_and_transfer(self):
+        """Test AFT registration and transfer with production-style polling active"""
+        print("\n🧪 Testing AFT Registration and Transfer...")
+        
+        if not self.sas_comm:
+            print("❌ SAS not initialized")
+            return False
+        
+        try:
+            # Get asset number
+            asset_number = self.sas_comm.get_asset_number_for_aft()
+            print(f"[AFT TEST] Using asset number: {asset_number}")
+            
+            # Get registration key from config
+            registration_key = self.config.get('SAS_MACHINE', 'registration_key', '00000000000000000000000000000000000000000000')
+            print(f"[AFT TEST] Using registration key: {registration_key}")
+            
+            # Step 1: AFT Registration
+            print(f"[AFT TEST] Step 1: AFT Registration...")
+            reg_result = self.sas_comm.sas_money.komut_aft_registration(
+                asset_number, registration_key, "TEST01"
+            )
+            print(f"[AFT TEST] Registration result: {reg_result}")
+            
+            # Wait for registration to process with polling active
+            print(f"[AFT TEST] Waiting for registration to process...")
+            time.sleep(3)
+            
+            # Step 2: Test transfer
+            print(f"[AFT TEST] Step 2: Test transfer ($1.00)...")
+            transfer_result = self.sas_comm.sas_money.komut_para_yukle(
+                1,  # doincreasetransactionid
+                "00",  # transfertype (cashable)
+                100,  # customerbalance (cents)
+                0,  # customerpromo
+                "12345",  # transactionid
+                asset_number,  # assetnumber
+                registration_key  # registrationkey
+            )
+            print(f"[AFT TEST] Transfer result: {transfer_result}")
+            
+            # Wait for transfer to process
+            print(f"[AFT TEST] Waiting for transfer to process...")
+            time.sleep(5)
+            
+            # Step 3: Check balance
+            print(f"[AFT TEST] Step 3: Check balance...")
+            balance_result = self.sas_comm.sas_money.komut_bakiye_sorgulama(
+                "AFTTest", False, "ProductionTest"
+            )
+            print(f"[AFT TEST] Balance result: {balance_result}")
+            
+            # Analyze results
+            if transfer_result:
+                print(f"✅ AFT transfer completed with result: {transfer_result}")
+                return True
+            else:
+                print(f"❌ AFT transfer failed")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error during AFT test: {e}")
+            return False
+
+    def start(self):
+        """Start the tester - EXACT pattern from production code"""
+        print("🚀 Starting Production-Style AFT Tester...")
+        
+        if not self.initialize_sas():
+            print("❌ Failed to initialize SAS. Exiting.")
+            return False
+        
+        self.running = True
+        
+        # Test basic commands first
+        self.test_sas_commands()
+        
+        # Start polling (CRITICAL!)
+        print("✅ Starting SAS polling loop...")
+        self.sas_polling_loop()
+        
+        # Wait for polling to stabilize
+        print("⏳ Waiting for communication to stabilize...")
+        time.sleep(3)
+        
+        # Now test AFT
+        success = self.test_aft_registration_and_transfer()
+        
+        return success
+
+    def shutdown(self):
+        """Shutdown the tester - EXACT pattern from production code"""
+        print("Shutting down...")
+        self.running = False
+        
+        if self.sas_poll_timer:
+            self.sas_poll_timer.cancel()
+        
+        if self.sas_comm:
+            self.sas_comm.close_port()
+        
+        print("Shutdown complete.")
+
+def main():
+    print("🧪 Production-Style AFT Tester")
+    print("This test follows the EXACT pattern used by the main application.")
+    
+    tester = ProductionStyleAFTTester()
+    
     try:
-        tester.start()
-        success = await tester.run_aft_test()
+        success = tester.start()
         
         if success:
-            print("\n🎯 AFT TEST COMPLETED SUCCESSFULLY!")
-            print("Now check if the coin-in meters have been updated.")
+            print("\n🎉 AFT TEST COMPLETED!")
+            print("The test ran successfully with production-style polling.")
         else:
             print("\n❌ AFT TEST FAILED!")
-            
+            print("Check the logs above for details.")
+        
+        # Keep running for a bit to see any delayed responses
+        print("\n⏳ Keeping polling active for 10 seconds to catch any delayed responses...")
+        time.sleep(10)
+        
+    except KeyboardInterrupt:
+        print("\nTest interrupted by user.")
     except Exception as e:
-        print(f"\nAn error occurred during the test: {e}")
+        print(f"\n❌ Test error: {e}")
     finally:
-        tester.stop()
+        tester.shutdown()
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 
