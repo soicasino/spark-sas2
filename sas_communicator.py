@@ -464,7 +464,7 @@ class SASCommunicator:
                 (lambda d: d.startswith("01FF6C"), lambda d: print("AFT request to register")),
                 (lambda d: d.startswith("011B"), lambda d: print("HandpayInformation")),
                 (lambda d: d.startswith("0153"), lambda d: print("GameConfiguration")),
-                (lambda d: d.startswith("01731D"), lambda d: print("Register Gaming Machine Response")),
+                (lambda d: d.startswith("01731D"), lambda d: self._handle_aft_registration_response(d)),
                 (lambda d: d.startswith("01FF6FED3E"), lambda d: print("Game locked")),
                 (lambda d: d[0:10] == "01FF5110E6", lambda d: print("Handpay is pending")),
                 (lambda d: d[0:10].startswith("01FF52"), lambda d: print("Handpay was reset")),
@@ -561,6 +561,14 @@ class SASCommunicator:
             if tdata[:4] in [f"01{code}" for code in self.sas_money.SINGLE_METER_CODES.values()]:
                 self.sas_money.handle_single_meter_response(tdata)
                 return
+            # Debug: Check for any AFT registration related responses
+            if "73" in tdata:
+                print(f"DEBUG: Message contains '73' (AFT registration): {tdata}")
+                if tdata.startswith("0173"):
+                    print(f"DEBUG: Message starts with '0173' - should be AFT registration response")
+                if tdata.startswith("01731D"):
+                    print(f"DEBUG: Message starts with '01731D' - should trigger dispatch handler")
+                    
             print(f"DEBUG: Received SAS message: {tdata}")
         except Exception as e:
             print(f"Error in _process_single_sas_message: {e}")
@@ -587,6 +595,36 @@ class SASCommunicator:
             self.sas_money.yanit_bakiye_sorgulama(tdata)
         except Exception as e:
             print(f"Error parsing balance response: {e}")
+
+    def _handle_aft_registration_response(self, tdata):
+        """Handle AFT registration response"""
+        try:
+            print(f"DEBUG: AFT registration response detected: {tdata}")
+            print(f"DEBUG: Response length: {len(tdata)} characters")
+            
+            # Call the AFT registration response handler
+            if hasattr(self.sas_money, 'yanit_aft_registration'):
+                print("DEBUG: Calling yanit_aft_registration handler")
+                self.sas_money.yanit_aft_registration(tdata)
+            else:
+                print("DEBUG: yanit_aft_registration method not found")
+                # Extract registration status manually
+                if len(tdata) >= 8:
+                    registration_status = tdata[6:8]  # Status at position 6-7
+                    print(f"DEBUG: Registration Status: {registration_status}")
+                    
+                    status_descriptions = {
+                        "00": "Registration Ready",
+                        "01": "Registered", 
+                        "40": "Registration Pending",
+                        "80": "Not Registered",
+                        "82": "Registration key mismatch"
+                    }
+                    status_text = status_descriptions.get(registration_status, f"Unknown: {registration_status}")
+                    print(f"DEBUG: Registration Status Description: {status_text}")
+                    
+        except Exception as e:
+            print(f"Error parsing AFT registration response: {e}")
 
     def _handle_aft_response(self, tdata):
         """Handle AFT response"""
