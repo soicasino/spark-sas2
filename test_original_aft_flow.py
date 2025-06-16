@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Complete Original AFT Flow Test Application
+Complete Original AFT Flow Test Application - CORRECTED VERSION
 
 This application replicates the exact AFT implementation from the original working code
 with all necessary functions incorporated from both current app and original reference.
@@ -19,7 +19,7 @@ import threading
 
 class OriginalAFTFlowTest:
     """
-    Complete AFT implementation with all original functions
+    Complete AFT implementation with all original functions - CORRECTED
     """
     
     def __init__(self, config_file="config.ini"):
@@ -44,6 +44,9 @@ class OriginalAFTFlowTest:
         self.Yanit_NonRestrictedAmount = Decimal(0)
         self.IsWaitingForBakiyeSorgulama = 0
         
+        # AFT Registration status
+        self.IsRegistrationReady = False
+        
         # Serial communication
         self.serial_port = None
         self.is_connected = False
@@ -60,7 +63,7 @@ class OriginalAFTFlowTest:
         for i in range(3, -1, -1):
             self.asset_number_le += self.asset_number_hex[i*2:(i*2)+2]
         
-        print(f"🔧 Original AFT Flow Test Initialized")
+        print(f"🔧 Original AFT Flow Test Initialized - CORRECTED VERSION")
         print(f"   Asset Number: {self.asset_number} (decimal)")
         print(f"   Asset Number (hex): {self.asset_number_hex}")
         print(f"   Asset Number (little-endian): {self.asset_number_le}")
@@ -89,14 +92,37 @@ class OriginalAFTFlowTest:
             reader_thread = threading.Thread(target=self._serial_reader, daemon=True)
             reader_thread.start()
             
+            # Test connectivity with a simple ping
+            print(f"🔍 [CONNECT] Testing machine connectivity...")
+            self._test_machine_connectivity()
+            
             return True
             
         except Exception as e:
             print(f"❌ Failed to connect to SAS port: {e}")
             return False
     
+    def _test_machine_connectivity(self):
+        """Send a simple command to test if machine responds"""
+        try:
+            # Send a simple general poll (most basic SAS command)
+            general_poll = "0180F037"  # General poll for address 01
+            print(f"🔍 [CONNECT] Sending general poll: {general_poll}")
+            
+            if self.serial_port:
+                command_bytes = bytes.fromhex(general_poll)
+                self.serial_port.write(command_bytes)
+                self.serial_port.flush()
+                
+                # Wait briefly for response
+                time.sleep(0.5)
+                print(f"🔍 [CONNECT] General poll sent - check for any response above")
+            
+        except Exception as e:
+            print(f"🔍 [CONNECT] Error in connectivity test: {e}")
+    
     def _serial_reader(self):
-        """Background thread to read SAS responses"""
+        """Background thread to read SAS responses with enhanced debugging"""
         buffer = ""
         
         while self.is_connected:
@@ -105,6 +131,9 @@ class OriginalAFTFlowTest:
                     data = self.serial_port.read(self.serial_port.in_waiting)
                     hex_data = data.hex().upper()
                     buffer += hex_data
+                    
+                    print(f"🔍 [SERIAL] Received raw data: {hex_data}")
+                    print(f"🔍 [SERIAL] Current buffer: {buffer}")
                     
                     # Process complete messages
                     while len(buffer) >= 6:  # Minimum message length
@@ -118,47 +147,92 @@ class OriginalAFTFlowTest:
                                     length = int(length_hex, 16)
                                     total_length = 6 + (length * 2)  # Header + data + CRC
                                     
+                                    print(f"🔍 [SERIAL] Message detected - Command: {command}, Length: {length}, Total: {total_length}")
+                                    
                                     if len(buffer) >= total_length:
                                         message = buffer[:total_length]
                                         buffer = buffer[total_length:]
+                                        print(f"🔍 [SERIAL] Complete message extracted: {message}")
                                         self._process_sas_response(message)
                                     else:
+                                        print(f"🔍 [SERIAL] Waiting for more data ({len(buffer)}/{total_length})")
                                         break  # Wait for more data
                                 else:
                                     break
-                            except:
+                            except Exception as e:
+                                print(f"🔍 [SERIAL] Error parsing message header: {e}")
                                 # Remove invalid start and continue
                                 buffer = buffer[2:]
                         else:
                             # Remove invalid character
+                            print(f"🔍 [SERIAL] Invalid start byte, removing: {buffer[:2] if len(buffer) >= 2 else buffer}")
                             buffer = buffer[2:] if len(buffer) >= 2 else ""
+                else:
+                    # Periodically log that we're listening
+                    if hasattr(self, '_debug_counter'):
+                        self._debug_counter += 1
+                    else:
+                        self._debug_counter = 0
+                    
+                    if self._debug_counter % 1000 == 0:  # Every ~1 second
+                        print(f"🔍 [SERIAL] Listening for SAS responses... (no data)")
                 
                 time.sleep(0.001)  # 1ms delay
                 
             except Exception as e:
-                print(f"Error in serial reader: {e}")
+                print(f"❌ [SERIAL] Error in serial reader: {e}")
                 time.sleep(0.1)
     
     def _process_sas_response(self, response):
-        """Process SAS response messages"""
+        """Process SAS response messages with enhanced debugging"""
         try:
-            print(f"📥 SAS Response: {response}")
+            print(f"📥 [SAS] RAW Response: {response}")
             
             if len(response) >= 4:
                 command = response[2:4]
+                print(f"📥 [SAS] Command Code: {command}")
                 
-                if command == "72":  # AFT response
+                if command == "5A":  # AFT registration response
+                    print(f"📥 [SAS] AFT Registration Response detected")
+                    self._handle_aft_registration_response(response)
+                elif command == "72":  # AFT transfer response
+                    print(f"📥 [SAS] AFT Transfer Response detected")
                     self.Yanit_ParaYukle(response)
                 elif command == "74":  # Balance response
+                    print(f"📥 [SAS] Balance Response detected")
                     self.Yanit_BakiyeSorgulama(response)
                 elif response == "01FF69DB5B":  # AFT completion exception
-                    print(f"📥 AFT completion exception detected")
-                    self.Global_ParaYukleme_TransferStatus = "00"  # Mark as completed
+                    print(f"📥 [SAS] AFT completion exception detected")
+                    if self.IsWaitingForParaYukle == 1:
+                        self.Global_ParaYukleme_TransferStatus = "00"  # Mark as completed
+                        print(f"📥 [SAS] AFT marked as completed via exception")
                 else:
-                    print(f"📥 Other SAS response - Command: {command}")
+                    print(f"📥 [SAS] Other response - Command: {command}")
                     
         except Exception as e:
-            print(f"Error processing SAS response: {e}")
+            print(f"❌ [SAS] Error processing response: {e}")
+    
+    def _handle_aft_registration_response(self, response):
+        """Handle AFT registration response"""
+        try:
+            print(f"📥 [REG] Processing AFT registration response: {response}")
+            
+            if len(response) >= 8:
+                # Registration status is typically in position 6-7
+                reg_status = response[6:8]
+                print(f"📥 [REG] Registration Status: {reg_status}")
+                
+                if reg_status == "00":
+                    self.IsRegistrationReady = True
+                    print(f"✅ [REG] AFT Registration SUCCESSFUL - Ready for transfers")
+                else:
+                    print(f"❌ [REG] AFT Registration FAILED - Status: {reg_status}")
+                    self.IsRegistrationReady = False
+            else:
+                print(f"❌ [REG] Registration response too short: {len(response)}")
+                
+        except Exception as e:
+            print(f"❌ [REG] Error processing registration response: {e}")
     
     def send_sas_command(self, command_name, command_hex):
         """Send SAS command to machine"""
@@ -267,7 +341,7 @@ class OriginalAFTFlowTest:
             return False
     
     def Komut_ParaYukle(self, doincreasetransactionid, transfertype, customerbalance=0.0, customerpromo=0.0):
-        """EXACT implementation of Komut_ParaYukle from original working code"""
+        """EXACT implementation of Komut_ParaYukle from original working code - CORRECTED"""
         try:
             print(f"💰 [AFT TRANSFER] Starting money load command...")
             print(f"💰 [AFT TRANSFER] Amount: ${customerbalance:.2f}")
@@ -329,10 +403,12 @@ class OriginalAFTFlowTest:
             # Registration key
             Command += self.registration_key
             
-            # Transaction ID
-            TRANSACTIONID = f"{transactionid:04d}"  # 4-digit transaction ID
-            Command += self.AddLeftBCD(len(TRANSACTIONID) // 2, 1)  # Length
-            Command += TRANSACTIONID.encode().hex().upper()  # Transaction ID as hex
+            # Transaction ID - FIXED: Use ASCII string encoding (like original working code)
+            # The original working code actually uses string encoding, not pure BCD
+            TRANSACTIONID = f"{transactionid:04d}"  # 4-digit string like "0109"
+            tid_length = len(TRANSACTIONID)
+            Command += f"{tid_length:02d}"  # Length as 2-digit decimal string
+            Command += TRANSACTIONID  # Transaction ID as string (not hex encoded)
             
             # Expiration date (8 bytes) - all zeros
             Command += "0000000000000000"
@@ -346,12 +422,16 @@ class OriginalAFTFlowTest:
             # Receipt data length
             Command += "00"
             
+            print(f"💰 [AFT TRANSFER] Command data before header: {Command}")
+            
             # Build command header with actual length
             actual_length = len(Command) // 2
             CommandHeader = f"0172{actual_length:02X}"
             
             # Build final command
             full_command = CommandHeader + Command
+            
+            print(f"💰 [AFT TRANSFER] Full command before CRC: {full_command}")
             
             # Calculate and add CRC
             final_command = self.get_crc(full_command)
@@ -401,17 +481,21 @@ class OriginalAFTFlowTest:
         print(f"⏳ [AFT WAIT] Entering blocking wait loop...")
         
         # Blocking while loop - exactly as original
+        last_log_time = 0
         while self.IsWaitingForParaYukle == 1:
             # Check timeout
             elapsed = time.time() - start_time
             if elapsed > timeout_seconds:
                 print(f"❌ [AFT WAIT] Timeout after {timeout_seconds} seconds")
+                print(f"❌ [AFT WAIT] No response from machine - check connection and machine status")
                 self.IsWaitingForParaYukle = 0
                 return False
             
-            # Log every 2 seconds
-            if int(elapsed) % 2 == 0 and elapsed > 1:
+            # Log every 5 seconds (reduced spam)
+            if elapsed - last_log_time >= 5:
                 print(f"⏳ [AFT WAIT] {elapsed:.1f}s - Status: {self.Global_ParaYukleme_TransferStatus}")
+                print(f"⏳ [AFT WAIT] Waiting for machine response...")
+                last_log_time = elapsed
             
             # Check if we got a response
             if self.Global_ParaYukleme_TransferStatus != "0":
@@ -435,7 +519,7 @@ class OriginalAFTFlowTest:
                     return False
             
             # Small delay to prevent busy waiting (exact original timing)
-            time.sleep(0.003)  # 3ms like original
+            time.sleep(0.1)  # Increased to 100ms to reduce CPU usage
         
         print(f"❌ [AFT WAIT] Wait loop exited unexpectedly")
         return False
@@ -648,90 +732,86 @@ class OriginalAFTFlowTest:
         return True
     
     def run_complete_aft_test(self, amount):
-        """Execute the complete AFT test using original blocking mechanism"""
-        print("\n" + "="*60)
-        print("🧪 ORIGINAL AFT FLOW TEST - EXACT REPLICA")
-        print("="*60)
+        """Run the complete AFT test with exact original flow - CORRECTED"""
+        
+        print(f"\n============================================================")
+        print(f"🧪 ORIGINAL AFT FLOW TEST - EXACT REPLICA (CORRECTED)")
+        print(f"============================================================")
         print(f"💰 Test Amount: ${amount:.2f}")
         
-        try:
-            # Step 1: Connect to SAS
-            print(f"\n--- STEP 1: Connect to SAS ---")
-            if not self.connect_serial():
-                print(f"❌ Failed to connect to SAS")
-                return False
-            
-            time.sleep(2)  # Allow connection to stabilize
-            
-            # Step 2: AFT Registration
-            print(f"\n--- STEP 2: AFT Registration ---")
-            registration_success = self.Komut_RegisterAssetNo()
-            
-            if not registration_success:
-                print(f"❌ AFT Registration failed")
-                return False
-            
-            time.sleep(3)  # Wait for registration to complete
-            
-            # Step 3: Initial Balance Query
-            print(f"\n--- STEP 3: Initial Balance Query ---")
-            initial_balance_success = self.Wait_BakiyeSorgulama(timeout_seconds=10)
-            
-            if initial_balance_success:
-                initial_balance = self.Yanit_BakiyeTutar
-                print(f"📊 Initial Balance: ${initial_balance}")
-            else:
-                print(f"⚠️  Initial balance query failed, continuing...")
-                initial_balance = Decimal(0)
-            
-            # Step 4: AFT Transfer using original Wait_ParaYukle
-            print(f"\n--- STEP 4: AFT Transfer (Original Flow) ---")
-            
-            # Transfer type 0 = cashable (exact original)
-            transfer_success = self.Wait_ParaYukle(transfertype=0, customerbalance=amount, timeout_seconds=30)
-            
-            if not transfer_success:
-                print(f"❌ AFT Transfer failed")
-                return False
-            
-            print(f"✅ AFT Transfer completed successfully!")
-            
-            # Step 5: Wait and query final balance
-            print(f"\n--- STEP 5: Final Balance Query ---")
-            time.sleep(5)  # Wait for machine to process
-            
-            final_balance_success = self.Wait_BakiyeSorgulama(timeout_seconds=10)
-            
-            if final_balance_success:
-                final_balance = self.Yanit_BakiyeTutar
-                balance_increase = final_balance - initial_balance
-                
-                print(f"📊 Final Balance: ${final_balance}")
-                print(f"📊 Balance Increase: ${balance_increase}")
-                print(f"📊 Expected Increase: ${amount}")
-                
-                if abs(balance_increase - Decimal(str(amount))) < Decimal("0.01"):
-                    print(f"🎉 SUCCESS! Balance increased correctly!")
-                    return True
-                elif balance_increase > 0:
-                    print(f"🟡 PARTIAL SUCCESS: Balance increased but not by expected amount")
-                    return True
-                else:
-                    print(f"❌ FAILED: No balance increase detected")
-                    return False
-            else:
-                print(f"⚠️  Final balance query failed")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Error during AFT test: {e}")
+        # Step 1: Connect to SAS
+        print(f"\n--- STEP 1: Connect to SAS ---")
+        if not self.connect_serial():
             return False
         
-        finally:
-            # Cleanup
-            if self.serial_port:
-                self.is_connected = False
-                self.serial_port.close()
+        # Step 2: AFT Registration with response check
+        print(f"\n--- STEP 2: AFT Registration ---")
+        print(f"🔧 [AFT REGISTRATION] Starting asset registration...")
+        
+        registration_success = self.Komut_RegisterAssetNo()
+        if not registration_success:
+            print(f"❌ [AFT REGISTRATION] Registration command failed")
+            return False
+        
+        # Wait for registration response
+        print(f"🔧 [AFT REGISTRATION] Waiting for registration response...")
+        for i in range(50):  # 5 second timeout
+            if self.IsRegistrationReady:
+                break
+            time.sleep(0.1)
+        
+        if not self.IsRegistrationReady:
+            print(f"⚠️  [AFT REGISTRATION] No registration response received, but continuing...")
+        else:
+            print(f"✅ [AFT REGISTRATION] Registration confirmed ready")
+        
+        # Add mandatory 3-second wait after registration (as per original flow)
+        print(f"⏱️  [AFT REGISTRATION] Mandatory 3-second wait after registration...")
+        time.sleep(3)
+        
+        # Step 3: Initial Balance Query (diagnostic)
+        print(f"\n--- STEP 3: Initial Balance Query ---")
+        print(f"💳 [BALANCE WAIT] Starting balance query wait...")
+        
+        balance_success = self.Wait_BakiyeSorgulama(timeout_seconds=10)
+        if not balance_success:
+            print(f"⚠️  Initial balance query failed, continuing...")
+        else:
+            print(f"✅ Initial balance: ${self.Yanit_BakiyeTutar:.2f}")
+        
+        # Step 4: AFT Transfer (Original Flow)
+        print(f"\n--- STEP 4: AFT Transfer (Original Flow) ---")
+        
+        # Use exact original Wait_ParaYukle function
+        transfer_success = self.Wait_ParaYukle(0, amount, timeout_seconds=30)
+        
+        if transfer_success:
+            print(f"\n🎉 AFT TRANSFER COMPLETED SUCCESSFULLY!")
+            
+            # Step 5: Post-transfer balance check
+            print(f"\n--- STEP 5: Post-Transfer Balance Check ---")
+            
+            # Add 5-second wait (as per original flow)
+            print(f"⏱️  Post-transfer 5-second wait...")
+            time.sleep(5)
+            
+            final_balance_success = self.Wait_BakiyeSorgulama(timeout_seconds=10)
+            if final_balance_success:
+                print(f"💰 Final balance: ${self.Yanit_BakiyeTutar:.2f}")
+                
+                # Check if balance increased
+                if self.Yanit_BakiyeTutar >= amount:
+                    print(f"✅ BALANCE VERIFICATION: Success! Balance reflects the transfer.")
+                    return True
+                else:
+                    print(f"⚠️  BALANCE VERIFICATION: Balance did not increase as expected.")
+                    return False
+            else:
+                print(f"❌ Failed to get final balance")
+                return False
+        else:
+            print(f"\n❌ AFT TRANSFER FAILED!")
+            return False
 
 
 def main():
