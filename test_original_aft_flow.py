@@ -383,29 +383,54 @@ class OriginalAFTFlowTest:
         return input_string
     
     def Komut_RegisterAssetNo(self):
-        """AFT Registration command - exact replica of original"""
+        """AFT Registration command - CORRECTED to match original working code"""
         try:
-            print(f"🔧 [AFT REGISTRATION] Starting asset registration...")
+            print(f"🔧 [AFT REGISTRATION] Starting asset registration (2-step process)...")
             
-            # Build registration command using actual asset number
-            Command = f"{self.sas_address}5A17"  # Address + Command + Length
-            Command += self.asset_number_le  # Asset number (little-endian format)
-            Command += self.registration_key  # Registration key
-            Command += "504F5330303100"  # POS ID "POS001" + null terminator
+            # STEP 1: Initialize registration (exact original)
+            print(f"🔧 [AFT REGISTRATION] Step 1: Initialize registration")
+            init_command = f"{self.sas_address}7301FF"  # Address + Command 73 + Length 01 + Data FF
+            init_command_crc = self.get_crc(init_command)
+            print(f"🔧 [AFT REGISTRATION] Init command: {init_command_crc}")
             
-            # Calculate and add CRC
-            full_command = self.get_crc(Command)
+            # Send init command
+            init_success = self.send_sas_command("AFT_Registration_Init", init_command_crc)
+            if not init_success:
+                print(f"❌ [AFT REGISTRATION] Failed to send init command")
+                return False
             
-            print(f"🔧 [AFT REGISTRATION] Registration command: {full_command}")
+            # Wait for init response
+            time.sleep(2)
             
-            # Send command
-            success = self.send_sas_command("AFT_Registration", full_command)
+            # STEP 2: Complete registration (exact original)
+            print(f"🔧 [AFT REGISTRATION] Step 2: Complete registration")
             
-            if success:
-                print(f"✅ [AFT REGISTRATION] Registration command sent successfully")
+            # Convert POS ID to BCD format (4 bytes)
+            pos_id = "POS001"
+            pos_id_padded = pos_id.ljust(4, '\x00')[:4]  # Pad to 4 characters
+            pos_id_bcd = ''.join('{:02x}'.format(ord(c)) for c in pos_id_padded)
+            print(f"🔧 [AFT REGISTRATION] POS ID BCD: {pos_id_bcd}")
+            
+            # Build complete registration command (exact original format)
+            registration_code = "01"  # Registration code (01 for normal registration)
+            command_body = registration_code + self.asset_number_le + self.registration_key + pos_id_bcd
+            command_length = hex(len(command_body) // 2).replace("0x", "").upper().zfill(2)
+            
+            complete_command_no_crc = f"{self.sas_address}73{command_length}{command_body}"
+            complete_command = self.get_crc(complete_command_no_crc)
+            
+            print(f"🔧 [AFT REGISTRATION] Complete registration command: {complete_command}")
+            
+            # Send complete command
+            complete_success = self.send_sas_command("AFT_Registration_Complete", complete_command)
+            
+            if complete_success:
+                print(f"✅ [AFT REGISTRATION] AFT registration commands sent successfully")
+                # Wait for registration to complete
+                time.sleep(3)
                 return True
             else:
-                print(f"❌ [AFT REGISTRATION] Failed to send registration command")
+                print(f"❌ [AFT REGISTRATION] Failed to send complete registration command")
                 return False
                 
         except Exception as e:
@@ -820,8 +845,31 @@ class OriginalAFTFlowTest:
         print(f"⏱️  Waiting 2 seconds for connection to stabilize...")
         time.sleep(2)
         
-        # Step 2: AFT Registration with response check
-        print(f"\n--- STEP 2: AFT Registration ---")
+        # Step 2: Clear machine errors and enable
+        print(f"\n--- STEP 2: Clear Machine Errors and Enable ---")
+        print(f"🔧 [MACHINE] Attempting to clear machine error state...")
+        
+        # Try to clear machine state with enable commands
+        enable_commands = [
+            ("Exception Reset", f"{self.sas_address}7E00"),
+            ("Enable Gaming Machine", f"{self.sas_address}8001"), 
+            ("AFT Clear Registration", f"{self.sas_address}7300"),
+        ]
+        
+        for name, cmd_base in enable_commands:
+            try:
+                cmd_with_crc = self.get_crc(cmd_base)
+                print(f"🔧 [MACHINE] Sending {name}: {cmd_with_crc}")
+                self.send_sas_command(name, cmd_with_crc)
+                time.sleep(1)
+            except Exception as e:
+                print(f"⚠️  [MACHINE] {name} failed: {e}")
+        
+        print(f"⏱️  [MACHINE] Waiting 3 seconds for machine to stabilize...")
+        time.sleep(3)
+        
+        # Step 3: AFT Registration with response check
+        print(f"\n--- STEP 3: AFT Registration ---")
         print(f"🔧 [AFT REGISTRATION] Starting asset registration...")
         
         registration_success = self.Komut_RegisterAssetNo()
@@ -846,7 +894,7 @@ class OriginalAFTFlowTest:
         time.sleep(3)
         
         # Step 3: Initial Balance Query (diagnostic)
-        print(f"\n--- STEP 3: Initial Balance Query ---")
+        print(f"\n--- STEP 4: Initial Balance Query ---")
         print(f"💳 [BALANCE WAIT] Starting balance query wait...")
         
         balance_success = self.Wait_BakiyeSorgulama(timeout_seconds=10)
@@ -856,7 +904,7 @@ class OriginalAFTFlowTest:
             print(f"✅ Initial balance: ${self.Yanit_BakiyeTutar:.2f}")
         
         # Step 4: AFT Transfer (Original Flow)
-        print(f"\n--- STEP 4: AFT Transfer (Original Flow) ---")
+        print(f"\n--- STEP 5: AFT Transfer (Original Flow) ---")
         
         # Use exact original Wait_ParaYukle function
         transfer_success = self.Wait_ParaYukle(0, amount, timeout_seconds=30)
