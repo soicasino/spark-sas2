@@ -344,11 +344,10 @@ class SasMoney:
             pos_id_bcd = ''.join('{:02x}'.format(ord(c)) for c in pos_id_padded)
             print(f"[AFT REGISTRATION] POS ID BCD: {pos_id_bcd}")
             
-            # Convert asset number to BCD format (4 bytes)
-            # Asset number should be in BCD format, not hex
-            asset_int = int(asset_number, 16) if isinstance(asset_number, str) else asset_number
-            asset_bcd = self._int_to_bcd(asset_int, 4)
-            print(f"[AFT REGISTRATION] Asset Number BCD: {asset_bcd}")
+            # CRITICAL FIX: Asset number should be used as-is in hex format, NOT converted to BCD!
+            # The machine expects the asset number in little-endian hex format, not BCD
+            asset_bcd = asset_number.upper().zfill(8)  # Just ensure 8 characters, don't convert to BCD
+            print(f"[AFT REGISTRATION] Asset Number (hex): {asset_bcd}")
             
             # Registration key is already in correct format (20 bytes hex = 40 chars)
             print(f"[AFT REGISTRATION] Registration Key: {registration_key}")
