@@ -39,7 +39,7 @@ def check_machine_status(sas_comm):
     
     try:
         # Get current balance and status
-        balance_result = sas_comm.sas_money.komut_balance_query("0000006c")
+        balance_result = sas_comm.sas_money.komut_bakiye_sorgulama("AFTTest", False, "DiagnosticTest")
         print(f"[STATUS] Balance query result: {balance_result}")
         
         if hasattr(sas_comm, 'last_lock_status'):
