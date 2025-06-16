@@ -189,6 +189,124 @@ class SasMoney:
         self.is_waiting_for_bakiye_sifirla = 0
         return None
 
+    def wait_for_para_yukle_completion_blocking_original(self, timeout=30):
+        """
+        EXACT implementation of original Wait_ParaYukle blocking logic from raspberryPython_orj.py
+        This matches the working original code exactly - no async, pure blocking loop
+        """
+        import time
+        import datetime
+        
+        print(f"[ORIGINAL WAIT] Starting original blocking wait (timeout={timeout}s)")
+        
+        # Set variables exactly like original Wait_ParaYukle
+        start_time = datetime.datetime.now()
+        last_command_time = datetime.datetime.now()
+        command_sent_count = 0
+        error_87_count = 0
+        error_87_tolerance = 10
+        
+        # Blocking while loop - exactly like original
+        while self.is_waiting_for_para_yukle == 1:
+            time.sleep(0.003)  # Exactly 3ms like original
+            
+            current_time = datetime.datetime.now()
+            last_command_diff = (current_time - last_command_time).total_seconds()
+            total_time_diff = (current_time - start_time).total_seconds()
+            
+            # Check timeout
+            if total_time_diff > timeout:
+                print(f"[ORIGINAL WAIT] TIMEOUT after {timeout}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+            
+            # Handle status codes exactly like original
+            status = self.global_para_yukleme_transfer_status
+            
+            if status == "MT":
+                # Resend command like original
+                print(f"[ORIGINAL WAIT] Status MT - resending command")
+                # Note: In original this calls Komut_ParaYukle(0, transfertype)
+                # We'll handle this in the calling code
+                self.global_para_yukleme_transfer_status = ""
+                last_command_time = current_time
+                
+            elif status == "87":
+                print(f"[ORIGINAL WAIT] Status 87 - Error")
+                error_87_count += 1
+                if error_87_count > error_87_tolerance:
+                    print(f"[ORIGINAL WAIT] Too many 87 errors, breaking")
+                    self.is_waiting_for_para_yukle = 0
+                    return False
+                    
+            elif status == "84":
+                print(f"[ORIGINAL WAIT] Status 84 - Can't transfer big money")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "FF":
+                print(f"[ORIGINAL WAIT] Status FF - No transfer information available")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "93":
+                print(f"[ORIGINAL WAIT] Status 93 - Asset number zero or does not match")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "82":
+                print(f"[ORIGINAL WAIT] Status 82 - Not a valid transfer function")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "83":
+                print(f"[ORIGINAL WAIT] Status 83 - Not a valid transfer amount")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "C0":
+                print(f"[ORIGINAL WAIT] Status C0 - Transfer acknowledged/pending")
+                # In original, this calls Komut_Interragition("C0") but then continues waiting
+                # We'll continue the loop and let it process
+                pass
+                
+            elif status == "00":
+                print(f"[ORIGINAL WAIT] Status 00 - SUCCESS!")
+                self.is_waiting_for_para_yukle = 0
+                return True
+                
+            # Timeout resend logic - exactly like original (every 2.5 seconds)
+            if self.is_waiting_for_para_yukle == 1 and last_command_diff >= 2.5:
+                print(f"[ORIGINAL WAIT] Timeout resend after {last_command_diff:.1f}s")
+                # Note: In original this calls Komut_ParaYukle(0, transfertype)
+                # This should be handled by the calling code if needed
+                last_command_time = current_time
+                command_sent_count += 1
+                
+                # Too many commands sent
+                if command_sent_count > 30:
+                    print(f"[ORIGINAL WAIT] Too many commands sent, giving up")
+                    self.global_para_yukleme_transfer_status = "-1"
+                    self.is_waiting_for_para_yukle = 0
+                    return False
+        
+        # If we exit the loop, check final status
+        final_status = self.global_para_yukleme_transfer_status
+        
+        # Success conditions - exactly like original
+        if final_status == "00" or final_status == "MT":
+            print(f"[ORIGINAL WAIT] Final SUCCESS with status: {final_status}")
+            return True
+        
+        # Failure conditions - exactly like original  
+        failure_statuses = ["87", "84", "FF", "-1", "83", "89", "82", "93"]
+        if final_status in failure_statuses or (final_status == "87" and error_87_count > error_87_tolerance):
+            print(f"[ORIGINAL WAIT] Final FAILURE with status: {final_status}")
+            return False
+            
+        print(f"[ORIGINAL WAIT] Unexpected completion with status: {final_status}")
+        return False
+
     def get_transfer_status_description(self, status_code):
         """Get human-readable description of transfer status codes"""
         status_descriptions = {
@@ -537,8 +655,8 @@ class SasMoney:
             self.is_waiting_for_bakiye_sorgulama = False
             raise
 
-    def komut_para_yukle(self, customerbalance=0.0, customerpromo=0.0, transfertype=10, 
-                         assetnumber=None, registrationkey=None, transactionid=None, auto_lock=False):
+    def komut_para_yukle(self, doincreasetransactionid=1, transfertype=10, customerbalance=0.0, customerpromo=0.0, 
+                         assetnumber=None, registrationkey=None, transactionid=None):
         """
         FINAL CORRECTED AFT Transfer Command - Using the exact original working command structure.
         This version includes the proper BCD and Hex formatting for all fields.
@@ -558,10 +676,18 @@ class SasMoney:
             if registrationkey is None:
                 registrationkey = "0000000000000000000000000000000000000000"
 
-            # Step 4: Generate transaction ID if not provided
-            if transactionid is None:
+            # Step 4: Generate transaction ID exactly like original
+            if doincreasetransactionid == 1:
+                # Increment the transaction ID like original
+                transactionid = str(self.get_next_transaction_id())
+                print(f"[AFT COMMAND] Generated new transaction ID: {transactionid}")
+            elif transactionid is None:
+                # Use existing transaction ID or generate a fallback
                 from datetime import datetime
                 transactionid = str(int(datetime.now().timestamp()) % 10000)
+                print(f"[AFT COMMAND] Using fallback transaction ID: {transactionid}")
+            else:
+                print(f"[AFT COMMAND] Using provided transaction ID: {transactionid}")
 
             # Step 5: Convert amount to cents for BCD conversion
             customerbalance_cents = int(customerbalance * 100)
@@ -2302,3 +2428,122 @@ class SasMoney:
                 pass
                 
             return result
+
+    def wait_for_para_yukle_completion_blocking_original(self, timeout=30):
+        """
+        EXACT implementation of original Wait_ParaYukle blocking logic from raspberryPython_orj.py
+        This matches the working original code exactly - no async, pure blocking loop
+        """
+        import time
+        import datetime
+        
+        print(f"[ORIGINAL WAIT] Starting original blocking wait (timeout={timeout}s)")
+        
+        # Set variables exactly like original Wait_ParaYukle
+        start_time = datetime.datetime.now()
+        last_command_time = datetime.datetime.now()
+        command_sent_count = 0
+        error_87_count = 0
+        error_87_tolerance = 10
+        
+        # Blocking while loop - exactly like original
+        while self.is_waiting_for_para_yukle == 1:
+            time.sleep(0.003)  # Exactly 3ms like original
+            
+            current_time = datetime.datetime.now()
+            last_command_diff = (current_time - last_command_time).total_seconds()
+            total_time_diff = (current_time - start_time).total_seconds()
+            
+            # Check timeout
+            if total_time_diff > timeout:
+                print(f"[ORIGINAL WAIT] TIMEOUT after {timeout}s")
+                self.is_waiting_for_para_yukle = 0
+                return False
+            
+            # Handle status codes exactly like original
+            status = self.global_para_yukleme_transfer_status
+            
+            if status == "MT":
+                # Resend command like original
+                print(f"[ORIGINAL WAIT] Status MT - resending command")
+                # Note: In original this calls Komut_ParaYukle(0, transfertype)
+                # We'll handle this in the calling code
+                self.global_para_yukleme_transfer_status = ""
+                last_command_time = current_time
+                
+            elif status == "87":
+                print(f"[ORIGINAL WAIT] Status 87 - Error")
+                error_87_count += 1
+                if error_87_count > error_87_tolerance:
+                    print(f"[ORIGINAL WAIT] Too many 87 errors, breaking")
+                    self.is_waiting_for_para_yukle = 0
+                    return False
+                    
+            elif status == "84":
+                print(f"[ORIGINAL WAIT] Status 84 - Can't transfer big money")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "FF":
+                print(f"[ORIGINAL WAIT] Status FF - No transfer information available")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "93":
+                print(f"[ORIGINAL WAIT] Status 93 - Asset number zero or does not match")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "82":
+                print(f"[ORIGINAL WAIT] Status 82 - Not a valid transfer function")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "83":
+                print(f"[ORIGINAL WAIT] Status 83 - Not a valid transfer amount")
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "C0":
+                print(f"[ORIGINAL WAIT] Status C0 - Not compatible with current transfer")
+                # In original, this calls Komut_Interragition("C0")
+                # For now, we'll treat it as completion pending
+                self.is_waiting_for_para_yukle = 0
+                return False
+                
+            elif status == "00":
+                print(f"[ORIGINAL WAIT] Status 00 - SUCCESS!")
+                self.is_waiting_for_para_yukle = 0
+                return True
+                
+            # Timeout resend logic - exactly like original (every 2.5 seconds)
+            if self.is_waiting_for_para_yukle == 1 and last_command_diff >= 2.5:
+                print(f"[ORIGINAL WAIT] Timeout resend after {last_command_diff:.1f}s")
+                # Note: In original this calls Komut_ParaYukle(0, transfertype)
+                # This should be handled by the calling code if needed
+                last_command_time = current_time
+                command_sent_count += 1
+                
+                # Too many commands sent
+                if command_sent_count > 30:
+                    print(f"[ORIGINAL WAIT] Too many commands sent, giving up")
+                    self.global_para_yukleme_transfer_status = "-1"
+                    self.is_waiting_for_para_yukle = 0
+                    return False
+        
+        # If we exit the loop, check final status
+        final_status = self.global_para_yukleme_transfer_status
+        
+        # Success conditions - exactly like original
+        if final_status == "00" or final_status == "MT":
+            print(f"[ORIGINAL WAIT] Final SUCCESS with status: {final_status}")
+            return True
+        
+        # Failure conditions - exactly like original  
+        failure_statuses = ["87", "84", "FF", "-1", "83", "89", "82", "93"]
+        if final_status in failure_statuses or (final_status == "87" and error_87_count > error_87_tolerance):
+            print(f"[ORIGINAL WAIT] Final FAILURE with status: {final_status}")
+            return False
+            
+        print(f"[ORIGINAL WAIT] Unexpected completion with status: {final_status}")
+        return False

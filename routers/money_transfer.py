@@ -91,27 +91,32 @@ async def add_credits(
             print(f"[ADD CREDITS] Skipping auto-lock workflow - using direct AFT like original working code")
             
             try:
-                # Use the DIRECT AFT approach that matches the original working code
-                # The original never used AFT lock commands - it sent AFT transfer directly
-                print(f"[ADD CREDITS] Executing DIRECT AFT transfer (matches original raspberryPython_orj.py)...")
+                # DIRECT AFT TRANSFER - Exactly matches original raspberryPython_orj.py approach
+                # NO AFT LOCK/UNLOCK - Original never used these commands
+                print(f"[ADD CREDITS] Executing DIRECT AFT transfer (no lock/unlock, matches original)...")
                 
+                # Reset transfer status flags exactly like original Wait_ParaYukle
+                sas_comm.sas_money.global_para_yukleme_transfer_status = "0"
+                sas_comm.sas_money.is_waiting_for_para_yukle = 1
+                
+                # Send direct AFT transfer command
                 transaction_id = sas_comm.sas_money.komut_para_yukle(
+                    doincreasetransactionid=1,  # Increment transaction ID like original
+                    transfertype=int(request.transfer_type),  # Use exact transfer type from request
                     customerbalance=amount,
                     customerpromo=0.0,
-                    transfertype=10,
                     assetnumber=assetnumber,
-                    registrationkey=registrationkey,
-                    auto_lock=False  # CRITICAL: No auto-lock, direct transfer only
+                    registrationkey=registrationkey
                 )
                 
                 if transaction_id is None:
                     raise Exception("Direct AFT transfer command failed")
                 
-                print(f"[ADD CREDITS] Direct AFT command sent successfully, transaction ID: {transaction_id}")
-                print(f"[ADD CREDITS] Using BLOCKING wait pattern (exactly matches original working code)...")
+                print(f"[ADD CREDITS] Direct AFT command sent, transaction ID: {transaction_id}")
+                print(f"[ADD CREDITS] Using BLOCKING wait loop (exactly matches original Wait_ParaYukle)...")
                 
-                # Use the blocking wait that matches the original Wait_ParaYukle function
-                wait_result = sas_comm.sas_money.wait_for_para_yukle_completion_blocking(timeout=15)
+                # Use BLOCKING wait exactly like original - no async
+                wait_result = sas_comm.sas_money.wait_for_para_yukle_completion_blocking_original(timeout=30)
                 
                 if wait_result is True:
                     print(f"[ADD CREDITS] ✅ BLOCKING WAIT SUCCESS - Direct AFT transfer completed!")
