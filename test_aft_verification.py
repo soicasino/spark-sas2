@@ -181,7 +181,7 @@ def test_aft_credit_verification():
     return True
 
 if __name__ == "__main__":
-    success = test_aft_verification()
+    success = test_aft_credit_verification()
     if success:
         print("\n🎉 AFT Verification Test Completed!")
     else:
