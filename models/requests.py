@@ -15,9 +15,9 @@ class MeterType(str, Enum):
 
 
 class TransferType(str, Enum):
-    CASHABLE = "00"      # Fixed: Original code uses 0 for cashable, not 10
-    RESTRICTED = "11"    # Jackpot/restricted transfers
-    NONRESTRICTED = "00" # Same as cashable for this machine
+    CASHABLE = "00"      # Fixed: Original code uses "00" for cashable transfers
+    RESTRICTED = "10"    # Jackpot/restricted transfers 
+    NONRESTRICTED = "11" # Promotional/non-restricted transfers
 
 
 class MeterRequest(BaseModel):

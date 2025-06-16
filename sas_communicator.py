@@ -791,8 +791,10 @@ class SASCommunicator:
                 
                 # Specific exceptions like working code
                 if tdata == "01FF69DB5B":
-                    # AFT completion is handled by _handle_aft_completion() - don't duplicate
-                    print("AFT Transfer completion detected (handled by dedicated handler)")
+                    # CRITICAL FIX: Handle AFT completion HERE, not in a separate function
+                    # This prevents duplicate processing that was causing conflicts
+                    print("AFT Transfer completion detected - processing...")
+                    self._handle_aft_completion(tdata)
                 elif tdata.startswith("01FF7E"):
                     print("Game started")
                 elif tdata.startswith("01FF7F"):

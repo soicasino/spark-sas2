@@ -86,7 +86,12 @@ class SasMoney:
                     self.is_waiting_for_para_yukle = 0
                     print(f"[AFT WAIT] FAILED after {elapsed:.2f}s with status: {status}")
                     return False
-                elif status in ("40", "C0", "C1", "C2"):  # Pending/in-progress codes - keep waiting
+                elif status == "C0":  # Transfer acknowledged - reset to PENDING and continue waiting
+                    print(f"[AFT WAIT] Status C0: Transfer acknowledged, resetting to PENDING to wait for completion...")
+                    # CRITICAL FIX: Reset status to PENDING when we get C0, just like original working code
+                    self.global_para_yukleme_transfer_status = "PENDING"
+                    print(f"[AFT WAIT] Status reset to PENDING, continuing to wait for final result...")
+                elif status in ("40", "C1", "C2"):  # Other pending/in-progress codes - keep waiting
                     print(f"[AFT WAIT] Transfer {self.get_transfer_status_description(status).lower()}, continuing to wait...")
                     pass
                 else:
@@ -656,7 +661,7 @@ class SasMoney:
             self.is_waiting_for_bakiye_sorgulama = False
             raise
 
-    def komut_para_yukle(self, doincreasetransactionid=1, transfertype=10, customerbalance=0.0, customerpromo=0.0, 
+    def komut_para_yukle(self, doincreasetransactionid=1, transfertype=0, customerbalance=0.0, customerpromo=0.0, 
                          assetnumber=None, registrationkey=None, transactionid=None):
         """
         FINAL CORRECTED AFT Transfer Command - Using the exact original working command structure.
@@ -711,13 +716,14 @@ class SasMoney:
             if transfertype == 1:  # bill acceptor
                 transfertype = 0
             
-            # Build transfer type field - EXACT copy from original
+            # Build transfer type field - CRITICAL FIX for cashable transfers
+            # Original working code: transfertype=0 → Command "00" for cashable
             if RealTransferType == 10:
-                Command += "10"   # Transfer Type 10
+                Command += "10"   # Transfer Type 10 (jackpot)
             elif RealTransferType == 11:
-                Command += "11"   # Transfer Type 11
+                Command += "11"   # Transfer Type 11 (nonrestricted)
             else:
-                Command += "00"   # Transfer Type 00 (DEFAULT!)
+                Command += "00"   # Transfer Type 00 (CASHABLE - DEFAULT!)
             
             # Amount handling - EXACT copy from original  
             customerbalanceint = int(customerbalance * 100)
@@ -1425,12 +1431,21 @@ class SasMoney:
             
             print(f"[MONEY LOAD RESPONSE] Transfer Status: {transfer_status}")
             
-            # CRITICAL: Direct status update (no complex parsing) - matches original exactly
-            # In original: Global_ParaYukleme_TransferStatus = transfer_status_code
+            # CRITICAL: Handle status "C0" (Transfer acknowledged/pending) properly
+            # Status "C0" means machine acknowledged transfer but it's still processing
+            # We should update status but NOT exit the wait loop yet
             old_status = self.global_para_yukleme_transfer_status
-            self.global_para_yukleme_transfer_status = transfer_status
             
-            print(f"[MONEY LOAD RESPONSE] Status updated: {old_status} → {transfer_status}")
+            if transfer_status == "C0":
+                print(f"[MONEY LOAD RESPONSE] Status C0: Transfer acknowledged, continuing to wait for completion...")
+                # Update status but keep waiting - this matches original behavior
+                self.global_para_yukleme_transfer_status = transfer_status
+                print(f"[MONEY LOAD RESPONSE] Status updated: {old_status} → {transfer_status} (STILL WAITING)")
+            else:
+                # For all other statuses, update normally
+                self.global_para_yukleme_transfer_status = transfer_status
+                print(f"[MONEY LOAD RESPONSE] Status updated: {old_status} → {transfer_status}")
+            
             print(f"[MONEY LOAD RESPONSE] Status Description: {self.get_transfer_status_description(transfer_status)}")
             
             # DON'T clear waiting flag here - let wait loop handle it (CRITICAL FIX)
