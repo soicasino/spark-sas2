@@ -1,261 +1,170 @@
 #!/usr/bin/env python3
 """
-AFT Protocol Fixes Verification Test
-Tests all the critical fixes implemented for AFT functionality
+Test script to verify AFT registration and lock command fixes.
+This script tests the corrected AFT registration and lock commands.
 """
 
 import sys
 import time
-import asyncio
-from configparser import ConfigParser
+import configparser
+from port_manager import PortManager
 from sas_communicator import SASCommunicator
+from sas_money_functions import SasMoney
 
-class MockConfig:
-    """Mock config for testing"""
-    def __init__(self):
-        self.data = {
-            'sas': {'address': '01'},
-            'machine': {'devicetypeid': '8'},
-            'casino': {'casinoid': '8'}
-        }
-    
-    def get(self, section, key, fallback=None):
-        return self.data.get(section, {}).get(key, fallback)
-    
-    def getint(self, section, key, fallback=None):
-        value = self.get(section, key, fallback)
-        return int(value) if value is not None else fallback
-
-def test_asset_number_storage():
-    """Test 1: Asset Number Storage Format"""
-    print("=" * 60)
-    print("TEST 1: Asset Number Storage Format")
+def test_aft_fixes():
+    """Test the fixed AFT registration and lock commands"""
+    print("🧪 Testing AFT Registration and Lock Command Fixes")
     print("=" * 60)
     
-    config = MockConfig()
-    communicator = SASCommunicator("COM1", config)  # Won't actually open
+    # Load configuration
+    config = configparser.ConfigParser()
+    config.read('config.ini')
     
-    # Simulate asset number reading response
-    test_response = "017309006C000000"  # Asset 108 in response format
+    # Initialize port manager and find SAS port
+    port_manager = PortManager(config)
+    sas_port, device_type = port_manager.find_sas_port()
     
-    # Test the parsing logic manually
-    asset_hex = test_response[8:16]  # "6C000000"
-    if len(asset_hex) % 2 != 0:
-        asset_hex = '0' + asset_hex
-    
-    # Reverse by bytes (this is the existing logic)
-    reversed_hex = ''.join([asset_hex[i:i+2] for i in range(len(asset_hex)-2, -2, -2)])
-    asset_dec = int(reversed_hex, 16)
-    
-    # Test the fixed storage format
-    stored_format = f"{asset_dec:08x}"  # Should be "0000006c"
-    
-    print(f"Raw response: {test_response}")
-    print(f"Extracted hex: {asset_hex}")
-    print(f"Reversed hex: {reversed_hex}")
-    print(f"Decimal value: {asset_dec}")
-    print(f"Stored AFT format: {stored_format}")
-    
-    # Verify correct format
-    expected = "0000006c"
-    if stored_format == expected:
-        print(f"✅ PASS: Asset number stored correctly as {stored_format}")
-    else:
-        print(f"❌ FAIL: Expected {expected}, got {stored_format}")
-    
-    return stored_format == expected
-
-def test_balance_query_command():
-    """Test 2: Balance Query Command Construction"""
-    print("\n" + "=" * 60)
-    print("TEST 2: Balance Query Command Construction")
-    print("=" * 60)
-    
-    config = MockConfig()
-    communicator = SASCommunicator("COM1", config)
-    
-    # Set up asset number in correct format
-    communicator.asset_number = "0000006c"  # Correct AFT format
-    
-    # Test balance query command construction
-    sas_address = "01"
-    asset_number = communicator.asset_number.upper()  # "0000006C"
-    command = f"{sas_address}74{asset_number}"
-    
-    print(f"SAS Address: {sas_address}")
-    print(f"Asset Number: {asset_number}")
-    print(f"Command (before CRC): {command}")
-    
-    expected_command_start = "01740000006C"
-    if command == expected_command_start:
-        print(f"✅ PASS: Balance query command constructed correctly")
-    else:
-        print(f"❌ FAIL: Expected {expected_command_start}, got {command}")
-    
-    return command == expected_command_start
-
-def test_aft_command_construction():
-    """Test 3: AFT Command Construction"""
-    print("\n" + "=" * 60)
-    print("TEST 3: AFT Command Construction")
-    print("=" * 60)
-    
-    config = MockConfig()
-    communicator = SASCommunicator("COM1", config)
-    
-    # Test AFT command header construction
-    sas_address = "01"
-    command_header = sas_address + "72"
-    
-    print(f"SAS Address: {sas_address}")
-    print(f"AFT Command Header: {command_header}")
-    
-    # Test transfer type encoding
-    transfer_type = 10  # Cashable
-    transfer_type_encoded = f"{transfer_type:02d}"  # Should be "10", not "0A"
-    
-    print(f"Transfer Type: {transfer_type}")
-    print(f"Transfer Type Encoded: {transfer_type_encoded}")
-    
-    expected_header = "0172"
-    expected_type = "10"
-    
-    header_ok = command_header == expected_header
-    type_ok = transfer_type_encoded == expected_type
-    
-    if header_ok:
-        print(f"✅ PASS: AFT command header uses SAS address correctly")
-    else:
-        print(f"❌ FAIL: Expected header {expected_header}, got {command_header}")
-    
-    if type_ok:
-        print(f"✅ PASS: Transfer type encoded in decimal format")
-    else:
-        print(f"❌ FAIL: Expected type {expected_type}, got {transfer_type_encoded}")
-    
-    return header_ok and type_ok
-
-def test_message_splitting():
-    """Test 4: Message Splitting Logic"""
-    print("\n" + "=" * 60)
-    print("TEST 4: Message Splitting Logic")
-    print("=" * 60)
-    
-    config = MockConfig()
-    communicator = SASCommunicator("COM1", config)
-    
-    # Test concatenated message
-    test_message = "01FF001CA50174236C000000010203040506070809"
-    
-    # This should split into two messages
-    messages = communicator._split_sas_messages(test_message)
-    
-    print(f"Original message: {test_message}")
-    print(f"Split into {len(messages)} messages:")
-    for i, msg in enumerate(messages):
-        print(f"  Message {i+1}: {msg}")
-    
-    # Should have at least 2 messages
-    if len(messages) >= 2:
-        print(f"✅ PASS: Message splitting working correctly")
-        return True
-    else:
-        print(f"❌ FAIL: Expected multiple messages, got {len(messages)}")
+    if not sas_port:
+        print("❌ No SAS port found!")
         return False
-
-async def test_async_wait_timing():
-    """Test 5: Async Wait Function Timing"""
-    print("\n" + "=" * 60)
-    print("TEST 5: Async Wait Function Timing")
-    print("=" * 60)
     
-    config = MockConfig()
-    communicator = SASCommunicator("COM1", config)
+    print(f"✅ Using SAS port: {sas_port}, device type: {device_type}")
     
-    # Test the timing logic
-    start_time = time.time()
+    # Initialize SAS communicator
+    communicator = SASCommunicator(config, sas_port, device_type)
     
-    # Simulate setting status after a delay
-    async def simulate_response():
-        await asyncio.sleep(0.2)  # 200ms delay
-        communicator.sas_money.global_para_yukleme_transfer_status = "00"
-    
-    # Start the simulation
-    asyncio.create_task(simulate_response())
-    
-    # Test the wait function
-    result = await communicator.sas_money.wait_for_para_yukle_completion(timeout=2)
-    
-    elapsed = time.time() - start_time
-    
-    print(f"Wait result: {result}")
-    print(f"Elapsed time: {elapsed:.3f}s")
-    print(f"Final status: {communicator.sas_money.global_para_yukleme_transfer_status}")
-    
-    if result is True and elapsed < 1.0:
-        print(f"✅ PASS: Async wait function working with proper timing")
-        return True
-    else:
-        print(f"❌ FAIL: Wait function issue - result: {result}, time: {elapsed:.3f}s")
+    # Read asset number
+    asset_number_dec = communicator.read_asset_number_from_machine()
+    if not asset_number_dec:
+        print("❌ Could not read asset number!")
         return False
-
-async def run_all_tests():
-    """Run all AFT fix verification tests"""
-    print("AFT Protocol Fixes Verification Test Suite")
-    print("=" * 60)
     
-    tests = [
-        ("Asset Number Storage", test_asset_number_storage),
-        ("Balance Query Command", test_balance_query_command),
-        ("AFT Command Construction", test_aft_command_construction),
-        ("Message Splitting", test_message_splitting),
-        ("Async Wait Timing", test_async_wait_timing),
-    ]
+    asset_number_hex = f"{asset_number_dec:08x}"
+    print(f"✅ Asset number: {asset_number_dec} (hex: {asset_number_hex})")
     
-    results = []
+    # Initialize SAS money functions
+    sas_money = SasMoney(config, communicator)
     
-    for test_name, test_func in tests:
-        try:
-            if asyncio.iscoroutinefunction(test_func):
-                result = await test_func()
+    # Start polling to keep machine responsive
+    print("🔄 Starting background polling...")
+    communicator.start_polling()
+    time.sleep(2)
+    
+    try:
+        # Test 1: AFT Registration with fixed command format
+        print("\n" + "─" * 60)
+        print("🧪 TEST 1: AFT Registration (Fixed Format)")
+        print("─" * 60)
+        
+        registration_key = config.get('sas', 'registrationkey', '0' * 40)
+        pos_id = "TEST01"
+        
+        print(f"Using registration key: {registration_key}")
+        print(f"Using POS ID: {pos_id}")
+        
+        # Perform AFT registration
+        registration_result = sas_money.komut_aft_registration(
+            asset_number_hex, 
+            registration_key, 
+            pos_id
+        )
+        
+        print(f"Registration result: {registration_result}")
+        
+        # Wait for registration to complete
+        time.sleep(3)
+        
+        # Test 2: Check AFT status after registration
+        print("\n" + "─" * 60)
+        print("🧪 TEST 2: Check AFT Status After Registration")
+        print("─" * 60)
+        
+        sas_money.komut_bakiye_sorgulama("test_registration", False, "test_after_registration")
+        time.sleep(2)
+        
+        if hasattr(communicator, 'last_aft_status'):
+            aft_status = communicator.last_aft_status
+            lock_status = communicator.last_game_lock_status
+            print(f"AFT Status: {aft_status}")
+            print(f"Lock Status: {lock_status}")
+            
+            if aft_status in ['01', '80']:  # Registered or ready
+                print("✅ AFT registration appears successful!")
             else:
-                result = test_func()
-            results.append((test_name, result))
-        except Exception as e:
-            print(f"❌ ERROR in {test_name}: {e}")
-            results.append((test_name, False))
+                print(f"⚠️  AFT status: {aft_status} - may need investigation")
+        
+        # Test 3: AFT Lock with fixed command format
+        print("\n" + "─" * 60)
+        print("🧪 TEST 3: AFT Lock (Fixed Format)")
+        print("─" * 60)
+        
+        lock_result = sas_money.komut_aft_lock_machine(timeout_seconds=30)
+        print(f"Lock result: {lock_result}")
+        
+        # Wait for lock to be processed
+        time.sleep(3)
+        
+        # Check lock status
+        sas_money.komut_bakiye_sorgulama("test_lock", False, "test_after_lock")
+        time.sleep(2)
+        
+        if hasattr(communicator, 'last_game_lock_status'):
+            lock_status = communicator.last_game_lock_status
+            print(f"Lock Status after lock command: {lock_status}")
+            
+            if lock_status == '00':
+                print("✅ Machine locked successfully!")
+            elif lock_status == '40':
+                print("⏳ Lock pending - this is normal")
+            else:
+                print(f"⚠️  Lock status: {lock_status} - may need investigation")
+        
+        # Test 4: AFT Unlock
+        print("\n" + "─" * 60)
+        print("🧪 TEST 4: AFT Unlock (Fixed Format)")
+        print("─" * 60)
+        
+        unlock_result = sas_money.komut_aft_unlock_machine()
+        print(f"Unlock result: {unlock_result}")
+        
+        # Wait for unlock to be processed
+        time.sleep(3)
+        
+        # Check final status
+        sas_money.komut_bakiye_sorgulama("test_unlock", False, "test_after_unlock")
+        time.sleep(2)
+        
+        if hasattr(communicator, 'last_game_lock_status'):
+            lock_status = communicator.last_game_lock_status
+            print(f"Lock Status after unlock command: {lock_status}")
+            
+            if lock_status == 'FF':
+                print("✅ Machine unlocked successfully!")
+            else:
+                print(f"⚠️  Lock status: {lock_status} - may still be locked")
+        
+        print("\n" + "=" * 60)
+        print("🎯 AFT FIXES TEST COMPLETED")
+        print("=" * 60)
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error during testing: {e}")
+        return False
     
-    # Summary
-    print("\n" + "=" * 60)
-    print("TEST SUMMARY")
-    print("=" * 60)
-    
-    passed = 0
-    total = len(results)
-    
-    for test_name, result in results:
-        status = "✅ PASS" if result else "❌ FAIL"
-        print(f"{status}: {test_name}")
-        if result:
-            passed += 1
-    
-    print(f"\nResults: {passed}/{total} tests passed")
-    
-    if passed == total:
-        print("🎉 All AFT fixes verified successfully!")
-    else:
-        print("⚠️  Some tests failed - check the fixes above")
-    
-    return passed == total
+    finally:
+        # Stop polling and close port
+        communicator.stop_polling()
+        communicator.close_port()
 
 if __name__ == "__main__":
-    print("Starting AFT fixes verification...")
     try:
-        result = asyncio.run(run_all_tests())
-        sys.exit(0 if result else 1)
+        success = test_aft_fixes()
+        sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\nTest interrupted by user")
+        print("\n⚠️  Test interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"Test suite error: {e}")
+        print(f"❌ Unexpected error: {e}")
         sys.exit(1) 

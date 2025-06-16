@@ -289,7 +289,8 @@ class SasMoney:
             # Build complete registration command
             sas_address = "01"
             command_code = "73"
-            command_body = "01" + "0000" + asset_number + registration_key + pos_id_hex
+            # FIXED: Remove extra "0000" field - correct format is: RegCode + AssetNumber + RegKey + POSID
+            command_body = "01" + asset_number + registration_key + pos_id_hex
             command_length = hex(len(command_body) // 2).replace("0x", "").upper().zfill(2)
             
             complete_command_no_crc = sas_address + command_code + command_length + command_body
@@ -1908,24 +1909,24 @@ class SasMoney:
             sas_address = getattr(self.communicator, 'sas_address', '01')
             command_code = '74'
             
-            # Command body for AFT lock request
+            # FIXED: AFT Game Lock command format (no length field needed)
+            # Format: Address + 74h + AssetNumber + LockCode + TransferCondition + LockTimeout
             command_body = asset_number  # Asset number (4 bytes)
             command_body += '00'         # Lock code: 00 = Request lock
+            command_body += '01'         # Transfer condition: 01 = AFT transfers only  
             command_body += f'{timeout_seconds:02X}'  # Lock timeout in seconds (1 byte)
-            command_body += '01'         # Transfer condition: 01 = AFT transfers only
             
-            # Calculate length and build complete command
-            command_length = hex(len(command_body) // 2).replace('0x', '').upper().zfill(2)
-            complete_command_no_crc = sas_address + command_code + command_length + command_body
+            # Build complete command (no length field for 74h command)
+            complete_command_no_crc = sas_address + command_code + command_body
             complete_command = get_crc(complete_command_no_crc)
             
             print(f"[AFT LOCK] Sending AFT lock command: {complete_command}")
             print(f"[AFT LOCK] Command breakdown:")
-            print(f"  Header: {sas_address}{command_code}{command_length}")
+            print(f"  Header: {sas_address}{command_code}")
             print(f"  Asset Number: {asset_number}")
             print(f"  Lock Code: 00 (request lock)")
-            print(f"  Timeout: {timeout_seconds}s")
             print(f"  Transfer Condition: 01 (AFT only)")
+            print(f"  Timeout: {timeout_seconds}s")
             
             # Send the lock command
             result = self.communicator.sas_send_command_with_queue("AFTLock", complete_command, 1)
@@ -1985,22 +1986,24 @@ class SasMoney:
             sas_address = getattr(self.communicator, 'sas_address', '01')
             command_code = '74'
             
-            # Command body for AFT unlock request
+            # FIXED: AFT Game Lock command format (no length field needed)
+            # Format: Address + 74h + AssetNumber + LockCode + TransferCondition + LockTimeout
             command_body = asset_number  # Asset number (4 bytes)
             command_body += 'FF'         # Lock code: FF = Request unlock/status only
-            command_body += '00'         # Lock timeout (ignored for unlock)
             command_body += '00'         # Transfer condition (ignored for unlock)
+            command_body += '00'         # Lock timeout (ignored for unlock)
             
-            # Calculate length and build complete command
-            command_length = hex(len(command_body) // 2).replace('0x', '').upper().zfill(2)
-            complete_command_no_crc = sas_address + command_code + command_length + command_body
+            # Build complete command (no length field for 74h command)
+            complete_command_no_crc = sas_address + command_code + command_body
             complete_command = get_crc(complete_command_no_crc)
             
             print(f"[AFT UNLOCK] Sending AFT unlock command: {complete_command}")
             print(f"[AFT UNLOCK] Command breakdown:")
-            print(f"  Header: {sas_address}{command_code}{command_length}")
+            print(f"  Header: {sas_address}{command_code}")
             print(f"  Asset Number: {asset_number}")
             print(f"  Lock Code: FF (request unlock)")
+            print(f"  Transfer Condition: 00")
+            print(f"  Timeout: 00")
             
             # Send the unlock command
             result = self.communicator.sas_send_command_with_queue("AFTUnlock", complete_command, 1)
