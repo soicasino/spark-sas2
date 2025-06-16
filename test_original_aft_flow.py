@@ -388,7 +388,7 @@ class OriginalAFTFlowTest:
             print(f"🔧 [AFT REGISTRATION] Starting asset registration...")
             
             # Build registration command using actual asset number
-            Command = "015A17"  # Address + Command + Length
+            Command = f"{self.sas_address}5A17"  # Address + Command + Length
             Command += self.asset_number_le  # Asset number (little-endian format)
             Command += self.registration_key  # Registration key
             Command += "504F5330303100"  # POS ID "POS001" + null terminator
@@ -498,7 +498,7 @@ class OriginalAFTFlowTest:
             
             # Build command header with actual length
             actual_length = len(Command) // 2
-            CommandHeader = f"0172{actual_length:02X}"
+            CommandHeader = f"{self.sas_address}72{actual_length:02X}"
             
             # Build final command
             full_command = CommandHeader + Command
@@ -646,7 +646,7 @@ class OriginalAFTFlowTest:
             print(f"💳 [BALANCE QUERY] Sending balance query...")
             
             # Build balance query command using actual asset number
-            Command = f"01740F{self.asset_number_le}00000000000000000000000000000000"
+            Command = f"{self.sas_address}740F{self.asset_number_le}00000000000000000000000000000000"
             
             # Calculate and add CRC
             full_command = self.get_crc(Command)
