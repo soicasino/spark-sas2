@@ -100,7 +100,7 @@ async def clear_reservation():
             print(f"🏭 Current AFT Status: {aft_status}")
             
             if lock_status == "FF":
-                print("⚠️  DIAGNOSIS: Machine shows all locks active (likely reserved)")
+                print("✅ DIAGNOSIS: Machine shows FF (not locked - normal operation)")
                 print("💡 SOLUTION: Attempting to clear reservation...")
             elif lock_status == "00":
                 print("✅ Machine appears to be unlocked already")

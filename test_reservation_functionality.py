@@ -72,7 +72,7 @@ def print_status_analysis(status_data, title="Machine Status"):
     
     # Analyze lock status for reservation
     if lock_status == "FF":
-        print(f"   🔒 ANALYSIS: All locks active (may indicate reservation or AFT lock)")
+        print(f"   ✅ ANALYSIS: Machine not locked (FF = normal operation, not reserved)")
     elif lock_status == "00":
         print(f"   ✅ ANALYSIS: Machine unlocked and available")
     else:

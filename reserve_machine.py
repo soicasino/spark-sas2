@@ -149,7 +149,7 @@ async def reserve_machine():
             
             # Analyze results
             if reserved_lock_status == "FF":
-                print("✅ SUCCESS: Machine appears to be reserved (all locks active)")
+                print("❌ UNEXPECTED: Machine shows FF (not locked) - reservation may have failed")
                 print("🎯 RESULT: Machine should now reject AFT transfers from other systems")
             elif reserved_lock_status != "00":
                 print(f"⚠️  PARTIAL: Machine shows some locks ({reserved_lock_status}) - may be partially reserved")

@@ -1855,40 +1855,33 @@ class SasMoney:
 
     def decode_lock_status(self, lock_status_hex):
         """
-        Decode the game lock status to understand specific lock types.
-        Lock Status FF = 11111111 binary (all locks active)
+        Decode the game lock status according to SAS protocol specification.
+        
+        CORRECT SAS Protocol Game Lock Status Values:
+        - FF = NOT LOCKED (machine available for normal operation)
+        - 00 = LOCKED (machine locked for AFT transfers)  
+        - 40 = LOCK PENDING (lock request pending)
+        
+        This is NOT a bit field - it's a specific status code!
         """
         try:
-            status_int = int(lock_status_hex, 16)
-            print(f"[LOCK STATUS DECODE] Lock Status: {lock_status_hex} = {status_int} = {bin(status_int)}")
+            status_hex = lock_status_hex.upper()
+            print(f"[LOCK STATUS DECODE] Game Lock Status: {status_hex}")
             
-            # Decode individual lock bits (based on SAS lock status specification)
-            lock_meanings = {
-                0: "Machine disabled",
-                1: "Progressive lockup",
-                2: "Machine tilt",
-                3: "Cash door open",
-                4: "Logic door open", 
-                5: "Bill acceptor door open",
-                6: "Memory error",
-                7: "Gaming locked"
-            }
-            
-            print(f"[LOCK STATUS DECODE] Lock breakdown:")
-            active_locks = []
-            for bit, meaning in lock_meanings.items():
-                bit_set = (status_int >> bit) & 1
-                status_text = "LOCKED" if bit_set else "OK"
-                print(f"[LOCK STATUS DECODE]   Bit {bit} ({meaning}): {status_text}")
-                if bit_set:
-                    active_locks.append(meaning)
-                    
-            if active_locks:
-                print(f"[LOCK STATUS DECODE] ❌ Active locks: {', '.join(active_locks)}")
+            # Decode according to SAS protocol specification (Section 8.2)
+            if status_hex == "FF":
+                print(f"[LOCK STATUS DECODE] ✅ NOT LOCKED - Machine available for normal operation")
+                return "NOT_LOCKED"
+            elif status_hex == "00":
+                print(f"[LOCK STATUS DECODE] 🔒 LOCKED - Machine locked for AFT transfers")
+                return "LOCKED"
+            elif status_hex == "40":
+                print(f"[LOCK STATUS DECODE] ⏳ LOCK PENDING - Lock request pending")
+                return "LOCK_PENDING"
             else:
-                print(f"[LOCK STATUS DECODE] ✅ All locks clear")
+                print(f"[LOCK STATUS DECODE] ⚠️  UNKNOWN STATUS: {status_hex} (not in SAS specification)")
+                return f"UNKNOWN_{status_hex}"
                 
-            return active_locks
         except Exception as e:
             print(f"[LOCK STATUS DECODE] Error decoding lock status: {e}")
             return None 
