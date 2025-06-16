@@ -71,10 +71,13 @@ async def add_credits(
             assetnumber = sas_comm.asset_number
         else:
             assetnumber = "0000006C"  # Asset number fallback (108 in decimal)
-        registrationkey = "00000000000000000000000000000000000000000000"  # Default registration key
         
         # Execute AFT credit transfer using SAS money functions
         try:
+            # Use all zeros registration key as in original working application
+            registrationkey = "00000000000000000000000000000000000000000000"
+            print(f"[ADD CREDITS] Using registration key: {registrationkey}")
+            
             # Register AFT before transfer
             print(f"[ADD CREDITS] Registering AFT before money transfer...")
             registration_result = sas_comm.sas_money.komut_aft_registration(
@@ -318,7 +321,6 @@ async def cashout_credits(
             assetnumber = sas_comm.asset_number
         else:
             assetnumber = "0000006C"  # Asset number fallback (108 in decimal)
-        registrationkey = "00000000000000000000000000000000000000000000"  # Default registration key
         
         # Execute AFT cashout using SAS money functions
         try:
@@ -503,7 +505,7 @@ async def cancel_aft_transfer(sas_service: SASWebService = Depends(get_sas_servi
         # Cancel AFT transfer using SAS money functions
         try:
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                result = sas_comm.sas_money.komut_cancel_aft_transfer()
+                result = sas_comm.sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
             else:
                 # Fallback to direct method if available
                 result = sas_comm.money_cancel_aft_transfer()

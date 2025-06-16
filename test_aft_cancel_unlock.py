@@ -137,7 +137,7 @@ def test_aft_cancel_unlock():
         print("This is the CORRECT command for AFT Game Lock unlock")
         
         start_time = time.time()
-        result = sas_money.komut_cancel_aft_transfer()
+        result = sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
         execution_time = time.time() - start_time
         
         print(f"✅ AFT Cancel Transfer executed in {execution_time:.2f} seconds")

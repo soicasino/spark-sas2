@@ -655,7 +655,7 @@ async def cancel_aft_transfer(sas_service: SASWebService = Depends(get_sas_servi
         sas_comm = sas_service.slot_machine_app.sas_comm
         
         if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-            result = sas_comm.sas_money.komut_cancel_aft_transfer()
+            result = sas_comm.sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
             
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             
