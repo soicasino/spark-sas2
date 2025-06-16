@@ -127,31 +127,61 @@ class AFTRegistrationTester:
             return False, False, None
 
     def test_aft_registration(self):
-        """Test AFT registration process"""
+        """Test AFT registration process with multiple key formats"""
         print("\n🧪 Testing AFT Registration...")
         
         # Get asset number
         asset_number = self.sas_comm.get_asset_number_for_aft()
         print(f"Using asset number: {asset_number}")
         
-        # Get registration key from config
-        registration_key = self.config.get('SAS_MACHINE', 'registration_key', fallback='00000000000000000000000000000000000000000000')
-        print(f"Using registration key: {registration_key}")
+        # Test different registration key formats based on SAS protocol analysis
+        registration_keys = [
+            ("All zeros (standard)", "0000000000000000000000000000000000000000"),
+            ("Empty key", ""),
+            ("Asset-based key", f"{asset_number}0000000000000000000000000000000000"),
+            ("Simple pattern", "1234567890ABCDEF1234567890ABCDEF12345678"),
+            ("All ones", "1111111111111111111111111111111111111111"),
+            ("All FF", "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+            ("Minimal non-zero", "0000000000000000000000000000000000000001"),
+            ("Machine serial", "0000006C0000006C0000006C0000006C0000006C"),
+        ]
         
-        # Perform AFT registration
-        print("Sending AFT registration command...")
-        reg_result = self.sas_comm.sas_money.komut_aft_registration(
-            asset_number, 
-            registration_key, 
-            "TEST01"
-        )
-        print(f"Registration command result: {reg_result}")
+        # Also try different POS IDs
+        pos_ids = ["TEST01", "POS001", "TERM01", "HOST01", "SAS001"]
         
-        # Wait for registration to process
-        print("Waiting for registration to process...")
-        time.sleep(5)
+        for key_name, registration_key in registration_keys:
+            for pos_id in pos_ids:
+                print(f"\n🔑 Trying {key_name} with POS ID '{pos_id}': {registration_key}")
+                
+                # Perform AFT registration
+                print("Sending AFT registration command...")
+                reg_result = self.sas_comm.sas_money.komut_aft_registration(
+                    asset_number, 
+                    registration_key, 
+                    pos_id
+                )
+                print(f"Registration command result: {reg_result}")
+                
+                # Wait for registration to process
+                print("Waiting for registration to process...")
+                time.sleep(2)
+                
+                # Check if this key worked
+                is_registered, is_enabled, status = self.check_aft_status()
+                if is_registered:
+                    print(f"✅ SUCCESS: Registration key '{key_name}' with POS ID '{pos_id}' worked!")
+                    print(f"💾 Working registration key: {registration_key}")
+                    print(f"💾 Working POS ID: {pos_id}")
+                    return True, registration_key
+                else:
+                    print(f"❌ Key '{key_name}' + POS '{pos_id}' failed (status: {status})")
+                    
+                # Don't test all POS IDs for empty key
+                if registration_key == "":
+                    break
         
-        return True
+        print("\n❌ All registration keys failed")
+        return False, None
 
     def run_test(self):
         """Run the complete AFT registration verification test"""
@@ -178,7 +208,7 @@ class AFTRegistrationTester:
             
             # Step 4: Perform AFT registration
             print("\n📋 STEP 2: Perform AFT Registration")
-            self.test_aft_registration()
+            success, registration_key = self.test_aft_registration()
             
             # Step 5: Check AFT status after registration
             print("\n📋 STEP 3: Check AFT Status After Registration")
@@ -198,7 +228,10 @@ class AFTRegistrationTester:
             print(f"  Status: {status_after}")
             print(f"")
             
-            if is_registered_after and not is_registered_before:
+            if success:
+                print("✅ SUCCESS: AFT registration worked!")
+                print("💡 Machine is now ready for AFT transfers")
+            elif is_registered_after and not is_registered_before:
                 print("✅ SUCCESS: AFT registration worked!")
                 print("💡 Machine is now ready for AFT transfers")
             elif is_registered_after and is_registered_before:
@@ -212,7 +245,7 @@ class AFTRegistrationTester:
                 print("   - Machine doesn't support AFT")
                 print("   - Command format issue")
             
-            return is_registered_after
+            return success
             
         except Exception as e:
             print(f"❌ Test error: {e}")

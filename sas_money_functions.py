@@ -299,13 +299,23 @@ class SasMoney:
             # Build complete registration command
             sas_address = "01"
             command_code = "73"
-            # FIXED: Use BCD encoding for asset number and POS ID
-            command_body = "01" + asset_bcd + registration_key + pos_id_bcd
+            # CRITICAL FIX: Registration code should be "00" for normal registration, not "01"
+            # Format: RegCode + AssetNumber + RegKey + POSID (all BCD encoded)
+            registration_code = "00"  # 00 = Normal registration (not 01)
+            command_body = registration_code + asset_bcd + registration_key + pos_id_bcd
             command_length = hex(len(command_body) // 2).replace("0x", "").upper().zfill(2)
             
             complete_command_no_crc = sas_address + command_code + command_length + command_body
             complete_command = self._get_crc_original(complete_command_no_crc)
             
+            print(f"[AFT REGISTRATION] Command structure breakdown:")
+            print(f"[AFT REGISTRATION]   SAS Address: {sas_address}")
+            print(f"[AFT REGISTRATION]   Command Code: {command_code}")
+            print(f"[AFT REGISTRATION]   Length: {command_length}")
+            print(f"[AFT REGISTRATION]   Registration Code: {registration_code}")
+            print(f"[AFT REGISTRATION]   Asset Number BCD: {asset_bcd}")
+            print(f"[AFT REGISTRATION]   Registration Key: {registration_key}")
+            print(f"[AFT REGISTRATION]   POS ID BCD: {pos_id_bcd}")
             print(f"[AFT REGISTRATION] Complete registration command: {complete_command}")
             result2 = self.communicator.sas_send_command_with_queue("AFTRegComplete", complete_command, 1)
             print(f"[AFT REGISTRATION] Complete registration result: {result2}")
