@@ -451,6 +451,7 @@ class SasMoney:
         """
         Send balance query command to the machine.
         This sends SAS command 74h to query current balance.
+        CORRECTED: Based on original working raspberryPython code format
         """
         print(f"[BALANCE QUERY] Starting balance query - sender: {sender}, isforinfo: {isforinfo}, text: {sendertext}")
         
@@ -462,21 +463,40 @@ class SasMoney:
         # Set waiting flag
         self.is_waiting_for_bakiye_sorgulama = True
         
-        # FIXED: Get asset number from communicator - use proper AFT format
-        asset_number = "0000006C"  # Default to known asset number (108 decimal)
-        if hasattr(self.communicator, 'asset_number') and self.communicator.asset_number:
-            asset_number = self.communicator.asset_number.upper()  # Use stored AFT format
-        elif hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
-            asset_number = self.communicator.asset_number_hex.upper()
-        # CRITICAL: Do NOT convert SAS address to asset number - they are different values!
-        # SAS address (01) is NOT the same as asset number (0000006C)
+        # CRITICAL FIX: SAS 74h command format from original working code
+        # The command does NOT include asset number - asset number comes back in the response!
         
-        print(f"[BALANCE QUERY] Using asset number: {asset_number}")
-        
-        # Construct SAS 74h command (AFT status inquiry)
-        # Format: Address + Command + Asset Number
+        # Build command using original working logic from raspberryPython
         sas_address = getattr(self.communicator, 'sas_address', '01')
-        command = f"{sas_address}74{asset_number}"
+        
+        # Original logic for different scenarios:
+        is_lock_needed = False
+        if isforinfo == 0:  # If balance is needed (not just for info)
+            is_lock_needed = True
+        
+        if sender == 1:  # Money loading operations
+            is_lock_needed = False
+        
+        # Base command format from original working code
+        command = f"{sas_address}7400000000"  # Unlocked query (default)
+        
+        if is_lock_needed:
+            # For operations that need locking
+            if sender == 1:  # Money loading
+                command = f"{sas_address}7400013000"  # Transfer to machine
+            elif sender == 2:  # Money withdrawal  
+                command = f"{sas_address}7400029000"  # Transfer from machine
+            else:
+                command = f"{sas_address}7400019999"  # Default transfer to machine
+        
+        # Device type specific adjustments (from original code)
+        device_type_id = getattr(self.communicator, 'device_type_id', 0)
+        if not is_lock_needed and (device_type_id == 5 or device_type_id == 9):
+            command = f"{sas_address}74FF000000"  # Special unlocked format
+        
+        print(f"[BALANCE QUERY] Command format: {command} (sender: {sender}, lock_needed: {is_lock_needed}, device_type: {device_type_id})")
+        
+        # Add CRC
         command = get_crc(command)
         
         print(f"[BALANCE QUERY] Sending command: {command}")
