@@ -72,9 +72,9 @@ class OriginalAFTFlowTest:
         print(f"   Port: /dev/ttyUSB0")
     
     def connect_serial(self):
-        """Connect to SAS serial port /dev/ttyUSB0"""
+        """Connect to SAS serial port /dev/ttyUSB1"""
         try:
-            port_name = "/dev/ttyUSB0"
+            port_name = "/dev/ttyUSB1"
             
             self.serial_port = serial.Serial(
                 port=port_name,
@@ -103,23 +103,47 @@ class OriginalAFTFlowTest:
             return False
     
     def _test_machine_connectivity(self):
-        """Send a simple command to test if machine responds"""
+        """Send multiple test commands to check machine connectivity"""
         try:
-            # Send a simple general poll (most basic SAS command)
-            general_poll = "0180F037"  # General poll for address 01
-            print(f"🔍 [CONNECT] Sending general poll: {general_poll}")
+            print(f"🔍 [CONNECT] === CONNECTIVITY DIAGNOSTICS ===")
             
-            if self.serial_port:
-                command_bytes = bytes.fromhex(general_poll)
-                self.serial_port.write(command_bytes)
-                self.serial_port.flush()
-                
-                # Wait briefly for response
-                time.sleep(0.5)
-                print(f"🔍 [CONNECT] General poll sent - check for any response above")
+            if not self.serial_port:
+                print(f"❌ [CONNECT] No serial port available")
+                return
+            
+            # Test 1: General poll for address 01
+            general_poll = "0180F037"  # General poll for address 01
+            print(f"🔍 [CONNECT] Test 1: General poll (addr 01): {general_poll}")
+            command_bytes = bytes.fromhex(general_poll)
+            self.serial_port.write(command_bytes)
+            self.serial_port.flush()
+            time.sleep(0.3)
+            
+            # Test 2: Try address 00 (broadcast)
+            general_poll_00 = "0080B037"  # General poll for address 00
+            print(f"🔍 [CONNECT] Test 2: General poll (addr 00): {general_poll_00}")
+            command_bytes = bytes.fromhex(general_poll_00)
+            self.serial_port.write(command_bytes)
+            self.serial_port.flush()
+            time.sleep(0.3)
+            
+            # Test 3: Simple enable command
+            enable_cmd = "018022C3"  # Enable gaming machine command
+            print(f"🔍 [CONNECT] Test 3: Enable command: {enable_cmd}")
+            command_bytes = bytes.fromhex(enable_cmd)
+            self.serial_port.write(command_bytes)
+            self.serial_port.flush()
+            time.sleep(0.3)
+            
+            print(f"🔍 [CONNECT] All test commands sent. If no data received above, machine may be:")
+            print(f"🔍 [CONNECT] - Not powered on")
+            print(f"🔍 [CONNECT] - Not in SAS mode") 
+            print(f"🔍 [CONNECT] - Using different SAS address")
+            print(f"🔍 [CONNECT] - Using different baud rate")
+            print(f"🔍 [CONNECT] - Serial cable disconnected")
             
         except Exception as e:
-            print(f"🔍 [CONNECT] Error in connectivity test: {e}")
+            print(f"❌ [CONNECT] Error in connectivity test: {e}")
     
     def _serial_reader(self):
         """Background thread to read SAS responses with enhanced debugging"""
@@ -132,8 +156,7 @@ class OriginalAFTFlowTest:
                     hex_data = data.hex().upper()
                     buffer += hex_data
                     
-                    print(f"🔍 [SERIAL] Received raw data: {hex_data}")
-                    print(f"🔍 [SERIAL] Current buffer: {buffer}")
+                    print(f"🔍 [SERIAL] <<<< RECEIVED DATA: {hex_data}")
                     
                     # Process complete messages
                     while len(buffer) >= 6:  # Minimum message length
@@ -174,8 +197,8 @@ class OriginalAFTFlowTest:
                     else:
                         self._debug_counter = 0
                     
-                    if self._debug_counter % 1000 == 0:  # Every ~1 second
-                        print(f"🔍 [SERIAL] Listening for SAS responses... (no data)")
+                    if self._debug_counter % 5000 == 0:  # Every ~5 seconds  
+                        print(f"🔍 [SERIAL] Listening for SAS responses... (no data received)")
                 
                 time.sleep(0.001)  # 1ms delay
                 
@@ -743,6 +766,10 @@ class OriginalAFTFlowTest:
         print(f"\n--- STEP 1: Connect to SAS ---")
         if not self.connect_serial():
             return False
+        
+        # Give time for connection to stabilize and see connectivity test
+        print(f"⏱️  Waiting 2 seconds for connection to stabilize...")
+        time.sleep(2)
         
         # Step 2: AFT Registration with response check
         print(f"\n--- STEP 2: AFT Registration ---")
