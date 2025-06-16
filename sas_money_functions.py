@@ -344,10 +344,21 @@ class SasMoney:
             pos_id_bcd = ''.join('{:02x}'.format(ord(c)) for c in pos_id_padded)
             print(f"[AFT REGISTRATION] POS ID BCD: {pos_id_bcd}")
             
-            # CRITICAL FIX: Asset number should be used as-is in hex format, NOT converted to BCD!
-            # The machine expects the asset number in little-endian hex format, not BCD
-            asset_bcd = asset_number.upper().zfill(8)  # Just ensure 8 characters, don't convert to BCD
-            print(f"[AFT REGISTRATION] Asset Number (hex): {asset_bcd}")
+            # CRITICAL FIX: Asset number must be in LITTLE-ENDIAN format as received from machine!
+            # Machine returns "6C000000" but we need to send it back in the same format
+            # Convert from big-endian "0000006C" to little-endian "6C000000"
+            if len(asset_number) == 8:
+                # Convert from big-endian to little-endian byte order
+                asset_le = ""
+                for i in range(6, -2, -2):  # Process bytes in reverse: 6,4,2,0
+                    asset_le += asset_number[i:i+2]
+                asset_bcd = asset_le.upper()
+            else:
+                asset_bcd = asset_number.upper().zfill(8)
+            
+            print(f"[AFT REGISTRATION] Asset Number (little-endian): {asset_bcd}")
+            print(f"[AFT REGISTRATION] Original asset number: {asset_number}")
+            print(f"[AFT REGISTRATION] Converted for registration: {asset_bcd}")
             
             # Registration key is already in correct format (20 bytes hex = 40 chars)
             print(f"[AFT REGISTRATION] Registration Key: {registration_key}")
@@ -553,7 +564,19 @@ class SasMoney:
             CommandBody += "0000000000"  # Non-restricted amount (5 bytes)
             
             CommandBody += "07"  # Transfer Flags (07 for hard cashout mode)
-            CommandBody += assetnumber.zfill(8) # Asset number (4 bytes)
+            
+            # CRITICAL FIX: Asset number must be in little-endian format for AFT transfers!
+            # Convert from big-endian "0000006C" to little-endian "6C000000"
+            if len(assetnumber) == 8:
+                # Convert from big-endian to little-endian byte order
+                asset_le = ""
+                for i in range(6, -2, -2):  # Process bytes in reverse: 6,4,2,0
+                    asset_le += assetnumber[i:i+2]
+                CommandBody += asset_le.upper()  # Asset number in little-endian format
+            else:
+                CommandBody += assetnumber.zfill(8)  # Fallback
+            print(f"[AFT TRANSFER] Asset number converted: {assetnumber} -> {asset_le.upper() if len(assetnumber) == 8 else assetnumber}")
+            
             CommandBody += registrationkey.zfill(40) # Registration key (20 bytes)
 
             # *** FINAL FIX #2: Use HEX formatting for transaction ID length ***
