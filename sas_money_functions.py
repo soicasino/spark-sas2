@@ -282,15 +282,25 @@ class SasMoney:
             # Step 2: Complete registration with asset number and POS ID
             print("[AFT REGISTRATION] Step 2: Complete registration")
             
-            # Convert POS ID to hex
-            pos_id_hex = ''.join('{:02x}'.format(ord(c)) for c in pos_id)
-            print(f"[AFT REGISTRATION] POS ID hex: {pos_id_hex}")
+            # Convert POS ID to BCD format (4 bytes)
+            pos_id_padded = pos_id.ljust(4, '\x00')[:4]  # Pad to 4 characters
+            pos_id_bcd = ''.join('{:02x}'.format(ord(c)) for c in pos_id_padded)
+            print(f"[AFT REGISTRATION] POS ID BCD: {pos_id_bcd}")
+            
+            # Convert asset number to BCD format (4 bytes)
+            # Asset number should be in BCD format, not hex
+            asset_int = int(asset_number, 16) if isinstance(asset_number, str) else asset_number
+            asset_bcd = self._int_to_bcd(asset_int, 4)
+            print(f"[AFT REGISTRATION] Asset Number BCD: {asset_bcd}")
+            
+            # Registration key is already in correct format (20 bytes hex = 40 chars)
+            print(f"[AFT REGISTRATION] Registration Key: {registration_key}")
             
             # Build complete registration command
             sas_address = "01"
             command_code = "73"
-            # FIXED: Remove extra "0000" field - correct format is: RegCode + AssetNumber + RegKey + POSID
-            command_body = "01" + asset_number + registration_key + pos_id_hex
+            # FIXED: Use BCD encoding for asset number and POS ID
+            command_body = "01" + asset_bcd + registration_key + pos_id_bcd
             command_length = hex(len(command_body) // 2).replace("0x", "").upper().zfill(2)
             
             complete_command_no_crc = sas_address + command_code + command_length + command_body
@@ -1405,7 +1415,37 @@ class SasMoney:
             
         except Exception as e:
             print(f"[ASSET CONVERT] Error converting asset number {asset_hex}: {e}")
-            return 0 
+            return 0
+
+    def _int_to_bcd(self, value, byte_count):
+        """
+        Convert integer to BCD (Binary Coded Decimal) format.
+        
+        Args:
+            value: Integer value to convert
+            byte_count: Number of bytes for the BCD representation
+            
+        Returns:
+            Hex string representation of BCD value
+        """
+        try:
+            # Convert to BCD format (each decimal digit becomes 4 bits)
+            bcd_str = f"{value:0{byte_count * 2}d}"  # Pad with zeros
+            
+            # Convert each pair of digits to hex
+            bcd_hex = ""
+            for i in range(0, len(bcd_str), 2):
+                digit_pair = bcd_str[i:i+2]
+                if len(digit_pair) == 1:
+                    digit_pair = "0" + digit_pair
+                bcd_hex += f"{int(digit_pair):02X}"
+            
+            print(f"[BCD CONVERT] {value} -> {bcd_str} -> {bcd_hex}")
+            return bcd_hex
+            
+        except Exception as e:
+            print(f"[BCD CONVERT] Error converting {value} to BCD: {e}")
+            return "00" * byte_count 
 
     def komut_unlock_machine(self):
         """
