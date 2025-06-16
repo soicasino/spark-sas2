@@ -694,54 +694,81 @@ class SasMoney:
             customerbalance_cents = int(customerbalance * 100)
             customerpromo_cents = int(customerpromo * 100)
 
-            # Step 6: Build command body with correct formatting
-            CommandBody = ""
-            CommandBody += "00"  # Transfer Code
-            CommandBody += "00"  # Transfer Index
+            # EXACT COPY of original Komut_ParaYukle command building logic
+            # Start with empty command exactly like original
+            Command = ""
+            Command += "00"   # Transfer Code    00
+            Command += "00"   # Transfer Index   00
             
-            # *** FINAL FIX #1: Use HEX formatting for transfer type ***
-            CommandBody += f"{transfertype:02X}" # e.g., 10 becomes "0A"
+            # Transfer type logic - EXACT copy from original
+            RealTransferType = 0
+            if transfertype == 11 or transfertype == 10:
+                RealTransferType = transfertype
             
-            CommandBody += self._add_left_bcd_original(customerbalance_cents, 5)
-            CommandBody += self._add_left_bcd_original(customerpromo_cents, 5)
-            CommandBody += "0000000000"  # Non-restricted amount (5 bytes)
+            if transfertype == 13:
+                RealTransferType = 10  # bonus handling
+                
+            if transfertype == 1:  # bill acceptor
+                transfertype = 0
             
-            CommandBody += "07"  # Transfer Flags (07 for hard cashout mode)
-            
-            # CRITICAL FIX: Asset number must be sent in the EXACT format as received from machine!
-            # Machine returns "6C000000" (little-endian) and expects it back in the same format
-            # Use original asset number format from machine, not converted format
-            if hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
-                asset_for_transfer = self.communicator.asset_number_hex.upper()
-                print(f"[AFT TRANSFER] Using original asset number from machine: {asset_for_transfer}")
+            # Build transfer type field - EXACT copy from original
+            if RealTransferType == 10:
+                Command += "10"   # Transfer Type 10
+            elif RealTransferType == 11:
+                Command += "11"   # Transfer Type 11
             else:
-                # Fallback: if assetnumber is the converted format "0000006C", convert back to machine format
-                if assetnumber == "0000006C":
-                    asset_for_transfer = "6C000000"  # Machine's little-endian format
-                    print(f"[AFT TRANSFER] Converted back to machine format: {asset_for_transfer}")
-                else:
-                    asset_for_transfer = assetnumber.upper()
-                    print(f"[AFT TRANSFER] Using asset number as-is: {asset_for_transfer}")
+                Command += "00"   # Transfer Type 00 (DEFAULT!)
             
-            CommandBody += asset_for_transfer
-            print(f"[AFT TRANSFER] Asset number for transfer: {asset_for_transfer}")
+            # Amount handling - EXACT copy from original  
+            customerbalanceint = int(customerbalance * 100)
+            customerpromoInt = int(customerpromo * 100)
             
-            CommandBody += registrationkey.zfill(40) # Registration key (20 bytes)
-
-            # *** FINAL FIX #2: Use HEX formatting for transaction ID length ***
-            transaction_id_hex = ''.join(f"{ord(c):02x}" for c in transactionid)
-            CommandBody += f"{len(transactionid):02X}" # e.g., length 10 becomes "0A"
-            CommandBody += transaction_id_hex
+            if transfertype == 13:
+                # Bonus handling - exact copy from original
+                Command += self._add_left_bcd_original(customerbalanceint, 5)   # Cashable amount (BCD)
+                Command += self._add_left_bcd_original(0, 5)                    # Restricted amount (BCD)
+                Command += self._add_left_bcd_original(0, 5)                    # Nonrestricted amount (BCD)
+            else:
+                # Normal transfer - exact copy from original
+                Command += self._add_left_bcd_original(customerbalanceint, 5)       # Cashable amount (BCD)
+                Command += self._add_left_bcd_original(customerpromoInt, 5)         # Restricted amount (BCD)  
+                Command += "0000000000"                                             # Nonrestricted amount (BCD)
             
-            CommandBody += "00000000"  # Expiration Date
-            CommandBody += "0000"      # Pool ID
-            CommandBody += "00"        # Receipt Data Length
-
-            # Step 7: Build full command with header and CRC
-            command_length_hex = f"{len(CommandBody) // 2:02X}"
-            command_header = sas_address + command_code + command_length_hex
-            full_command_no_crc = command_header + CommandBody
-            final_command = self._get_crc_original(full_command_no_crc) # Use the correct CRC function
+            # Transfer flag - EXACT copy from original
+            Command += "07"  # Transfer flag (hard cashout mode)
+            
+            # Asset number - use from config exactly like original  
+            Command += assetnumber
+            
+            # Registration key - exactly like original
+            Command += registrationkey
+            
+            # Transaction ID - EXACT copy from original
+            TRANSACTIONID = "".join("{:02x}".format(ord(c)) for c in str(transactionid))
+            Command += self._add_left_bcd_original(int(len(TRANSACTIONID) / 2), 1)   # TransactionId Length
+            Command += TRANSACTIONID  # TransactionID
+            
+            # Expiration Date - exactly like original
+            Command += "00000000"  # ExpirationDate (BCD)
+            
+            # Pool ID - exactly like original
+            if transfertype == 13 or customerpromo > 0:
+                Command += "0030"      # Pool ID
+            else:
+                Command += "0000"      # Pool ID
+                
+            Command += "00"            # Receipt data length
+            # Command += ""            # Receipt Data (empty)
+            # Command += ""            # Lock Timeout (empty)
+            
+            # Build header exactly like original
+            CommandHeader = sas_address      # Address
+            CommandHeader += "72"            # Command
+            CommandHeader += hex(int(len(Command) / 2)).replace("0x", "")  # Length
+            
+            # Final command exactly like original
+            GenelKomut = "%s%s" % (CommandHeader, Command)
+            final_command = self._get_crc_original(GenelKomut)
 
             print(f"[AFT COMMAND] FINAL CORRECTED COMMAND: {final_command}")
 
@@ -756,38 +783,31 @@ class SasMoney:
             traceback.print_exc()
             return None
 
-    def _add_left_bcd_original(self, numbers, length_in_bytes):
+    def _add_left_string_original(self, text, eklenecek, kacadet):
+        """EXACT copy of AddLeftString from original working code"""
+        while kacadet > 0:
+            text = eklenecek + text
+            kacadet = kacadet - 1
+        return text
+
+    def _add_left_bcd_original(self, numbers, leng):
         """
-        EXACT implementation of AddLeftBCD from the original working code
-        to correctly format numbers into a BCD hex string.
+        EXACT COPY of AddLeftBCD from original working code - NO MODIFICATIONS!
         
-        This is CRITICAL for AFT transfers - the machine expects BCD format,
-        not standard decimal strings.
-        
-        Args:
-            numbers: Number to convert to BCD
-            length_in_bytes: Target length in bytes (will be doubled for hex chars)
-            
-        Returns:
-            BCD hex string of exact required length
+        This is the original function that works perfectly in the reference code.
         """
         numbers = int(numbers)
         retdata = str(numbers)
 
-        # Ensure even number of digits for BCD pairing
         if len(retdata) % 2 == 1:
-            retdata = "0" + retdata
+            retdata = "%s%s" % ("0", retdata)
 
-        # Calculate how many padding bytes are needed
-        current_bytes = len(retdata) // 2
-        padding_bytes_needed = length_in_bytes - current_bytes
+        countNumber = len(retdata) / 2  # 1250 -> 4
+        kalan = (leng - countNumber)    # 5-4 = 1
 
-        # Add left padding with "00" bytes
-        for _ in range(padding_bytes_needed):
-            retdata = "00" + retdata
-            
-        # Ensure final string is exactly the required length in characters (bytes * 2)
-        return retdata.zfill(length_in_bytes * 2)
+        retdata = self._add_left_string_original(retdata, "00", int(kalan))
+
+        return retdata
 
     def _get_crc_original(self, command):
         """
