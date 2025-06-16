@@ -5,9 +5,11 @@ import datetime
 import platform
 from typing import Optional
 
-# Conditionally import termios for Linux/macOS
-if platform.system() != "Windows":
+# Import termios - will only be used on non-Windows systems
+try:
     import termios
+except ImportError:
+    termios = None
 from crccheck.crc import CrcKermit
 from decimal import Decimal
 from card_reader import CardReader  # Import the CardReader class
@@ -176,6 +178,11 @@ class SASCommunicator:
                         
                 else:
                     # *CRITICAL* Linux termios logic for MARK/SPACE parity
+                    if termios is None:
+                        print("Warning: termios not available, falling back to basic send")
+                        self._send_sas_port(command_hex)
+                        return
+                        
                     saswaittime = 0.001
                     
                     iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.serial_port.fileno())
