@@ -627,15 +627,23 @@ class SASCommunicator:
             print(f"Error parsing AFT registration response: {e}")
 
     def _handle_aft_response(self, tdata):
-        """Handle AFT response"""
+        """Handle AFT response - FIXED to guarantee response handler is called"""
         try:
-            print(f"AFT response received: {tdata}")
+            print(f"[AFT RESPONSE HANDLER] ===== AFT RESPONSE RECEIVED =====")
+            print(f"[AFT RESPONSE HANDLER] Raw response: {tdata}")
+            print(f"[AFT RESPONSE HANDLER] Response length: {len(tdata)} characters")
+            print(f"[AFT RESPONSE HANDLER] ==========================================")
             
             if len(tdata) < 8:
-                print("AFT response too short")
+                print("[AFT RESPONSE HANDLER] AFT response too short")
+                # CRITICAL: Still call the handler even with short response
+                # The handler itself will validate and set error status if needed
+                if self.sas_money and hasattr(self.sas_money, 'yanit_para_yukle'):
+                    print("[AFT RESPONSE HANDLER] Calling handler with short response...")
+                    self.sas_money.yanit_para_yukle(tdata)
                 return
                 
-            # Parse AFT response structure
+            # Parse AFT response structure for logging
             # Format: Address(2) + Command(2) + Length(2) + TransactionBuffer(2) + TransferStatus(2) + ...
             address = tdata[0:2]
             command = tdata[2:4]
@@ -644,29 +652,22 @@ class SASCommunicator:
             try:
                 length = int(length_hex, 16)
             except ValueError:
-                print(f"Invalid length in AFT response: {length_hex}")
-                return
+                print(f"[AFT RESPONSE HANDLER] Invalid length in AFT response: {length_hex}")
+                length = 0
             
-            print(f"AFT Response - Address: {address}, Command: {command}, Length: {length}")
+            print(f"[AFT RESPONSE HANDLER] Parsed header:")
+            print(f"[AFT RESPONSE HANDLER]   Address: {address}")
+            print(f"[AFT RESPONSE HANDLER]   Command: {command}")
+            print(f"[AFT RESPONSE HANDLER]   Length: {length}")
             
             if len(tdata) >= 8:
                 # Extract key fields based on actual response format
                 transaction_buffer = tdata[6:8]
                 transfer_status = tdata[8:10] if len(tdata) >= 10 else "FF"
                 
-                print(f"AFT Details - TransactionBuffer: {transaction_buffer}, TransferStatus: {transfer_status}")
-                
-                # Update global transfer status in sas_money
-                if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
-                    self.sas_money.global_para_yukleme_transfer_status = transfer_status
-                    print(f"Updated transfer status to: {transfer_status}")
-                
-                # Call the money load response handler
-                print("Calling money load response handler")
-                if hasattr(self.sas_money, 'yanit_para_yukle'):
-                    self.sas_money.yanit_para_yukle(tdata)
-                else:
-                    print("Warning: yanit_para_yukle method not found in sas_money")
+                print(f"[AFT RESPONSE HANDLER] AFT Details:")
+                print(f"[AFT RESPONSE HANDLER]   Transaction Buffer: {transaction_buffer}")
+                print(f"[AFT RESPONSE HANDLER]   Transfer Status: {transfer_status}")
                 
                 # Common AFT status codes for logging
                 status_messages = {
@@ -683,13 +684,37 @@ class SASCommunicator:
                 }
                 
                 status_msg = status_messages.get(transfer_status, f"Unknown status: {transfer_status}")
-                print(f"AFT Transfer Status: {status_msg}")
+                print(f"[AFT RESPONSE HANDLER] Transfer Status: {transfer_status} - {status_msg}")
+            
+            # CRITICAL FIX: ALWAYS call the money response handler, just like original working code
+            # The original Yanit_ParaYukle was ALWAYS called for ANY 72h response
+            print("[AFT RESPONSE HANDLER] *** CALLING yanit_para_yukle (GUARANTEED) ***")
+            
+            if self.sas_money:
+                # Call the handler directly - no hasattr check needed
+                # The sas_money object is created in __init__, so yanit_para_yukle always exists
+                self.sas_money.yanit_para_yukle(tdata)
+                print("[AFT RESPONSE HANDLER] ✅ yanit_para_yukle called successfully")
+            else:
+                print("[AFT RESPONSE HANDLER] ❌ CRITICAL ERROR: sas_money object is None!")
+                # This should never happen, but handle gracefully
                 
         except Exception as e:
-            print(f"Error parsing AFT response: {e}")
-            # On error, still try to update status if possible
-            if hasattr(self.sas_money, 'global_para_yukleme_transfer_status'):
-                self.sas_money.global_para_yukleme_transfer_status = "FF"  # Error status
+            print(f"[AFT RESPONSE HANDLER] ❌ ERROR parsing AFT response: {e}")
+            print(f"[AFT RESPONSE HANDLER] Raw response: {tdata}")
+            
+            # CRITICAL: Even on error, try to call the response handler
+            # This ensures the blocking wait doesn't hang forever
+            try:
+                if self.sas_money:
+                    print("[AFT RESPONSE HANDLER] Calling yanit_para_yukle due to parse error...")
+                    self.sas_money.yanit_para_yukle(tdata)
+                    print("[AFT RESPONSE HANDLER] Emergency yanit_para_yukle call completed")
+            except Exception as handler_error:
+                print(f"[AFT RESPONSE HANDLER] ❌ Emergency handler call also failed: {handler_error}")
+            
+            import traceback
+            traceback.print_exc()
 
     def _handle_aft_completion(self, tdata):
         """Handle AFT completion message (01FF69DB5B)"""
