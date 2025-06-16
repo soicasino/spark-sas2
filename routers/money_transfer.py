@@ -906,13 +906,12 @@ async def aft_debug_status(
 
 
 @router.post("/force-unlock-aft", status_code=200)
-async def force_unlock_aft():
+async def force_unlock_aft(sas_service: SASWebService = Depends(get_sas_service)):
     """
     Attempt an aggressive, multi-step unlock to clear hard locks (like FF)
     that prevent AFT transfers from being credited. Use with caution.
     """
     try:
-        sas_service: SASWebService = app.state.sas_service
         if not sas_service:
             raise HTTPException(status_code=503, detail="SAS service not available")
 
@@ -924,5 +923,4 @@ async def force_unlock_aft():
             "data": result
         }
     except Exception as e:
-        logger.error(f"Force unlock AFT error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=f"Force unlock AFT error: {str(e)}") 
