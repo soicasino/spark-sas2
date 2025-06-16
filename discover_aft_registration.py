@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AFT Registration Discovery Tool
-This script queries the machine to discover the current AFT registration key and settings.
+This script uses the existing working SAS functions to discover the current AFT registration key.
 """
 
 import sys
@@ -12,258 +12,172 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config_manager import ConfigManager
-from port_manager import PortManager
-from sas_communicator import SASCommunicator
+from sas_money_functions import SASMoneyFunctions
 
 class AFTRegistrationDiscovery:
-    """Tool to discover current AFT registration settings"""
+    """Tool to discover current AFT registration settings using existing working functions"""
     
     def __init__(self):
         self.config = ConfigManager()
-        self.port_mgr = PortManager()
-        self.sas_comm = None
-        self.running = False
-        self.sas_poll_timer = None
+        self.sas_money = None
         
     def initialize_sas(self):
-        """Initialize SAS communication with proper polling"""
+        """Initialize SAS communication using the working SASMoneyFunctions"""
         try:
             print("🔍 AFT Registration Discovery Tool")
             print("This tool will query the machine to discover current AFT registration settings.")
+            print("Using existing working SAS functions...")
             print()
             
-            # Find and connect to SAS port
-            print("Finding SAS port...")
-            port_info = self.port_mgr.find_sas_port(self.config)
+            # Initialize SAS money functions (this handles all the complex setup)
+            self.sas_money = SASMoneyFunctions(self.config)
             
-            if not port_info:
-                print("❌ No SAS port found!")
+            if not self.sas_money:
+                print("❌ Failed to initialize SAS money functions!")
                 return False
                 
-            port_name, device_type = port_info
-            print(f"✅ Found SAS on port: {port_name}, device type: {device_type}")
-            
-            # Initialize SAS communicator
-            self.sas_comm = SASCommunicator(
-                port_name=port_name,
-                global_config=self.config
-            )
-            
-            # Start polling to keep machine responsive
-            print("Starting SAS polling...")
-            self.running = True
-            self.start_polling()
-            
-            # Wait for initial communication
-            time.sleep(2)
-            
-            print("✅ SAS communication initialized")
+            print("✅ SAS communication initialized using working functions")
             return True
             
         except Exception as e:
             print(f"❌ Error initializing SAS: {e}")
             return False
     
-    def start_polling(self):
-        """Start the SAS polling loop"""
-        if self.running and self.sas_comm:
-            try:
-                # Send general poll
-                self.sas_comm.sas_send_command_with_queue("GeneralPoll", "01800039", 0)
-                
-                # Schedule next poll
-                import threading
-                self.sas_poll_timer = threading.Timer(0.04, self.start_polling)  # 40ms
-                self.sas_poll_timer.daemon = True
-                self.sas_poll_timer.start()
-                
-            except Exception as e:
-                print(f"Polling error: {e}")
-    
-    def stop_polling(self):
-        """Stop the SAS polling loop"""
-        self.running = False
-        if self.sas_poll_timer:
-            self.sas_poll_timer.cancel()
-    
-    def query_aft_registration_status(self):
-        """Query current AFT registration status using SAS 73h FF command"""
+    def discover_registration_key_method1(self):
+        """Method 1: Try to read registration key from config files"""
         try:
-            print("\n🔍 Querying AFT Registration Status...")
+            print("\n🔍 Method 1: Checking Configuration Files...")
             
-            # Build AFT registration status query command
-            # Format: Address + Command + Length + Status Code
-            sas_address = "01"
-            command_code = "73"
-            command_length = "01"  # 1 byte for status code
-            status_code = "FF"     # FF = Query current registration status
-            
-            # Build complete command
-            command_no_crc = sas_address + command_code + command_length + status_code
-            
-            # Add CRC
-            from crccheck.crc import CrcKermit
-            data = bytearray.fromhex(command_no_crc)
-            crc_instance = CrcKermit()
-            crc_instance.process(data)
-            crc_bytes = crc_instance.finalbytes()
-            crc_hex = crc_bytes.hex().upper().zfill(4)
-            complete_command = command_no_crc + crc_hex[2:4] + crc_hex[0:2]
-            
-            print(f"Sending AFT registration query: {complete_command}")
-            
-            # Send the command
-            result = self.sas_comm.sas_send_command_with_queue("AFTRegQuery", complete_command, 1)
-            print(f"Command result: {result}")
-            
-            # Wait for response
-            time.sleep(2)
-            
-            # Check if we got a response in the SAS buffer
-            if hasattr(self.sas_comm, 'last_received_data'):
-                response = getattr(self.sas_comm, 'last_received_data', None)
-                if response:
-                    print(f"Raw response: {response}")
-                    self.parse_aft_registration_response(response)
-                else:
-                    print("⚠️  No response received")
-            else:
-                print("⚠️  No response mechanism available")
+            # Check settings.ini
+            try:
+                import configparser
+                settings_config = configparser.ConfigParser()
+                settings_config.read('settings.ini')
                 
-            return result
+                if 'DEFAULT' in settings_config and 'registrationkey' in settings_config['DEFAULT']:
+                    settings_key = settings_config['DEFAULT']['registrationkey']
+                    print(f"📄 settings.ini registration key: {settings_key}")
+                    
+                    if settings_key == "0" * 40:
+                        print("   📝 Type: All zeros (default/empty key)")
+                    else:
+                        print("   📝 Type: Custom registration key")
+                else:
+                    print("   ⚠️  No registration key found in settings.ini")
+                    
+            except Exception as e:
+                print(f"   ❌ Error reading settings.ini: {e}")
+            
+            # Check config.ini
+            try:
+                config_config = configparser.ConfigParser()
+                config_config.read('config.ini')
+                
+                if 'DEFAULT' in config_config and 'registrationkey' in config_config['DEFAULT']:
+                    config_key = config_config['DEFAULT']['registrationkey']
+                    print(f"📄 config.ini registration key: {config_key}")
+                    
+                    if config_key == "0" * 40:
+                        print("   📝 Type: All zeros (default/empty key)")
+                    else:
+                        print("   📝 Type: Custom registration key")
+                else:
+                    print("   ⚠️  No registration key found in config.ini")
+                    
+            except Exception as e:
+                print(f"   ❌ Error reading config.ini: {e}")
+                
+        except Exception as e:
+            print(f"❌ Error in method 1: {e}")
+    
+    def discover_registration_key_method2(self):
+        """Method 2: Try AFT registration with different keys to see which one works"""
+        try:
+            print("\n🔍 Method 2: Testing Registration Keys...")
+            
+            # Test keys to try
+            test_keys = [
+                ("0000000000000000000000000000000000000000", "All zeros (original working key)"),
+                ("1234567890ABCDEF1234567890ABCDEF12345678", "Test pattern from config.ini"),
+                ("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", "All F's"),
+                ("1111111111111111111111111111111111111111", "All 1's")
+            ]
+            
+            for key, description in test_keys:
+                print(f"\n🧪 Testing: {description}")
+                print(f"   Key: {key}")
+                
+                try:
+                    # Try AFT registration with this key
+                    result = self.sas_money.komut_aft_registration(
+                        asset_number="0000006C",  # Known asset number
+                        registration_key=key,
+                        pos_id="TEST01"
+                    )
+                    
+                    print(f"   Result: {result}")
+                    
+                    if result:
+                        print(f"   ✅ SUCCESS! This key works: {key}")
+                        print(f"   📝 Description: {description}")
+                        
+                        # Save successful key
+                        with open("working_registration_key.txt", "w") as f:
+                            f.write(f"Working AFT Registration Key: {key}\n")
+                            f.write(f"Description: {description}\n")
+                            f.write(f"Discovery Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                        print("   💾 Working key saved to 'working_registration_key.txt'")
+                        return key
+                    else:
+                        print(f"   ❌ Failed with this key")
+                        
+                except Exception as e:
+                    print(f"   ❌ Error testing key: {e}")
+                
+                # Wait between tests
+                time.sleep(1)
+            
+            print("\n⚠️  No working registration key found in test set")
+            return None
             
         except Exception as e:
-            print(f"❌ Error querying AFT registration: {e}")
+            print(f"❌ Error in method 2: {e}")
             return None
     
-    def parse_aft_registration_response(self, response):
-        """Parse AFT registration response to extract registration key and settings"""
+    def discover_registration_key_method3(self):
+        """Method 3: Try to clear registration and see what happens"""
         try:
-            print(f"\n📋 Parsing AFT Registration Response:")
-            print(f"Raw response: {response}")
-            print(f"Response length: {len(response)} characters")
+            print("\n🔍 Method 3: Testing Registration Clear/Reset...")
             
-            if len(response) < 6:
-                print("❌ Response too short")
-                return
+            # Try to clear AFT registration
+            print("Attempting to clear AFT registration...")
+            clear_result = self.sas_money.komut_aft_clear_registration()
+            print(f"Clear registration result: {clear_result}")
             
-            # Parse response structure
-            index = 0
-            address = response[index:index+2]
-            index += 2
-            print(f"Address: {address}")
+            # Try to cancel any pending transfers
+            print("Attempting to cancel AFT transfers...")
+            cancel_result = self.sas_money.komut_cancel_aft_transfer()
+            print(f"Cancel transfer result: {cancel_result}")
             
-            command = response[index:index+2]
-            index += 2
-            print(f"Command: {command}")
+            # Now try to register with all zeros (most common default)
+            print("Attempting registration with all-zeros key...")
+            register_result = self.sas_money.komut_aft_registration(
+                asset_number="0000006C",
+                registration_key="0000000000000000000000000000000000000000",
+                pos_id="TEST01"
+            )
+            print(f"Registration with zeros result: {register_result}")
             
-            if command.upper() != "73":
-                print(f"❌ Unexpected command: {command}, expected 73")
-                return
-            
-            length_hex = response[index:index+2]
-            index += 2
-            print(f"Length: {length_hex}")
-            
-            try:
-                length = int(length_hex, 16)
-                print(f"Parsed length: {length} bytes")
-            except ValueError:
-                print(f"❌ Invalid length: {length_hex}")
-                return
-            
-            # Check if we have enough data
-            expected_total = 6 + (length * 2)
-            if len(response) < expected_total:
-                print(f"⚠️  Incomplete response: got {len(response)}, expected {expected_total}")
-            
-            # Parse registration data
-            if length >= 1:
-                registration_status = response[index:index+2]
-                index += 2
-                print(f"Registration Status: {registration_status}")
+            if register_result:
+                print("✅ SUCCESS! All-zeros key works after clearing registration")
+                return "0000000000000000000000000000000000000000"
+            else:
+                print("❌ All-zeros key still doesn't work after clearing")
+                return None
                 
-                if registration_status == "00":
-                    print("✅ Machine is registered for AFT")
-                elif registration_status == "80":
-                    print("❌ Machine is NOT registered for AFT")
-                    return
-                else:
-                    print(f"⚠️  Unknown registration status: {registration_status}")
-            
-            if length >= 5:  # Asset number (4 bytes)
-                asset_number = response[index:index+8]
-                index += 8
-                print(f"Asset Number: {asset_number}")
-                
-                # Convert to decimal
-                try:
-                    asset_decimal = int(asset_number, 16)
-                    print(f"Asset Number (decimal): {asset_decimal}")
-                except:
-                    pass
-            
-            if length >= 25:  # Registration key (20 bytes = 40 hex chars)
-                registration_key = response[index:index+40]
-                index += 40
-                print(f"🔑 Registration Key: {registration_key}")
-                
-                # Check if it's all zeros
-                if registration_key == "0" * 40:
-                    print("   📝 Key Type: All zeros (default/empty key)")
-                else:
-                    print("   📝 Key Type: Custom registration key")
-                    
-                # Save to file for reference
-                with open("discovered_registration_key.txt", "w") as f:
-                    f.write(f"Discovered AFT Registration Key: {registration_key}\n")
-                    f.write(f"Asset Number: {asset_number}\n")
-                    f.write(f"Discovery Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                print("   💾 Registration key saved to 'discovered_registration_key.txt'")
-            
-            # Parse POS ID if available
-            remaining_length = length - 25  # Subtract status(1) + asset(4) + key(20)
-            if remaining_length > 0 and index < len(response):
-                pos_id_hex = response[index:index+(remaining_length*2)]
-                print(f"POS ID (hex): {pos_id_hex}")
-                
-                # Try to convert to ASCII
-                try:
-                    pos_id_ascii = bytes.fromhex(pos_id_hex).decode('ascii')
-                    print(f"POS ID (ASCII): {pos_id_ascii}")
-                except:
-                    print("POS ID: (not ASCII)")
-            
         except Exception as e:
-            print(f"❌ Error parsing registration response: {e}")
-    
-    def discover_registration_from_balance_query(self):
-        """Alternative method: Try to extract registration info from balance queries"""
-        try:
-            print("\n🔍 Alternative Method: Checking via Balance Query...")
-            
-            # Send balance query to see current AFT status
-            asset_number = "0000006C"  # Use known asset number
-            sas_address = "01"
-            command = f"{sas_address}74{asset_number}"
-            
-            # Add CRC
-            from crccheck.crc import CrcKermit
-            data = bytearray.fromhex(command)
-            crc_instance = CrcKermit()
-            crc_instance.process(data)
-            crc_bytes = crc_instance.finalbytes()
-            crc_hex = crc_bytes.hex().upper().zfill(4)
-            complete_command = command + crc_hex[2:4] + crc_hex[0:2]
-            
-            print(f"Sending balance query: {complete_command}")
-            result = self.sas_comm.sas_send_command_with_queue("BalanceQuery", complete_command, 1)
-            
-            time.sleep(2)
-            print("Balance query sent - check AFT status in response")
-            
-        except Exception as e:
-            print(f"❌ Error in balance query method: {e}")
+            print(f"❌ Error in method 3: {e}")
+            return None
     
     def run_discovery(self):
         """Run the complete AFT registration discovery process"""
@@ -272,39 +186,39 @@ class AFTRegistrationDiscovery:
                 return False
             
             print("\n" + "="*60)
-            print("🔍 STARTING AFT REGISTRATION DISCOVERY")
+            print("🔍 STARTING AFT REGISTRATION KEY DISCOVERY")
             print("="*60)
             
-            # Method 1: Direct AFT registration query
-            self.query_aft_registration_status()
+            # Method 1: Check config files
+            self.discover_registration_key_method1()
             
-            # Method 2: Balance query for additional info
-            self.discover_registration_from_balance_query()
+            # Method 2: Test different keys
+            working_key = self.discover_registration_key_method2()
+            
+            if working_key:
+                print(f"\n🎉 DISCOVERY SUCCESSFUL!")
+                print(f"Working registration key: {working_key}")
+            else:
+                # Method 3: Try clearing and resetting
+                working_key = self.discover_registration_key_method3()
+                
+                if working_key:
+                    print(f"\n🎉 DISCOVERY SUCCESSFUL AFTER RESET!")
+                    print(f"Working registration key: {working_key}")
+                else:
+                    print(f"\n❌ DISCOVERY FAILED")
+                    print("Could not find a working registration key.")
+                    print("The machine may need to be reset or have AFT disabled.")
             
             print("\n" + "="*60)
-            print("✅ AFT REGISTRATION DISCOVERY COMPLETE")
+            print("✅ AFT REGISTRATION KEY DISCOVERY COMPLETE")
             print("="*60)
             
-            # Keep polling for a bit to catch any delayed responses
-            print("\nWaiting for any delayed responses...")
-            time.sleep(5)
-            
-            return True
+            return working_key is not None
             
         except Exception as e:
             print(f"❌ Error in discovery process: {e}")
             return False
-        finally:
-            self.cleanup()
-    
-    def cleanup(self):
-        """Clean up resources"""
-        try:
-            self.stop_polling()
-            if self.sas_comm:
-                self.sas_comm.close()
-        except:
-            pass
 
 if __name__ == "__main__":
     discovery = AFTRegistrationDiscovery()
