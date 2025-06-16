@@ -686,7 +686,7 @@ class SASWebService:
             # Execute cancel transfer using sas_money instance method
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
                 sas_money = sas_comm.sas_money
-                result = sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+                result = sas_money.komut_cancel_aft_transfer()
             else:
                 raise Exception("SAS money functions not available")
             
@@ -751,7 +751,7 @@ class SASWebService:
             print("[MACHINE UNLOCK] Method 1: AFT Cancel Transfer (Primary Method)")
             try:
                 if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                    result1 = sas_comm.sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+                    result1 = sas_comm.sas_money.komut_cancel_aft_transfer()
                     unlock_results.append({"method": "aft_cancel_transfer", "result": result1, "priority": "PRIMARY"})
                     print(f"[MACHINE UNLOCK] AFT Cancel Transfer result: {result1}")
                 else:
@@ -1132,7 +1132,7 @@ class SASWebService:
 
             sas_money = self.slot_machine_app.sas_comm.sas_money
             print("[AFT UNLOCK] Sending AFT cancel transfer to unlock machine...")
-            sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+            sas_money.komut_cancel_aft_transfer()
             
             return {
                 "status": "success",

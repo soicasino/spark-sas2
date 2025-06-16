@@ -145,40 +145,25 @@ class SasMoney:
         }
         return status_descriptions.get(status_code, f"Unknown status: {status_code}")
 
-    def komut_cancel_aft_transfer(self, registration_key=None):
+    def komut_cancel_aft_transfer(self):
         """
-        Cancel any pending AFT transfer operation.
-        This is the CORRECT way to unlock a machine that is stuck in AFT Game Lock state.
+        Cancel any pending AFT transfer operation using the CORRECT SAS protocol command.
+        This is the proper way to unlock a machine that is stuck in AFT Game Lock state.
         
-        Args:
-            registration_key: Optional registration key for authentication. 
-                            If not provided, uses all zeros (default key).
+        Uses the original working command: 017201800BB4
+        - 01 = SAS Address
+        - 72 = AFT Transfer command  
+        - 01 = Length (1 byte)
+        - 80 = Transfer code (Cancel/Abort transfer)
+        - 0BB4 = CRC
         """
         print(f"[CANCEL AFT TRANSFER] Canceling pending AFT transfer operation")
         
-        # Use provided registration key or default to all zeros
-        if registration_key is None:
-            registration_key = "00000000000000000000000000000000000000000000"  # 40 chars, all zeros
+        # Use the ORIGINAL working command from the reference code
+        # This is the CORRECT SAS protocol format for AFT cancel
+        command = "017201800BB4"
         
-        print(f"[CANCEL AFT TRANSFER] Using registration key: {registration_key}")
-        
-        # Build AFT cancel command with registration key
-        # Command format: Address + 72 + Length + TransferCode(80) + RegistrationKey + CRC
-        sas_address = "01"
-        command_code = "72"
-        transfer_code = "80"  # Cancel/abort transfer
-        
-        # Calculate command body length (1 byte transfer code + 20 bytes registration key = 21 bytes)
-        command_body = transfer_code + registration_key
-        command_length = hex(len(command_body) // 2).replace("0x", "").upper().zfill(2)
-        
-        # Build complete command without CRC
-        command_no_crc = sas_address + command_code + command_length + command_body
-        
-        # Add CRC
-        command = self._get_crc_original(command_no_crc)
-        
-        print(f"[CANCEL AFT TRANSFER] Sending AFT cancel command with registration key: {command}")
+        print(f"[CANCEL AFT TRANSFER] Sending standard AFT cancel command: {command}")
         
         try:
             result = self.communicator.sas_send_command_with_queue("CancelAFT", command, 1)
@@ -249,9 +234,9 @@ class SasMoney:
         try:
             print("[AFT UNLOCK] Starting comprehensive AFT unlock sequence...")
             
-            # Step 1: Send AFT cancel command with registration key
-            print("[AFT UNLOCK] Sending AFT cancel command with registration key...")
-            result1 = self.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+            # Step 1: Send AFT cancel command
+            print("[AFT UNLOCK] Sending AFT cancel command...")
+            result1 = self.komut_cancel_aft_transfer()
             print(f"[AFT UNLOCK] AFT cancel result: {result1}")
             
             # Wait for response
@@ -2052,10 +2037,9 @@ class SasMoney:
                     return True
                 elif lock_status in ['00', '40']:
                     print(f"[AFT UNLOCK] ⚠️  PARTIAL: Machine still locked, may need additional unlock commands")
-                    # Try the cancel AFT transfer command as backup with registration key
+                    # Try the cancel AFT transfer command as backup
                     print(f"[AFT UNLOCK] Attempting AFT cancel as backup unlock method...")
-                    # Use all zeros registration key (default)
-                    cancel_result = self.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+                    cancel_result = self.komut_cancel_aft_transfer()
                     return cancel_result
                 else:
                     print(f"[AFT UNLOCK] ❌ FAILED: Unexpected lock status {lock_status}")
@@ -2100,7 +2084,7 @@ class SasMoney:
                 # If machine is in a problematic AFT state, try to clear it first
                 if current_aft_status in ['B0', 'C0', 'C1', 'C2']:
                     print(f"[AFT AUTO] Machine in AFT pending state, clearing first...")
-                    self.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+                    self.komut_cancel_aft_transfer()
                     time.sleep(2)
             
             # Step 2: Lock machine for AFT transfer

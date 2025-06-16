@@ -792,7 +792,7 @@ class SASCommunicator:
         return self.sas_money.komut_para_sifirla(doincreaseid, transactionid, assetnumber, registrationkey)
 
     def money_cancel_aft_transfer(self):
-        return self.sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+        return self.sas_money.komut_cancel_aft_transfer()
 
     def test_read_all_meters(self, meter_type='basic', game_id=None):
         """Send a one-time SAS command to read meters for test purposes.

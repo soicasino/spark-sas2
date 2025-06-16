@@ -505,7 +505,7 @@ async def cancel_aft_transfer(sas_service: SASWebService = Depends(get_sas_servi
         # Cancel AFT transfer using SAS money functions
         try:
             if hasattr(sas_comm, 'sas_money') and sas_comm.sas_money:
-                result = sas_comm.sas_money.komut_cancel_aft_transfer("00000000000000000000000000000000000000000000")
+                result = sas_comm.sas_money.komut_cancel_aft_transfer()
             else:
                 # Fallback to direct method if available
                 result = sas_comm.money_cancel_aft_transfer()
