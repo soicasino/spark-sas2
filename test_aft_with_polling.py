@@ -23,7 +23,7 @@ class ProductionStyleAFTTester:
         # Load configuration properly like production code
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
-        self.port_mgr = PortManager(self.config)
+        self.port_mgr = PortManager()  # PortManager doesn't take config in constructor
         self.sas_comm = None
         self.running = False
         self.sas_poll_timer = None
@@ -33,7 +33,7 @@ class ProductionStyleAFTTester:
         print("Initializing SAS communication...")
         
         # Find SAS port using production method
-        sas_port, device_type = self.port_mgr.find_sas_port()
+        sas_port, device_type = self.port_mgr.find_sas_port(self.config)
         
         if sas_port:
             print(f"Using SAS port: {sas_port}, device type: {device_type}")
