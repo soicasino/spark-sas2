@@ -494,116 +494,68 @@ class SasMoney:
     def komut_para_yukle(self, customerbalance=0.0, customerpromo=0.0, transfertype=10, 
                          assetnumber=None, registrationkey=None, transactionid=None, auto_lock=False):
         """
-        CORRECTED AFT Transfer Command - Using the exact original working command structure.
-        This version includes the proper BCD and Transaction ID formatting.
-        
-        CRITICAL FIXES APPLIED:
-        1. Uses _add_left_bcd_original for proper BCD formatting (not f-strings)
-        2. Properly formats transaction ID with length byte and ASCII-to-hex conversion
-        3. Exactly matches original working command structure
+        FINAL CORRECTED AFT Transfer Command - Using the exact original working command structure.
+        This version includes the proper BCD and Hex formatting for all fields.
         """
-        print(f"[AFT COMMAND] ===== BUILDING CORRECTED AFT TRANSFER COMMAND =====")
-        print(f"[AFT COMMAND] Amount: ${customerbalance:.2f}, Promo: ${customerpromo:.2f}")
+        print(f"[AFT COMMAND] Building FINAL CORRECTED AFT Transfer Command")
         
         try:
             # Step 1: Get basic parameters
             sas_address = getattr(self.communicator, 'sas_address', '01')
             command_code = "72"
             
-            print(f"[AFT COMMAND] SAS Address: {sas_address}")
-            print(f"[AFT COMMAND] Command Code: {command_code}")
-            
             # Step 2: Use provided asset number or get from communicator/default
             if assetnumber is None:
                 assetnumber = getattr(self.communicator, 'asset_number', '0000006C')
-            print(f"[AFT COMMAND] Asset Number: {assetnumber}")
 
             # Step 3: Use provided registration key or default
             if registrationkey is None:
                 registrationkey = "0000000000000000000000000000000000000000"
-            print(f"[AFT COMMAND] Registration Key: {registrationkey}")
 
             # Step 4: Generate transaction ID if not provided
             if transactionid is None:
                 from datetime import datetime
                 transactionid = str(int(datetime.now().timestamp()) % 10000)
-            print(f"[AFT COMMAND] Transaction ID: {transactionid}")
 
             # Step 5: Convert amount to cents for BCD conversion
             customerbalance_cents = int(customerbalance * 100)
             customerpromo_cents = int(customerpromo * 100)
-            
-            print(f"[AFT COMMAND] Amount in cents: {customerbalance_cents}")
-            print(f"[AFT COMMAND] Promo in cents: {customerpromo_cents}")
 
-            # Step 6: Build command body using the CORRECT BCD formatting
-            print(f"[AFT COMMAND] Building command body with proper BCD formatting...")
-            
+            # Step 6: Build command body with correct formatting
             CommandBody = ""
             CommandBody += "00"  # Transfer Code
             CommandBody += "00"  # Transfer Index
-            CommandBody += f"{transfertype:02d}"  # Transfer Type (00 for cashable)
             
-            print(f"[AFT COMMAND] Basic fields: TransferCode=00, Index=00, Type={transfertype:02d}")
+            # *** FINAL FIX #1: Use HEX formatting for transfer type ***
+            CommandBody += f"{transfertype:02X}" # e.g., 10 becomes "0A"
             
-            # *** CRITICAL FIX #1: Use the correct BCD formatting function ***
-            cashable_bcd = self._add_left_bcd_original(customerbalance_cents, 5)
-            promo_bcd = self._add_left_bcd_original(customerpromo_cents, 5)
-            CommandBody += cashable_bcd
-            CommandBody += promo_bcd
+            CommandBody += self._add_left_bcd_original(customerbalance_cents, 5)
+            CommandBody += self._add_left_bcd_original(customerpromo_cents, 5)
             CommandBody += "0000000000"  # Non-restricted amount (5 bytes)
             
-            print(f"[AFT COMMAND] *** FIXED BCD AMOUNTS ***")
-            print(f"[AFT COMMAND] Cashable BCD: {cashable_bcd} (was incorrectly using f-string)")
-            print(f"[AFT COMMAND] Promo BCD: {promo_bcd}")
-            print(f"[AFT COMMAND] Non-restricted: 0000000000")
-            
-            CommandBody += "07"  # Transfer Flags (07 for hard cashout mode, matches original)
-            CommandBody += assetnumber.zfill(8)  # Asset number (4 bytes)
-            CommandBody += registrationkey.zfill(40)  # Registration key (20 bytes)
+            CommandBody += "07"  # Transfer Flags (07 for hard cashout mode)
+            CommandBody += assetnumber.zfill(8) # Asset number (4 bytes)
+            CommandBody += registrationkey.zfill(40) # Registration key (20 bytes)
 
-            print(f"[AFT COMMAND] Transfer Flags: 07")
-            print(f"[AFT COMMAND] Asset Number (padded): {assetnumber.zfill(8)}")
-            print(f"[AFT COMMAND] Registration Key: {registrationkey}")
-
-            # *** CRITICAL FIX #2: Correctly format the Transaction ID with its length ***
+            # *** FINAL FIX #2: Use HEX formatting for transaction ID length ***
             transaction_id_hex = ''.join(f"{ord(c):02x}" for c in transactionid)
-            transaction_id_length = f"{len(transactionid):02d}"
-            CommandBody += transaction_id_length  # Length of transaction ID
-            CommandBody += transaction_id_hex     # The transaction ID itself
+            CommandBody += f"{len(transactionid):02X}" # e.g., length 10 becomes "0A"
+            CommandBody += transaction_id_hex
             
-            print(f"[AFT COMMAND] *** FIXED TRANSACTION ID ***")
-            print(f"[AFT COMMAND] Transaction ID: '{transactionid}'")
-            print(f"[AFT COMMAND] Transaction ID Length: {transaction_id_length}")
-            print(f"[AFT COMMAND] Transaction ID Hex: {transaction_id_hex} (was missing ASCII-to-hex conversion)")
-            
-            CommandBody += "00000000"  # Expiration Date (not used)
-            CommandBody += "0000"      # Pool ID (not used)
-            CommandBody += "00"        # Receipt Data Length (no receipt)
-
-            print(f"[AFT COMMAND] Expiration: 00000000, Pool ID: 0000, Receipt Length: 00")
+            CommandBody += "00000000"  # Expiration Date
+            CommandBody += "0000"      # Pool ID
+            CommandBody += "00"        # Receipt Data Length
 
             # Step 7: Build full command with header and CRC
             command_length_hex = f"{len(CommandBody) // 2:02X}"
             command_header = sas_address + command_code + command_length_hex
             full_command_no_crc = command_header + CommandBody
-            
-            print(f"[AFT COMMAND] Command Body: {CommandBody}")
-            print(f"[AFT COMMAND] Command Body Length: {len(CommandBody) // 2} bytes = {command_length_hex}")
-            print(f"[AFT COMMAND] Command Header: {command_header}")
-            print(f"[AFT COMMAND] Full Command (no CRC): {full_command_no_crc}")
-            
-            # Get CRC
-            final_command = get_crc(full_command_no_crc)
-            
-            print(f"[AFT COMMAND] *** FINAL CORRECTED AFT COMMAND ***")
-            print(f"[AFT COMMAND] Command with CRC: {final_command}")
-            print(f"[AFT COMMAND] =======================================")
+            final_command = self._get_crc_original(full_command_no_crc) # Use the correct CRC function
 
-            # Step 8: Send the command via the communicator
-            print(f"[AFT COMMAND] Sending corrected AFT command...")
+            print(f"[AFT COMMAND] FINAL CORRECTED COMMAND: {final_command}")
+
+            # Step 8: Send the command
             self.communicator.sas_send_command_with_queue("ParaYukle", final_command, 1)
-            print(f"[AFT COMMAND] AFT command sent successfully")
             
             return transactionid
 
@@ -648,7 +600,7 @@ class SasMoney:
 
     def _get_crc_original(self, command):
         """
-        EXACT implementation of GetCRC from original working code
+        FINAL CORRECTED CRC implementation - This version correctly reverses the bytes.
         """
         try:
             from crccheck.crc import CrcKermit
@@ -656,10 +608,10 @@ class SasMoney:
             data = bytearray.fromhex(command)
             crc_instance = CrcKermit()
             crc_instance.process(data)
-            crc_bytes = crc_instance.finalbytes()
-            crc_hex = crc_bytes.hex().upper().zfill(4)
+            crc_hex = crc_instance.hexversion() # Get as a hex string like "0D37"
             
-            # SAS requires CRC bytes to be reversed
+            # SAS requires the 2 CRC bytes to be reversed.
+            # For a CRC of 0x0D37, the bytes are 0D and 37. They must be sent as 37 0D.
             return command + crc_hex[2:4] + crc_hex[0:2]
             
         except Exception as e:
