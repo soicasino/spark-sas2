@@ -325,6 +325,7 @@ async def cashout_credits(
         # Execute AFT cashout using SAS money functions
         try:
             # Use all-zeros registration key (standard for AFT)
+            # TODO: get from config later 
             registrationkey = "0000000000000000000000000000000000000000"
             
             # Send the cashout command
