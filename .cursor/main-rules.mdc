@@ -5,3 +5,63 @@ alwaysApply: true
 ---
 the code is at the project root.  dont add @docs folder when working unless i refer a file 
 
+
+
+when creating a test file always keep in mind 
+
+.venv) soi@raspberrypi:~/dev/spark-sas2 $ git pull
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (2/2), done.
+remote: Total 4 (delta 2), reused 4 (delta 2), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 2.24 KiB | 176.00 KiB/s, done.
+From github.com:soicasino/spark-sas2
+   c5a6b33..7967a96  fastapi-added -> origin/fastapi-added
+Updating c5a6b33..7967a96
+Fast-forward
+ sas_money_functions.py |  31 +++++----
+ test_aft_fixes.py      | 371 +++++++++++++++++++++++++++++++++++++------------------------------------------------------------
+ 2 files changed, 157 insertions(+), 245 deletions(-)
+(.venv) soi@raspberrypi:~/dev/spark-sas2 $ python test_aft_fixes.py
+port_manager.py loaded
+sas_communicator.py loaded
+🧪 Testing AFT Registration and Lock Command Fixes
+============================================================
+❌ Unexpected error: PortManager.__init__() takes 1 positional argument but 2 were given
+(.venv) soi@raspberrypi:~/dev/spark-sas2 $ git pull
+remote: Enumerating objects: 5, done.
+remote: Counting objects: 100% (5/5), done.
+remote: Compressing objects: 100% (1/1), done.
+remote: Total 3 (delta 2), reused 3 (delta 2), pack-reused 0 (from 0)
+Unpacking objects: 100% (3/3), 873 bytes | 291.00 KiB/s, done.
+From github.com:soicasino/spark-sas2
+   7967a96..85b692f  fastapi-added -> origin/fastapi-added
+Updating 7967a96..85b692f
+Fast-forward
+ test_aft_with_polling.py | 48 ++++++++++++++++++++++++++++++------------------
+ 1 file changed, 30 insertions(+), 18 deletions(-)
+(.venv) soi@raspberrypi:~/dev/spark-sas2 $ python test_aft_with_polling.py
+port_manager.py loaded
+sas_communicator.py loaded
+🧪 Production-Style AFT Tester
+This test follows the EXACT pattern used by the main application.
+Traceback (most recent call last):
+  File "/home/soi/dev/spark-sas2/test_aft_with_polling.py", line 249, in <module>
+    main()
+    ^^^^^^
+  File "/home/soi/dev/spark-sas2/test_aft_with_polling.py", line 225, in main
+    tester = ProductionStyleAFTTester()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/soi/dev/spark-sas2/test_aft_with_polling.py", line 26, in __init__
+    self.port_mgr = PortManager(self.config)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PortManager.__init__() takes 1 positional argument but 2 were given
+(.venv) soi@raspberrypi:~/dev/spark-sas2 $
+
+
+
+...
+I see the issue! The PortManager class doesn't take a config parameter in its constructor. Let me check how it's supposed to be initialized and fix the test:
+I see the issue! The PortManager constructor doesn't take any parameters, but the find_sas_port method expects a config parameter. Let me fix the test:
+Now let's test the updated file:
+ you were always making this mistake.   becarefull and dont make it
