@@ -13,12 +13,16 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config_manager import ConfigManager
 from sas_money_functions import SasMoney
+from port_manager import PortManager
+from sas_communicator import SASCommunicator
 
 class AFTRegistrationDiscovery:
     """Tool to discover current AFT registration settings using existing working functions"""
     
     def __init__(self):
         self.config = ConfigManager()
+        self.port_mgr = PortManager()
+        self.sas_comm = None
         self.sas_money = None
         
     def initialize_sas(self):
@@ -29,8 +33,25 @@ class AFTRegistrationDiscovery:
             print("Using existing working SAS functions...")
             print()
             
-            # Initialize SAS money functions (this handles all the complex setup)
-            self.sas_money = SasMoney(self.config)
+            # Find and connect to SAS port first
+            print("Finding SAS port...")
+            port_info = self.port_mgr.find_sas_port(self.config)
+            
+            if not port_info:
+                print("❌ No SAS port found!")
+                return False
+                
+            port_name, device_type = port_info
+            print(f"✅ Found SAS on port: {port_name}, device type: {device_type}")
+            
+            # Initialize SAS communicator
+            self.sas_comm = SASCommunicator(
+                port_name=port_name,
+                global_config=self.config
+            )
+            
+            # Initialize SAS money functions with the communicator
+            self.sas_money = SasMoney(self.config, self.sas_comm)
             
             if not self.sas_money:
                 print("❌ Failed to initialize SAS money functions!")
