@@ -1343,24 +1343,24 @@ class SasMoney:
             
             # Parse asset number if available
             if index + 8 <= len(yanit):
-                    asset_number = yanit[index:index+8]
-                    index += 8
-                    print(f"[AFT REG RESPONSE] Asset Number: {asset_number}")
+                asset_number = yanit[index:index+8]
+                index += 8
+                print(f"[AFT REG RESPONSE] Asset Number: {asset_number}")
+                
+                # Convert asset number to decimal (little-endian BCD)
+                try:
+                    asset_dec = self.read_asset_to_int(asset_number)
+                    print(f"[AFT REG RESPONSE] Asset Number (decimal): {asset_dec}")
                     
-                                        # Convert asset number to decimal (little-endian BCD)
-                    try:
-                        asset_dec = self.read_asset_to_int(asset_number)
-                        print(f"[AFT REG RESPONSE] Asset Number (decimal): {asset_dec}")
-                        
-                        # CRITICAL: Store ORIGINAL asset number format from machine for AFT commands
-                        # Store both the original hex format AND the converted format
-                        self.communicator.asset_number_hex = asset_number  # Original machine format
-                        self.communicator.asset_number = asset_number  # Keep this for backward compatibility
-                        self.communicator.decimal_asset_number = asset_dec
-                        print(f"[AFT REG RESPONSE] Asset number stored - Original: {asset_number}, Decimal: {asset_dec}")
-                        
-                    except Exception as e:
-                        print(f"[AFT REG RESPONSE] Error converting asset number: {e}")
+                    # CRITICAL: Store ORIGINAL asset number format from machine for AFT commands
+                    # Store both the original hex format AND the converted format
+                    self.communicator.asset_number_hex = asset_number  # Original machine format
+                    self.communicator.asset_number = asset_number  # Keep this for backward compatibility
+                    self.communicator.decimal_asset_number = asset_dec
+                    print(f"[AFT REG RESPONSE] Asset number stored - Original: {asset_number}, Decimal: {asset_dec}")
+                    
+                except Exception as e:
+                    print(f"[AFT REG RESPONSE] Error converting asset number: {e}")
             
             # Parse registration key if available
             if index + 40 <= len(yanit):
