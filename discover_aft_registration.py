@@ -12,7 +12,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config_manager import ConfigManager
-from sas_money_functions import SASMoneyFunctions
+from sas_money_functions import SasMoney
 
 class AFTRegistrationDiscovery:
     """Tool to discover current AFT registration settings using existing working functions"""
@@ -22,7 +22,7 @@ class AFTRegistrationDiscovery:
         self.sas_money = None
         
     def initialize_sas(self):
-        """Initialize SAS communication using the working SASMoneyFunctions"""
+        """Initialize SAS communication using the working SasMoney class"""
         try:
             print("🔍 AFT Registration Discovery Tool")
             print("This tool will query the machine to discover current AFT registration settings.")
@@ -30,7 +30,7 @@ class AFTRegistrationDiscovery:
             print()
             
             # Initialize SAS money functions (this handles all the complex setup)
-            self.sas_money = SASMoneyFunctions(self.config)
+            self.sas_money = SasMoney(self.config)
             
             if not self.sas_money:
                 print("❌ Failed to initialize SAS money functions!")
