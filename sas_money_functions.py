@@ -149,6 +149,11 @@ class SasMoney:
                 if status == "00":
                     print(f"[AFT WAIT] ✅ TRANSFER SUCCESSFUL")
                     return True
+                elif status in ("40", "C0", "C1", "C2"):  # Pending/in-progress codes - continue waiting
+                    print(f"[AFT WAIT] Transfer {self.get_transfer_status_description(status).lower()}, continuing to wait...")
+                    # Reset flag to continue waiting
+                    self.is_waiting_for_para_yukle = 1
+                    continue
                 else:
                     status_desc = self.get_transfer_status_description(status)
                     print(f"[AFT WAIT] ❌ TRANSFER FAILED: {status} - {status_desc}")
