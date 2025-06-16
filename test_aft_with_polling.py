@@ -8,11 +8,11 @@ import sys
 import time
 import threading
 import os
+import configparser
 
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config_manager import ConfigManager
 from port_manager import PortManager
 from sas_communicator import SASCommunicator
 
@@ -20,8 +20,10 @@ class ProductionStyleAFTTester:
     """AFT tester that follows the exact production code pattern"""
     
     def __init__(self):
-        self.config = ConfigManager()
-        self.port_mgr = PortManager()
+        # Load configuration properly like production code
+        self.config = configparser.ConfigParser()
+        self.config.read('config.ini')
+        self.port_mgr = PortManager(self.config)
         self.sas_comm = None
         self.running = False
         self.sas_poll_timer = None
@@ -31,12 +33,12 @@ class ProductionStyleAFTTester:
         print("Initializing SAS communication...")
         
         # Find SAS port using production method
-        sas_port, device_type = self.port_mgr.find_sas_port(self.config)
+        sas_port, device_type = self.port_mgr.find_sas_port()
         
         if sas_port:
             print(f"Using SAS port: {sas_port}, device type: {device_type}")
-            self.config.set('machine', 'devicetypeid', str(device_type))
             
+            # Create SAS communicator with proper config
             self.sas_comm = SASCommunicator(sas_port, self.config)
             if self.sas_comm.open_port():
                 print("SAS communication initialized successfully!")
@@ -116,8 +118,8 @@ class ProductionStyleAFTTester:
             asset_number = self.sas_comm.get_asset_number_for_aft()
             print(f"[AFT TEST] Using asset number: {asset_number}")
             
-            # Get registration key from config
-            registration_key = self.config.get('SAS_MACHINE', 'registration_key', '00000000000000000000000000000000000000000000')
+            # Get registration key from config - use the correct all-zeros key
+            registration_key = self.config.get('SAS_MACHINE', 'registration_key', fallback='00000000000000000000000000000000000000000000')
             print(f"[AFT TEST] Using registration key: {registration_key}")
             
             # Step 1: AFT Registration
@@ -131,16 +133,21 @@ class ProductionStyleAFTTester:
             print(f"[AFT TEST] Waiting for registration to process...")
             time.sleep(3)
             
-            # Step 2: Test transfer
-            print(f"[AFT TEST] Step 2: Test transfer ($1.00)...")
+            # Step 2: Test AFT lock first
+            print(f"[AFT TEST] Step 2: Testing AFT lock...")
+            lock_result = self.sas_comm.sas_money.komut_aft_lock_machine()
+            print(f"[AFT TEST] Lock result: {lock_result}")
+            
+            time.sleep(2)  # Wait for lock to process
+            
+            # Step 3: Test transfer
+            print(f"[AFT TEST] Step 3: Test transfer ($1.00)...")
             transfer_result = self.sas_comm.sas_money.komut_para_yukle(
-                1,  # doincreasetransactionid
-                "00",  # transfertype (cashable)
-                100,  # customerbalance (cents)
-                0,  # customerpromo
-                "12345",  # transactionid
-                asset_number,  # assetnumber
-                registration_key  # registrationkey
+                customerbalance=1.0,  # $1.00 in dollars
+                customerpromo=0.0,
+                transfertype=10,  # Cashable
+                assetnumber=asset_number,
+                registrationkey=registration_key
             )
             print(f"[AFT TEST] Transfer result: {transfer_result}")
             
@@ -148,12 +155,17 @@ class ProductionStyleAFTTester:
             print(f"[AFT TEST] Waiting for transfer to process...")
             time.sleep(5)
             
-            # Step 3: Check balance
-            print(f"[AFT TEST] Step 3: Check balance...")
+            # Step 4: Check balance
+            print(f"[AFT TEST] Step 4: Check balance...")
             balance_result = self.sas_comm.sas_money.komut_bakiye_sorgulama(
                 "AFTTest", False, "ProductionTest"
             )
             print(f"[AFT TEST] Balance result: {balance_result}")
+            
+            # Step 5: Unlock machine
+            print(f"[AFT TEST] Step 5: Unlocking machine...")
+            unlock_result = self.sas_comm.sas_money.komut_aft_unlock_machine()
+            print(f"[AFT TEST] Unlock result: {unlock_result}")
             
             # Analyze results
             if transfer_result:
