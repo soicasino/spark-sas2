@@ -348,21 +348,24 @@ class SasMoney:
             pos_id_bcd = ''.join('{:02x}'.format(ord(c)) for c in pos_id_padded)
             print(f"[AFT REGISTRATION] POS ID BCD: {pos_id_bcd}")
             
-            # CRITICAL FIX: Asset number must be in LITTLE-ENDIAN format as received from machine!
-            # Machine returns "6C000000" but we need to send it back in the same format
-            # Convert from big-endian "0000006C" to little-endian "6C000000"
-            if len(asset_number) == 8:
-                # Convert from big-endian to little-endian byte order
-                asset_le = ""
-                for i in range(6, -2, -2):  # Process bytes in reverse: 6,4,2,0
-                    asset_le += asset_number[i:i+2]
-                asset_bcd = asset_le.upper()
+            # CRITICAL FIX: Asset number must be sent in the EXACT format as received from machine!
+            # Machine returns "6C000000" (little-endian) and expects it back in the same format
+            # NO CONVERSION NEEDED - use the asset number exactly as the machine provided it
+            if hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
+                asset_bcd = self.communicator.asset_number_hex.upper()  # Use original format from machine
+                print(f"[AFT REGISTRATION] Using original asset number from machine: {asset_bcd}")
             else:
-                asset_bcd = asset_number.upper().zfill(8)
+                # If we only have the converted decimal format, we need to use the original hex from machine
+                # The machine returns "6C000000" which is what we should use for registration
+                if hasattr(self.communicator, 'original_asset_number_hex'):
+                    asset_bcd = self.communicator.original_asset_number_hex.upper()
+                    print(f"[AFT REGISTRATION] Using stored original asset number: {asset_bcd}")
+                else:
+                    # Last resort: assume asset_number is already in correct format
+                    asset_bcd = asset_number.upper()
+                    print(f"[AFT REGISTRATION] Using asset number as-is: {asset_bcd}")
             
-            print(f"[AFT REGISTRATION] Asset Number (little-endian): {asset_bcd}")
-            print(f"[AFT REGISTRATION] Original asset number: {asset_number}")
-            print(f"[AFT REGISTRATION] Converted for registration: {asset_bcd}")
+            print(f"[AFT REGISTRATION] Final asset number for registration: {asset_bcd}")
             
             # Registration key is already in correct format (20 bytes hex = 40 chars)
             print(f"[AFT REGISTRATION] Registration Key: {registration_key}")
@@ -573,17 +576,23 @@ class SasMoney:
             
             CommandBody += "07"  # Transfer Flags (07 for hard cashout mode)
             
-            # CRITICAL FIX: Asset number must be in little-endian format for AFT transfers!
-            # Convert from big-endian "0000006C" to little-endian "6C000000"
-            if len(assetnumber) == 8:
-                # Convert from big-endian to little-endian byte order
-                asset_le = ""
-                for i in range(6, -2, -2):  # Process bytes in reverse: 6,4,2,0
-                    asset_le += assetnumber[i:i+2]
-                CommandBody += asset_le.upper()  # Asset number in little-endian format
+            # CRITICAL FIX: Asset number must be sent in the EXACT format as received from machine!
+            # Machine returns "6C000000" (little-endian) and expects it back in the same format
+            # Use original asset number format from machine, not converted format
+            if hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
+                asset_for_transfer = self.communicator.asset_number_hex.upper()
+                print(f"[AFT TRANSFER] Using original asset number from machine: {asset_for_transfer}")
             else:
-                CommandBody += assetnumber.zfill(8)  # Fallback
-            print(f"[AFT TRANSFER] Asset number converted: {assetnumber} -> {asset_le.upper() if len(assetnumber) == 8 else assetnumber}")
+                # Fallback: if assetnumber is the converted format "0000006C", convert back to machine format
+                if assetnumber == "0000006C":
+                    asset_for_transfer = "6C000000"  # Machine's little-endian format
+                    print(f"[AFT TRANSFER] Converted back to machine format: {asset_for_transfer}")
+                else:
+                    asset_for_transfer = assetnumber.upper()
+                    print(f"[AFT TRANSFER] Using asset number as-is: {asset_for_transfer}")
+            
+            CommandBody += asset_for_transfer
+            print(f"[AFT TRANSFER] Asset number for transfer: {asset_for_transfer}")
             
             CommandBody += registrationkey.zfill(40) # Registration key (20 bytes)
 
@@ -788,6 +797,13 @@ class SasMoney:
             asset_number = yanit[index:index+8] if index + 8 <= len(yanit) else "00000000"
             index += 8
             print(f"[BALANCE RESPONSE] Asset Number: {asset_number}")
+            
+            # CRITICAL: Store the original asset number format from balance response
+            # This ensures we use the machine's original format for AFT transfers
+            if asset_number != "00000000":
+                self.communicator.asset_number_hex = asset_number  # Original machine format
+                self.communicator.asset_number = asset_number  # For backward compatibility
+                print(f"[BALANCE RESPONSE] Asset number stored from balance response: {asset_number}")
             
             game_lock_status = yanit[index:index+2] if index + 2 <= len(yanit) else "00"
             index += 2
@@ -1327,23 +1343,24 @@ class SasMoney:
             
             # Parse asset number if available
             if index + 8 <= len(yanit):
-                asset_number = yanit[index:index+8]
-                index += 8
-                print(f"[AFT REG RESPONSE] Asset Number: {asset_number}")
-                
-                # Convert asset number to decimal (little-endian BCD)
-                try:
-                    asset_dec = self.read_asset_to_int(asset_number)
-                    print(f"[AFT REG RESPONSE] Asset Number (decimal): {asset_dec}")
+                    asset_number = yanit[index:index+8]
+                    index += 8
+                    print(f"[AFT REG RESPONSE] Asset Number: {asset_number}")
                     
-                    # Store asset number in communicator if available
-                    if hasattr(self.communicator, 'asset_number'):
-                        self.communicator.asset_number = asset_number
-                        self.communicator.decimal_asset_number = asset_dec
-                        print(f"[AFT REG RESPONSE] Asset number stored in communicator")
+                                        # Convert asset number to decimal (little-endian BCD)
+                    try:
+                        asset_dec = self.read_asset_to_int(asset_number)
+                        print(f"[AFT REG RESPONSE] Asset Number (decimal): {asset_dec}")
                         
-                except Exception as e:
-                    print(f"[AFT REG RESPONSE] Error converting asset number: {e}")
+                        # CRITICAL: Store ORIGINAL asset number format from machine for AFT commands
+                        # Store both the original hex format AND the converted format
+                        self.communicator.asset_number_hex = asset_number  # Original machine format
+                        self.communicator.asset_number = asset_number  # Keep this for backward compatibility
+                        self.communicator.decimal_asset_number = asset_dec
+                        print(f"[AFT REG RESPONSE] Asset number stored - Original: {asset_number}, Decimal: {asset_dec}")
+                        
+                    except Exception as e:
+                        print(f"[AFT REG RESPONSE] Error converting asset number: {e}")
             
             # Parse registration key if available
             if index + 40 <= len(yanit):
