@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """
-AFT Add Credit Test Application
-Based on the original SAS communication logic from raspberryPython_orj.py.ref
+AFT Add Credit Test Application - CORRECTED
+Based on the original SAS communication logic from raspberryPython_orj.py.
 For testing AFT operations on Raspberry Pi
 
 Usage: python3 test_aft_op.py <amount>
 Example: python3 test_aft_op.py 100.50
-
-SAS Port: /dev/ttyUSB0
-Asset No: 108 (0x6C)
-Registration Key: all zeros (000000000000000000000000000000000000000000)
 """
 
 import serial
@@ -19,1076 +15,336 @@ import datetime
 import time
 import threading
 import platform
-import termios  # For Linux parity control
 from decimal import Decimal
 from crccheck.crc import CrcKermit
 
-# Configuration - will be set by port discovery
-SAS_PORT = "/dev/ttyUSB1"  # Switch to the other port
+# Import termios for correct parity switching on Linux
+if platform.system() != "Windows":
+    import termios
+
+# --- Configuration ---
+# This will be automatically detected, but you can hardcode it for testing.
+SAS_PORT = None
 SAS_BAUDRATE = 19200
-SAS_ADDRESS = "01"  # Address
-ASSET_NUMBER = "6C000000"  # Asset 108 in hex, padded to 4 bytes
-REGISTRATION_KEY = "000000000000000000000000000000000000000000"  # All zeros, 20 bytes
-CASHOUT_MODE_SOFT = False  # Use hard cashout mode
+SAS_ADDRESS = "01"
+ASSET_NUMBER = "6C000000"  # Asset 108 (0x6C) in little-endian hex, 4 bytes
+REGISTRATION_KEY = "0000000000000000000000000000000000000000"  # 20 bytes of zeros
 
-# Transaction ID management - EXACTLY like main app
-import datetime
-current_transaction_id = int(datetime.datetime.now().timestamp()) % 10000
-
-def get_next_transaction_id():
-    """Get the next transaction ID, incrementing the internal counter - EXACTLY like main app"""
-    global current_transaction_id
-    current_transaction_id = (current_transaction_id + 1) % 10000
-    return current_transaction_id
-
-# Global variables - matching original code
+# --- Global Variables ---
 sasport = None
-transaction_id = 1
-IsWaitingForParaYukle = False
-last_sent_poll_type = 80
+transaction_id_counter = int(datetime.datetime.now().timestamp()) % 10000
 polling_active = False
-polling_thread = None
-device_type_id = 8  # Default device type like main app
-is_communication_by_windows = -1  # Platform detection
-
-# AFT response tracking
-aft_transfer_status = None
 aft_response_received = False
+aft_transfer_status = None
 balance_response_received = False
-balance_amount = 0.0
+balance_amount = Decimal('0.0')
 
-# Platform detection - EXACTLY like main app
-if platform.system().startswith("Window"):
-    is_communication_by_windows = 1
-else:
-    is_communication_by_windows = 0
+# --- Utility Functions (from original app) ---
 
-def print_banner():
-    """Print application banner"""
-    print("=" * 60)
-    print("AFT Add Credit Test Application")
-    print("Based on raspberryPython_orj.py.ref - EXACT MATCH")
-    print("=" * 60)
-    print(f"SAS Port: Auto-discovery enabled")
-    print(f"Asset No: 108 (0x{ASSET_NUMBER})")
-    print(f"Registration Key: {REGISTRATION_KEY}")
-    print("=" * 60)
-
-def AddLeftString(text, eklenecek, kacadet):
-    """Add string to left - utility function from original"""
-    while kacadet > 0:
-        text = eklenecek + text
-        kacadet = kacadet - 1
+def AddLeftString(text, char_to_add, total_length):
+    """Pads a string on the left."""
+    while len(text) < total_length:
+        text = char_to_add + text
     return text
 
-def AddLeftBCD(numbers, leng):
-    """Convert number to BCD format - from original"""
-    numbers = int(numbers)
-    retdata = str(numbers)
-    
-    if len(retdata) % 2 == 1:
-        retdata = "0" + retdata
-    
-    countNumber = len(retdata) / 2
-    kalan = int(leng - countNumber)
-    
-    retdata = AddLeftString(retdata, "00", kalan)
-    return retdata
-
-def GetCRC(command):
-    """Calculate CRC for SAS command - EXACTLY matching original"""
+def AddLeftBCD(number, length_in_bytes):
+    """Encodes a number into BCD format with specified byte length."""
     try:
-        data = bytearray.fromhex(command)
+        number_str = str(int(number))
+        if len(number_str) % 2 != 0:
+            number_str = "0" + number_str
+        
+        hex_str = ""
+        for i in range(0, len(number_str), 2):
+            hex_str += f"{int(number_str[i]):X}{int(number_str[i+1]):X}"
+
+        # Pad with leading zeros to meet the required byte length
+        while len(hex_str) < length_in_bytes * 2:
+            hex_str = "00" + hex_str
+        return hex_str
+    except ValueError:
+        return "00" * length_in_bytes
+
+
+def GetCRC(command_hex):
+    """Calculates the 16-bit Kermit CRC and appends it in the correct (reversed) order for SAS."""
+    try:
+        data = bytearray.fromhex(command_hex)
         crc_instance = CrcKermit()
         crc_instance.process(data)
+        # .hex() provides a string representation of the hex values
         crc_hex = crc_instance.finalbytes().hex().upper()
+        # Ensure it is 4 characters long (2 bytes)
         crc_hex = crc_hex.zfill(4)
-        # SAS requires the 2 CRC bytes to be reversed
-        return command + crc_hex[2:4] + crc_hex[0:2]
+        # SAS protocol requires the two CRC bytes to be swapped
+        return command_hex + crc_hex[2:4] + crc_hex[0:2]
     except Exception as e:
-        print(f"CRC Error: {e}")
-        return command + "0000"
+        print(f"[ERROR] CRC calculation failed: {e}")
+        return command_hex + "0000"
 
-def discover_sas_port():
-    """Discover which serial port has a responding SAS device"""
-    print("\n🔍 ========== SAS PORT DISCOVERY ==========")
-    
-    # List all available serial ports
-    ports = serial.tools.list_ports.comports()
-    if not ports:
-        print("❌ No serial ports found!")
-        return None
-    
-    print(f"📋 Found {len(ports)} serial port(s):")
-    for port in ports:
-        print(f"   • {port.device}: {port.description}")
-        if hasattr(port, 'manufacturer') and port.manufacturer:
-            print(f"     Manufacturer: {port.manufacturer}")
-        if hasattr(port, 'product') and port.product:
-            print(f"     Product: {port.product}")
-    
-    # Based on main app logs, we know /dev/ttyUSB0 works
-    # Let's prioritize that and do a quick test
-    print(f"\n🔧 Testing ports for SAS communication...")
-    
-    # Priority order based on main app success
-    priority_ports = ["/dev/ttyUSB0", "/dev/ttyUSB1"]
-    available_ports = [port.device for port in ports]
-    
-    # Test priority ports first
-    for priority_port in priority_ports:
-        if priority_port in available_ports:
-            print(f"\n🔌 Testing priority port: {priority_port}")
-            
-            try:
-                # Quick connectivity test - just try to open the port
-                test_port = serial.Serial(
-                    port=priority_port,
-                    baudrate=19200,  # Known working baud rate
-                    bytesize=serial.EIGHTBITS,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
-                    timeout=0.1,
-                    xonxoff=False,
-                    rtscts=False,
-                    dsrdtr=False
-                )
-                
-                test_port.dtr = True
-                test_port.rts = False
-                
-                print(f"   ✓ Port opened successfully")
-                
-                # Try a simple poll (don't require response for discovery)
-                test_command = GetCRC(SAS_ADDRESS + "80")
-                cmd_hex_clean = test_command.replace(" ", "")
-                
-                # Send with proper parity
-                test_port.parity = serial.PARITY_MARK
-                first_byte = bytes.fromhex(cmd_hex_clean[0:2])
-                test_port.write(first_byte)
-                test_port.flush()
-                
-                if len(cmd_hex_clean) > 2:
-                    time.sleep(0.005)
-                    test_port.parity = serial.PARITY_SPACE
-                    rest_bytes = bytes.fromhex(cmd_hex_clean[2:])
-                    test_port.write(rest_bytes)
-                    test_port.flush()
-                
-                # Check for response (but don't require it)
-                time.sleep(0.1)
-                response_received = False
-                if test_port.in_waiting > 0:
-                    response = test_port.read(test_port.in_waiting)
-                    hex_response = response.hex().upper()
-                    print(f"   📥 Got response: {hex_response}")
-                    response_received = True
-                else:
-                    print(f"   📭 No immediate response (this is OK - machine might be busy)")
-                
-                test_port.close()
-                
-                # If this is /dev/ttyUSB0 and main app used it successfully, use it
-                if priority_port == "/dev/ttyUSB0":
-                    print(f"   ✅ Using {priority_port} - confirmed working by main app")
-                    return priority_port
-                elif response_received:
-                    print(f"   ✅ PORT FOUND: {priority_port} with active response")
-                    return priority_port
-                else:
-                    print(f"   ⚠️  {priority_port} opened OK but no response - continuing search...")
-                
-            except Exception as e:
-                print(f"   ❌ Failed to test {priority_port}: {e}")
-    
-    # Test remaining ports
-    other_ports = [port for port in available_ports if port not in priority_ports]
-    for port_name in other_ports:
-        print(f"\n🔌 Testing port: {port_name}")
-        try:
-            test_port = serial.Serial(
-                port=port_name,
-                baudrate=19200,  # Always use 19200 baud
-                bytesize=serial.EIGHTBITS,
-                parity=serial.PARITY_NONE,
-                stopbits=serial.STOPBITS_ONE,
-                timeout=0.1,
-                xonxoff=False,
-                rtscts=False,
-                dsrdtr=False
-            )
-            
-            test_port.dtr = True
-            test_port.rts = False
-            test_port.close()
-            
-            print(f"   ✓ Port accessible")
-            
-        except Exception as e:
-            print(f"   ❌ Port not accessible: {e}")
-    
-    # Default to most likely working port
-    if "/dev/ttyUSB0" in available_ports:
-        print(f"\n🎯 DEFAULTING to /dev/ttyUSB0 (main app confirmed this works)")
-        return "/dev/ttyUSB0"
-    elif "/dev/ttyUSB1" in available_ports:
-        print(f"\n🎯 DEFAULTING to /dev/ttyUSB1 (fallback option)")
-        return "/dev/ttyUSB1"
-    
-    print(f"\n❌ No suitable SAS port found!")
-    return None
+def get_next_transaction_id():
+    """Generates a unique transaction ID for each command."""
+    global transaction_id_counter
+    transaction_id_counter = (transaction_id_counter + 1) % 10000
+    return transaction_id_counter
+
+# --- Core SAS Communication Functions (Corrected) ---
 
 def open_sas_port():
-    """Open SAS serial port - EXACTLY like main app's open_port"""
-    global sasport, device_type_id
-    try:
-        sasport = serial.Serial()
-        sasport.port = SAS_PORT
-        sasport.baudrate = SAS_BAUDRATE
-        sasport.timeout = 0.1
-        
-        # CRITICAL: Match main app's serial settings
-        sasport.parity = serial.PARITY_NONE
-        sasport.stopbits = serial.STOPBITS_ONE
-        sasport.bytesize = serial.EIGHTBITS
-        sasport.xonxoff = False
-        sasport.rtscts = False
-        sasport.dsrdtr = False
-        
-        # CRITICAL: DTR/RTS settings from main app
-        sasport.dtr = True
-        sasport.rts = False
-        
-        print(f"Opening SAS port: {SAS_PORT} at {SAS_BAUDRATE} baud...")
-        sasport.open()
-        
-        if sasport.isOpen():
-            print("✓ SAS port opened successfully")
-            
-            # CRITICAL: Device type specific initialization like main app
-            if device_type_id in [1, 4]:  # Novomatic/Octavian
-                print("Device type is Novomatic/Octavian, setting parity to EVEN after initial polls.")
-                SendSASPORT("80")
-                time.sleep(0.05)
-                SendSASPORT("81")
-                sasport.close()
-                sasport.parity = serial.PARITY_EVEN
-                sasport.open()
-                print(f"SAS port {SAS_PORT} re-opened with EVEN parity.")
-            else:
-                # Initial poll for other devices like main app
-                SendSASPORT(SAS_ADDRESS + "80")
-                time.sleep(0.05)
-            
-            return True
-        else:
-            print("✗ Failed to open SAS port")
-            return False
-            
-    except Exception as e:
-        print(f"✗ Error opening SAS port: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def close_sas_port():
-    """Close SAS serial port"""
+    """Opens the serial port with the correct SAS settings."""
     global sasport
-    try:
-        if sasport and sasport.isOpen():
-            sasport.close()
-            print("✓ SAS port closed")
-    except Exception as e:
-        print(f"✗ Error closing SAS port: {e}")
-
-def SendSASPORT(command_hex):
-    """Send data to SAS port with proper SAS parity switching - EXACTLY like main app"""
-    global sasport, device_type_id, is_communication_by_windows
-    
-    if not sasport or not sasport.isOpen():
-        print("❌ Serial port not available")
+    if not SAS_PORT:
+        print("[ERROR] SAS Port not set. Discovery failed.")
         return False
-        
-    try:
-        command_hex = command_hex.replace(" ", "")
-        
-        if len(command_hex) < 2:
-            print("❌ Command too short")
-            return False
-        
-        # CRITICAL: Device type specific sending logic - EXACTLY like main app
-        if device_type_id == 1 or device_type_id == 4:
-            # Novomatic/Octavian - just send normally
-            data_bytes = bytes.fromhex(command_hex)
-            bytes_written = sasport.write(data_bytes)
-            sasport.flush()
-            print(f"🔍 Sent {bytes_written} bytes (Novomatic mode)")
-            return True
-        else:
-            # Determine sending method like main app
-            is_new_sending_msg = 0
-            if is_communication_by_windows == 1 or device_type_id == 11:
-                is_new_sending_msg = 1
-                
-            if device_type_id == 6:
-                is_new_sending_msg = 0
-
-            if is_new_sending_msg == 1:  # Windows or Interblock
-                sleeptime = 0.005
-                if device_type_id == 11:
-                    sleeptime = 0.003
-                
-                # MARK parity for first byte
-                if sasport.parity != serial.PARITY_MARK:
-                    sasport.parity = serial.PARITY_MARK
-                first_byte = bytes.fromhex(command_hex[0:2])
-                bytes_written = sasport.write(first_byte)
-                sasport.flush()
-                time.sleep(sleeptime)
-                
-                print(f"🔍 Sent first byte with MARK parity: {command_hex[0:2]} ({bytes_written} bytes)")
-                
-                # SPACE parity for rest
-                if len(command_hex) > 2:
-                    if sasport.parity != serial.PARITY_SPACE:
-                        sasport.parity = serial.PARITY_SPACE
-                    rest_bytes = bytes.fromhex(command_hex[2:])
-                    bytes_written += sasport.write(rest_bytes)
-                    sasport.flush()
-                    
-                    print(f"🔍 Sent rest with SPACE parity: {command_hex[2:]} ({len(rest_bytes)} bytes)")
-                    
-            else:
-                # Linux with termios - EXACTLY like main app
-                saswaittime = 0.001  # From main app comment: "2020-12-25 test ok gibi.."
-                
-                iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport)
-                
-                CMSPAR = 0x40000000  # EXACTLY like main app
-                
-                # MARK parity for first byte
-                cflag |= termios.PARENB | CMSPAR | termios.PARODD
-                termios.tcsetattr(sasport, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
-                
-                first_byte = bytes.fromhex(command_hex[0:2])
-                bytes_written = sasport.write(first_byte)
-                sasport.flush()
-                
-                print(f"🔍 Sent first byte with MARK parity (termios): {command_hex[0:2]} ({bytes_written} bytes)")
-                
-                if len(command_hex) > 2:
-                    time.sleep(saswaittime)
-                    
-                    # SPACE parity for rest
-                    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport)
-                    cflag |= termios.PARENB
-                    cflag &= ~termios.PARODD
-                    termios.tcsetattr(sasport, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
-                    
-                    rest_bytes = bytes.fromhex(command_hex[2:])
-                    bytes_written += sasport.write(rest_bytes)
-                    sasport.flush()
-                    
-                    print(f"🔍 Sent rest with SPACE parity (termios): {command_hex[2:]} ({len(rest_bytes)} bytes)")
-        
-        print(f"🔍 Total bytes written: {bytes_written}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Send error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def SendSASCommand(command_hex):
-    """Send SAS command - EXACTLY like main app's send_sas_command"""
-    global last_sent_poll_type
-    
-    command_hex = command_hex.replace(" ", "")
-    
-    # Update last sent times like main app
-    if command_hex == "81":
-        last_sent_poll_type = 81
-    if command_hex == "80":
-        last_sent_poll_type = 80
-
-    # AFT-specific logging like main app
-    is_aft_command = False
-    command_type = ""
-    if len(command_hex) >= 4:
-        cmd_code = command_hex[2:4]
-        if cmd_code == "72":
-            is_aft_command = True
-            command_type = "AFT TRANSFER"
-        elif cmd_code == "73":
-            is_aft_command = True
-            command_type = "AFT REGISTRATION"
-        elif cmd_code == "74":
-            is_aft_command = True
-            command_type = "AFT BALANCE QUERY"
-    
-    if is_aft_command:
-        print(f"")
-        print(f"🔄 ========== {command_type} COMMAND ==========")
-        print(f"📤 RAW COMMAND SENT: {command_hex}")
-        print(f"📤 Command Length: {len(command_hex)} characters ({len(command_hex)//2} bytes)")
-        if len(command_hex) >= 6:
-            address = command_hex[0:2]
-            cmd = command_hex[2:4]
-            length = command_hex[4:6]
-            print(f"📤 Header: Address={address}, Command={cmd}, Length={length}")
-        print(f"==========================================")
-    
-    # Log like main app
-    if len(command_hex) >= 3:
-        if not is_aft_command:  # Don't double-log AFT commands
-            print("TX: ", device_type_id, command_hex, SAS_PORT, datetime.datetime.now())
-    
-    # Send command
-    success = SendSASPORT(command_hex)
-    if not success:
-        print(f"❌ Failed to send command: {command_hex}")
-    
-    return success
-
-def ReadSASPORT():
-    """Read response from SAS port - EXACTLY like main app's get_data_from_sas_port"""
-    global sasport
-    
-    if not sasport or not sasport.isOpen():
-        return ""
-        
-    try:
-        data_left = sasport.in_waiting
-        if data_left == 0:
-            return ""
-        
-        out = ''
-        read_count_timeout = 3  # From main app
-        
-        while read_count_timeout > 0:
-            read_count_timeout = read_count_timeout - 1
-            
-            while sasport.in_waiting > 0:
-                out += sasport.read_all().hex()
-                time.sleep(0.005)
-        
-        hex_response = out.upper()
-        if hex_response:
-            print(f"🔍 Raw bytes received: {len(hex_response)//2} bytes -> {hex_response}")
-        return hex_response
-        
-    except Exception as e:
-        print(f"❌ Read error: {e}")
-        return ""
-
-def continuous_polling():
-    """Continuous SAS polling thread - EXACTLY matching original pattern"""
-    global polling_active, aft_response_received, aft_transfer_status
-    global balance_response_received, balance_amount
-    
-    print("🔄 Starting SAS polling loop...")
-    
-    # Polling commands
-    general_poll = GetCRC(SAS_ADDRESS + "80")  # General poll
-    interrogation = GetCRC(SAS_ADDRESS + "81")  # Interrogation
-    
-    poll_counter = 0
-    last_poll_time = time.time()
-    response_count = 0
-    no_response_count = 0
-    
-    while polling_active:
-        try:
-            current_time = time.time()
-            
-            # Send poll every 40ms like main app
-            if current_time - last_poll_time >= 0.04:
-                # Alternate between 80 and 81 like main app
-                if last_sent_poll_type == 80:
-                    poll_command = "81"
-                    poll_type = "INTERROGATION"
-                else:
-                    poll_command = "80"
-                    poll_type = "GENERAL_POLL"
-                
-                SendSASCommand(SAS_ADDRESS + poll_command)
-                
-                time.sleep(0.05)  # Wait for response
-                
-                # Check for response
-                response = ReadSASPORT()
-                if response:
-                    response_count += 1
-                    print(f"🔍 RX[{response_count}] ({poll_type}): {response} at {datetime.datetime.now()}")
-                    
-                    # Process response like main app
-                    handle_received_sas_command(response)
-                else:
-                    no_response_count += 1
-                    # Show no-response status every 50 polls
-                    if poll_counter % 50 == 0:
-                        print(f"⚠️  No response for {no_response_count} polls (total polls: {poll_counter})")
-                
-                poll_counter += 1
-                last_poll_time = current_time
-                
-                # Debug: Show polling stats every 100 polls
-                if poll_counter % 100 == 0:
-                    print(f"📊 Polling Stats: {poll_counter} polls sent, {response_count} responses, {no_response_count} no-responses")
-            
-            time.sleep(0.01)  # Small delay to prevent CPU spinning
-            
-        except Exception as e:
-            print(f"❌ Polling error: {e}")
-            time.sleep(0.1)
-    
-    print(f"🔄 Polling stopped - Final stats: {poll_counter} polls, {response_count} responses")
-
-def Yanit_ParaYukle(response):
-    """Parse AFT response - EXACTLY like original Yanit_ParaYukle"""
-    global aft_transfer_status, aft_response_received
-    
-    try:
-        print(f"📥 ========== AFT TRANSFER RESPONSE ==========")
-        print(f"📥 RAW RESPONSE: {response}")
-        print(f"===============================================")
-        
-        if len(response) < 10:
-            print("Response too short")
-            aft_transfer_status = "FF"
-            aft_response_received = True
-            return
-            
-        # Parse like original - extract transfer status at position 12-13
-        transfer_status = response[12:14]  # Position 12-13 in response (CORRECTED)
-        aft_transfer_status = transfer_status
-        aft_response_received = True
-        
-        # Status descriptions from original
-        status_descriptions = {
-            "00": "Transfer successful",
-            "81": "TransactionID is not unique",
-            "82": "Registration key does not match",
-            "83": "No POS ID or POS ID does not match",
-            "84": "Transfer amount exceeds machine limit",
-            "87": "Gaming machine unable to accept transfers",
-            "C0": "Transfer request acknowledged/pending",
-            "FF": "Transfer failed - general error"
-        }
-        
-        status_text = status_descriptions.get(transfer_status, f"Unknown status: {transfer_status}")
-        
-        print(f"📊 Transfer Status: {transfer_status} - {status_text}")
-        print(f"===============================================")
-        
-        if transfer_status == "00":
-            print("✅ AFT Transfer is completed successfully!")
-        elif transfer_status == "C0":
-            print("⏳ AFT Transfer acknowledged, processing...")
-        else:
-            print(f"❌ AFT Transfer failed: {status_text}")
-        
-    except Exception as e:
-        print(f"❌ Error parsing AFT response: {e}")
-        aft_transfer_status = "FF"
-        aft_response_received = True
-
-def Yanit_BakiyeSorgulama(response):
-    """Parse balance response - EXACTLY like original"""
-    global balance_response_received, balance_amount
-    
-    try:
-        print(f"💰 ========== BALANCE RESPONSE ==========")
-        print(f"💰 RAW RESPONSE: {response}")
-        print(f"💰 Response length: {len(response)} characters")
-        print(f"===========================================")
-        
-        if len(response) < 40:  # Need at least 40 chars for basic balance data
-            print("Response too short for balance parsing")
-            balance_response_received = True
-            return
-        
-        # Parse according to SAS 74h response format
-        # Format: Address(2) + Command(2) + Length(2) + AssetNumber(8) + GameLockStatus(2) + ...
-        index = 6  # Skip address, command, length
-        
-        asset_number = response[index:index+8] if index + 8 <= len(response) else "00000000"
-        index += 8
-        print(f"💰 Asset Number: {asset_number}")
-        
-        game_lock_status = response[index:index+2] if index + 2 <= len(response) else "00"
-        index += 2
-        print(f"💰 Game Lock Status: {game_lock_status}")
-        
-        available_transfers = response[index:index+2] if index + 2 <= len(response) else "00"
-        index += 2
-        print(f"💰 Available Transfers: {available_transfers}")
-        
-        host_cashout_status = response[index:index+2] if index + 2 <= len(response) else "00"
-        index += 2
-        print(f"💰 Host Cashout Status: {host_cashout_status}")
-        
-        aft_status = response[index:index+2] if index + 2 <= len(response) else "00"
-        index += 2
-        print(f"💰 AFT Status: {aft_status}")
-        
-        max_buffer_index = response[index:index+2] if index + 2 <= len(response) else "00"
-        index += 2
-        print(f"💰 Max Buffer Index: {max_buffer_index}")
-        
-        # Current cashable amount (5 bytes BCD = 10 hex characters)
-        current_cashable_amount = response[index:index+10] if index + 10 <= len(response) else "0000000000"
-        index += 10
-        print(f"💰 Current Cashable Amount (raw BCD): {current_cashable_amount}")
-        
-        # Convert BCD to decimal (divide by 100 for cents to dollars)
-        try:
-            cashable_amount_raw = bcd_to_int(current_cashable_amount)
-            balance_amount = cashable_amount_raw / 100
-            print(f"💰 BCD conversion: '{current_cashable_amount}' -> {cashable_amount_raw} cents -> ${balance_amount}")
-        except ValueError as e:
-            print(f"💰 Error converting cashable amount: {e}")
-            balance_amount = 0
-        
-        balance_response_received = True
-        
-        print(f"💰 Final Balance: ${balance_amount}")
-        print(f"===========================================")
-        
-    except Exception as e:
-        print(f"❌ Error parsing balance response: {e}")
-        balance_response_received = True
-
-def bcd_to_int(bcd_str):
-    """Convert a BCD string to integer - EXACTLY like original"""
-    digits = ''
-    for i in range(0, len(bcd_str), 2):
-        byte = bcd_str[i:i+2]
-        if len(byte) < 2:
-            continue
-        high = int(byte[0], 16)
-        low = int(byte[1], 16)
-        digits += f"{high}{low}"
-    return int(digits.lstrip('0') or '0')
-
-def handle_received_sas_command(tdata):
-    """Handle received SAS command - simplified version of main app"""
-    try:
-        if not tdata:
-            return
-        tdata = tdata.replace(" ", "").upper()
-
-        # Split concatenated messages like main app
-        messages = split_sas_messages(tdata)
-        
-        for message in messages:
-            if not message:
-                continue
-            process_single_sas_message(message)
-            
-    except Exception as e:
-        print(f"Error in handle_received_sas_command: {e}")
-
-def split_sas_messages(tdata):
-    """Split concatenated SAS messages - simplified version of main app"""
-    messages = []
-    i = 0
-    
-    while i < len(tdata):
-        # Try to identify message start patterns
-        if i + 4 <= len(tdata):
-            prefix = tdata[i:i+4]
-            
-            # Handle different message types
-            if prefix == "01FF":
-                # Exception messages - typically 10 characters
-                if i + 10 <= len(tdata):
-                    messages.append(tdata[i:i+10])
-                    i += 10
-                else:
-                    messages.append(tdata[i:])
-                    break
-                    
-            elif prefix in ["0172", "0174", "0173", "0154"]:
-                # Length-prefixed messages
-                if i + 6 <= len(tdata):
-                    try:
-                        length = int(tdata[i+4:i+6], 16)
-                        total_length = 6 + (length * 2) + 4  # header + data + CRC
-                        if i + total_length <= len(tdata):
-                            messages.append(tdata[i:i+total_length])
-                            i += total_length
-                        else:
-                            messages.append(tdata[i:])
-                            break
-                    except ValueError:
-                        messages.append(tdata[i:])
-                        break
-                else:
-                    messages.append(tdata[i:])
-                    break
-            else:
-                # Single byte responses or unknown format
-                if len(tdata[i:]) <= 4:  # Short response
-                    messages.append(tdata[i:])
-                    break
-                else:
-                    # Try to find next message start
-                    found = False
-                    for j in range(i+2, len(tdata)-3, 2):
-                        if tdata[j:j+4] in ["01FF", "0172", "0174", "0173", "0154"]:
-                            messages.append(tdata[i:j])
-                            i = j
-                            found = True
-                            break
-                    if not found:
-                        messages.append(tdata[i:])
-                        break
-        else:
-            messages.append(tdata[i:])
-            break
-    
-    return messages
-
-def process_single_sas_message(tdata):
-    """Process a single SAS message - simplified version of main app"""
-    try:
-        if not tdata:
-            return
-            
-        # Handle different message types
-        if tdata.startswith("0172"):
-            # AFT response
-            print("📊 AFT Transfer Response Received!")
-            Yanit_ParaYukle(tdata)
-        elif tdata.startswith("0174"):
-            # Balance response
-            print("💰 Balance Response Received!")
-            Yanit_BakiyeSorgulama(tdata)
-        elif tdata.startswith("01FF"):
-            # Exception message
-            if len(tdata) >= 6:
-                exception_code = tdata[4:6]
-                if tdata == "01FF69DB5B":
-                    print("✓ AFT completion notification received!")
-                    global aft_transfer_status, aft_response_received
-                    aft_transfer_status = "00"  # Success
-                    aft_response_received = True
-                else:
-                    print(f"Exception: {exception_code}")
-        elif tdata in ["01", "00"]:
-            # Normal poll responses - don't spam
-            pass
-        else:
-            # Other responses
-            print(f"🔍 Other response: {tdata}")
-            
-    except Exception as e:
-        print(f"Error processing SAS message: {e}")
-
-def wait_for_aft_completion():
-    """Wait for AFT completion - like original"""
-    global aft_response_received, aft_transfer_status
-    
-    print("Waiting for AFT completion...")
-    
-    timeout = 30  # 30 seconds timeout
-    start_time = time.time()
-    
-    while time.time() - start_time < timeout:
-        if aft_response_received:
-            if aft_transfer_status == "00":
-                print("✅ AFT transfer completed successfully!")
-                return True
-            elif aft_transfer_status == "C0":
-                print("⏳ AFT transfer acknowledged, continuing to wait...")
-                # Reset to continue waiting for final status
-                aft_response_received = False
-                aft_transfer_status = None
-                continue
-            else:
-                print(f"❌ AFT transfer failed with status: {aft_transfer_status}")
-                return False
-        
-        time.sleep(0.1)
-    
-    print("❌ Timeout waiting for AFT completion")
-    return False
-
-def wait_for_balance_response():
-    """Wait for balance query response"""
-    global balance_response_received
-    
-    print("Waiting for balance response...")
-    
-    timeout = 10  # 10 seconds timeout
-    start_time = time.time()
-    
-    while time.time() - start_time < timeout:
-        if balance_response_received:
-            print("✅ Balance response received!")
-            return True
-        time.sleep(0.1)
-    
-    print("❌ Timeout waiting for balance response")
-    return False
-
-def send_balance_query():
-    """Send balance query command (SAS 74h)"""
-    print("💰 Sending balance query...")
-    
-    # Balance query command - unlocked format
-    balance_command = GetCRC(SAS_ADDRESS + "7400000000")
-    print(f"💰 Balance command: {balance_command}")
-    
-    SendSASCommand(balance_command)
-    return True
-
-def test_serial_connectivity():
-    """Test basic serial port connectivity"""
-    global sasport
-    
-    print("\n🔧 Testing Serial Port Connectivity...")
-    print(f"Port: {sasport.port}")
-    print(f"Baudrate: {sasport.baudrate}")
-    print(f"Bytesize: {sasport.bytesize}")
-    print(f"Parity: {sasport.parity}")
-    print(f"Stopbits: {sasport.stopbits}")
-    print(f"Timeout: {sasport.timeout}")
-    print(f"DTR: {sasport.dtr}")
-    print(f"RTS: {sasport.rts}")
-    print(f"DSR: {sasport.dsr}")
-    print(f"CTS: {sasport.cts}")
-    print(f"CD: {sasport.cd}")
-    print(f"RI: {sasport.ri}")
-    
-    # Test basic poll
-    print("\n🔧 Sending test poll...")
-    test_poll = GetCRC(SAS_ADDRESS + "80")
-    print(f"Test poll command: {test_poll}")
-    
-    success = SendSASPORT(test_poll)
-    if success:
-        print("✓ Test poll sent successfully")
-        
-        # Wait for response
-        time.sleep(0.1)
-        response = ReadSASPORT()
-        if response:
-            print(f"✓ Got response: {response}")
-            return True
-        else:
-            print("❌ No response to test poll")
-            
-            # Check if there's any data waiting
-            if sasport.in_waiting > 0:
-                print(f"⚠️  {sasport.in_waiting} bytes waiting in buffer")
-                raw_data = sasport.read(sasport.in_waiting)
-                print(f"Raw buffer data: {raw_data.hex().upper()}")
-            else:
-                print("📭 No data in receive buffer")
-            return False
-    else:
-        print("❌ Failed to send test poll")
-        return False
-
-def main():
-    """Main function"""
-    global polling_active, sasport, aft_response_received, aft_transfer_status
-    global balance_response_received, balance_amount, SAS_PORT
-    
-    print_banner()
-    
-    # Parse command line arguments
-    if len(sys.argv) != 2:
-        print("Usage: python3 test_aft_op.py <amount>")
-        print("Example: python3 test_aft_op.py 100.50")
-        return 1
-    
-    try:
-        amount = float(sys.argv[1])
-        print(f"Amount to load: {amount}")
-    except ValueError:
-        print("❌ Invalid amount. Please enter a valid number.")
-        return 1
-    
-        # Step 0: Using manually configured port
-    print(f"\n--- Step 0: Using Configured SAS Port ---")
-    print(f"✅ Using SAS port: {SAS_PORT}")
-    
-    # Open SAS port
-    print(f"\n--- Step 1: Open SAS Port ---")
-    print(f"Opening SAS port: {SAS_PORT} at {SAS_BAUDRATE} baud...")
     try:
         sasport = serial.Serial(
             port=SAS_PORT,
             baudrate=SAS_BAUDRATE,
             bytesize=serial.EIGHTBITS,
-            parity=serial.PARITY_NONE,
+            parity=serial.PARITY_NONE, # Start with NO parity
             stopbits=serial.STOPBITS_ONE,
-            timeout=0.1,  # Short timeout for polling
+            timeout=0.1,
             xonxoff=False,
             rtscts=False,
             dsrdtr=False
         )
-        
-        # Set DTR/RTS like original
         sasport.dtr = True
         sasport.rts = False
-        
-        print("✓ SAS port opened successfully")
-        
-        # Test connectivity first
-        connectivity_ok = test_serial_connectivity()
-        if not connectivity_ok:
-            print("⚠️  Serial connectivity test failed - continuing anyway...")
-        
-    except Exception as e:
-        print(f"❌ Failed to open SAS port: {e}")
-        return 1
-    
-    try:
-        # Step 2: Start continuous polling
-        print("\n--- Step 2: Start SAS Polling ---")
-        polling_active = True
-        poll_thread = threading.Thread(target=continuous_polling, daemon=True)
-        poll_thread.start()
-        
-        # Wait a moment for polling to start
-        time.sleep(2)
-        
-        # Step 3: Send AFT Credit Command
-        print("\n--- Step 3: Send AFT Credit Command ---")
-        print(f"Building AFT command for amount: {amount}")
-        
-        # Convert amount to cents
-        amount_cents = int(amount * 100)
-        print(f"Amount in cents: {amount_cents}")
-        
-        # Build AFT command - EXACTLY like reference implementation
-        command = "00"  # Transfer Code
-        command += "00"  # Transfer Index
-        command += "00"  # Transfer Type (cashable)
-        
-        # Amount in proper BCD format (5 bytes = 10 hex chars) - FIXED!
-        cashable_amount_bcd = AddLeftBCD(amount_cents, 5)
-        restricted_amount_bcd = AddLeftBCD(0, 5)  # No restricted amount
-        nonrestricted_amount_bcd = AddLeftBCD(0, 5)  # No non-restricted amount
-        
-        command += cashable_amount_bcd  # Cashable amount (proper BCD)
-        command += restricted_amount_bcd  # Restricted amount (proper BCD)
-        command += nonrestricted_amount_bcd  # Non-restricted amount (proper BCD)
-        
-        print(f"💰 Amount breakdown:")
-        print(f"   Cashable: {amount_cents} cents -> BCD: {cashable_amount_bcd}")
-        print(f"   Restricted: 0 cents -> BCD: {restricted_amount_bcd}")
-        print(f"   Non-restricted: 0 cents -> BCD: {nonrestricted_amount_bcd}")
-        
-        command += "07"  # Transfer flag (hard cashout)
-        command += ASSET_NUMBER  # Asset number
-        command += REGISTRATION_KEY  # Registration key
-        
-        # Transaction ID - EXACTLY like main app (line 740-742)
-        transaction_id_int = get_next_transaction_id()  # Get integer transaction ID
-        transaction_id_str = str(transaction_id_int)  # Convert to string
-        print(f"💳 Transaction ID: {transaction_id_int} -> '{transaction_id_str}'")
-        
-        # Convert each character to hex (ASCII encoding) - EXACTLY like main app
-        transaction_id_hex = "".join("{:02x}".format(ord(c)) for c in transaction_id_str)
-        print(f"💳 Transaction ID hex: {transaction_id_hex}")
-        
-        # Transaction ID length in BCD format
-        transaction_id_length_bcd = AddLeftBCD(len(transaction_id_hex)//2, 1)
-        print(f"💳 Transaction ID length BCD: {transaction_id_length_bcd}")
-        
-        command += transaction_id_length_bcd  # Transaction ID length (BCD)
-        command += transaction_id_hex  # Transaction ID (hex encoded ASCII)
-        
-        command += "00000000"  # Expiration date
-        command += "0000"  # Pool ID
-        command += "00"  # Receipt data length
-        
-        # Build header
-        command_header = SAS_ADDRESS + "72"  # Address + Command
-        command_header += f"{len(command)//2:02X}"  # Length
-        
-        # Final command
-        full_command = GetCRC(command_header + command)
-        
-        print(f"\n🔧 AFT Command Analysis:")
-        print(f"   Header: {command_header}")
-        print(f"   Body: {command}")
-        print(f"   Full command: {full_command}")
-        print(f"   Command length: {len(full_command)} hex chars ({len(full_command)//2} bytes)")
-        
-        # Validate command structure
-        if len(full_command) < 10:
-            print("❌ Command too short!")
-            return 1
-            
-        expected_length = int(command_header[4:6], 16) + 5  # Header + CRC
-        actual_length = len(full_command) // 2
-        if actual_length != expected_length:
-            print(f"⚠️  Length mismatch: Expected {expected_length}, got {actual_length}")
-        
-        # Reset AFT response flags
-        aft_response_received = False
-        aft_transfer_status = None
-        
-        print(f"\n📤 Sending AFT Credit Load Command...")
-        success = SendSASCommand(full_command)
-        if not success:
-            print("❌ Failed to send AFT command")
-            return 1
-        
-        # Step 4: Wait for AFT completion
-        print("\n--- Step 4: Wait for AFT Completion ---")
-        aft_success = wait_for_aft_completion()
-        
-        if aft_success:
-            print("✅ AFT operation completed successfully!")
-            
-            # Step 5: Query balance to verify credit was applied
-            print("\n--- Step 5: Verify Balance ---")
-            print("Waiting a moment for machine to process credit...")
-            time.sleep(2)  # Give machine time to process
-            
-            # Reset balance response flags
-            balance_response_received = False
-            balance_amount = 0.0
-            
-            # Send balance query
-            if send_balance_query():
-                if wait_for_balance_response():
-                    print(f"✅ Current balance: ${balance_amount}")
-                    if balance_amount >= amount:
-                        print(f"✅ SUCCESS: Balance increased by at least ${amount}!")
-                    elif balance_amount > 0:
-                        print(f"⚠️  PARTIAL: Balance is ${balance_amount}, expected at least ${amount}")
-                    else:
-                        print(f"❌ ISSUE: Balance is still ${balance_amount}, credit may not have been applied")
-                else:
-                    print("❌ Failed to get balance response")
-            else:
-                print("❌ Failed to send balance query")
+        if sasport.is_open:
+            print(f"[INFO] SAS Port {SAS_PORT} opened successfully.")
+            return True
         else:
-            print("❌ AFT operation failed or timed out")
+            print(f"[ERROR] Failed to open SAS Port {SAS_PORT}.")
+            return False
+    except Exception as e:
+        print(f"[ERROR] Could not open port {SAS_PORT}: {e}")
+        return False
+
+def SendSASPORT(command_hex):
+    """
+    Sends a command to the SAS port using the correct parity switching method.
+    This is the CRITICAL FIX. It now uses termios for Linux, just like the original app.
+    """
+    if not sasport or not sasport.is_open:
+        print("[ERROR] Cannot send command, port is not open.")
+        return False
+
+    command_hex = command_hex.replace(" ", "")
+    if len(command_hex) < 2:
+        return False
+
+    try:
+        if platform.system() == "Windows":
+            # Windows does not have termios, rely on pyserial's implementation
+            sasport.parity = serial.PARITY_MARK
+            sasport.write(bytes.fromhex(command_hex[0:2]))
+            sasport.flush()
+            if len(command_hex) > 2:
+                time.sleep(0.005)
+                sasport.parity = serial.PARITY_SPACE
+                sasport.write(bytes.fromhex(command_hex[2:]))
+                sasport.flush()
+        else:
+            # Linux: Use termios for reliable parity switching (THE FIX)
+            iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport.fileno())
+            CMSPAR = 0o10000000000 # This flag is not in the standard termios module
+
+            # Set MARK parity for the first byte
+            cflag |= (termios.PARENB | CMSPAR | termios.PARODD)
+            termios.tcsetattr(sasport.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+            sasport.write(bytes.fromhex(command_hex[0:2]))
+            sasport.flush() # Ensure the byte is sent
+
+            if len(command_hex) > 2:
+                time.sleep(0.001) # Crucial small delay from original app
+                # Set SPACE parity for the rest of the bytes
+                cflag &= ~termios.PARODD
+                termios.tcsetattr(sasport.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                sasport.write(bytes.fromhex(command_hex[2:]))
+                sasport.flush() # Ensure the rest is sent
+    except Exception as e:
+        print(f"[ERROR] Failed to send SAS command: {e}")
+        return False
+    return True
+
+
+def ReadSASPORT():
+    """Reads any available data from the SAS port."""
+    if not sasport or not sasport.is_open:
+        return ""
+    try:
+        if sasport.in_waiting > 0:
+            response_bytes = sasport.read(sasport.in_waiting)
+            return response_bytes.hex().upper()
+    except Exception as e:
+        print(f"[ERROR] Failed to read from SAS port: {e}")
+    return ""
+
+# --- Command and Response Handling ---
+
+def continuous_polling():
+    """Background thread to poll the machine, keeping the connection alive."""
+    global polling_active
+    print("[INFO] SAS polling thread started.")
+    last_poll_type = 81
+    while polling_active:
+        try:
+            # Alternate polls like the original app
+            poll_cmd = "80" if last_poll_type == 81 else "81"
+            SendSASPORT(GetCRC(SAS_ADDRESS + poll_cmd))
+            last_poll_type = int(poll_cmd)
+
+            time.sleep(0.02) # Wait for potential response
+            response = ReadSASPORT()
+            if response:
+                print(f"[POLL RX] {response}")
+                handle_received_sas_command(response)
+            
+            time.sleep(0.2) # Polling interval
+        except Exception as e:
+            print(f"[ERROR] Polling loop error: {e}")
+            time.sleep(1)
+    print("[INFO] SAS polling thread stopped.")
+
+
+def handle_received_sas_command(response_hex):
+    """Processes responses from the gaming machine."""
+    global aft_response_received, aft_transfer_status, balance_response_received, balance_amount
+    
+    if not response_hex:
+        return
+
+    # Check for AFT Transfer Response (72h)
+    if response_hex.startswith("0172"):
+        print(f"[AFT RX] Received AFT Response: {response_hex}")
+        aft_transfer_status = response_hex[12:14]
+        aft_response_received = True
+
+    # Check for Balance Query Response (74h)
+    elif response_hex.startswith("0174"):
+        print(f"[BALANCE RX] Received Balance Response: {response_hex}")
+        try:
+            # Cashable amount is 5 bytes BCD, starting at index 22
+            cashable_bcd = response_hex[22:32]
+            balance_amount = Decimal(cashable_bcd) / Decimal(100)
+            print(f"[BALANCE RX] Parsed cashable amount: ${balance_amount}")
+        except Exception as e:
+            print(f"[ERROR] Failed to parse balance: {e}")
+        balance_response_received = True
+    
+    # Check for AFT completion acknowledgement (69h)
+    elif response_hex.startswith("01FF69"):
+        print("[AFT RX] Received AFT Transfer Complete ACK (69h).")
+        # This confirms the machine processed the transfer. We can consider it success.
+        aft_transfer_status = "00"
+        aft_response_received = True
+
+
+def send_aft_credit_command(amount_to_load):
+    """Constructs and sends the AFT credit command (72h)."""
+    print("\n--- Sending AFT Credit Command ---")
+    amount_in_cents = int(Decimal(amount_to_load) * 100)
+    
+    # Body of the command
+    command_body = ""
+    command_body += "00"  # Transfer Code: 00 (No receipt)
+    command_body += "00"  # Transfer Index
+    command_body += "00"  # Transfer Type: 00 (Cashable)
+    command_body += AddLeftBCD(amount_in_cents, 5)  # 5-byte BCD Cashable amount
+    command_body += AddLeftBCD(0, 5)  # 5-byte BCD Restricted amount
+    command_body += AddLeftBCD(0, 5)  # 5-byte BCD Non-restricted amount
+    command_body += "07"  # Transfer Flags: 07 (Hard cashout mode)
+    command_body += ASSET_NUMBER
+    command_body += REGISTRATION_KEY
+    
+    # Transaction ID (ASCII encoded)
+    tid = str(get_next_transaction_id())
+    tid_hex = tid.encode('utf-8').hex()
+    tid_len_hex = f"{len(tid_hex) // 2:02X}"
+    
+    command_body += tid_len_hex
+    command_body += tid_hex
+    
+    command_body += "00000000"  # Expiration Date
+    command_body += "0000"      # Pool ID
+    command_body += "00"        # Receipt Data Length
+
+    # Header with length
+    command_header = SAS_ADDRESS + "72" + f"{len(command_body) // 2:02X}"
+
+    full_command = GetCRC(command_header + command_body)
+    print(f"[AFT TX] Sending command: {full_command}")
+    return SendSASPORT(full_command)
+
+
+def main():
+    """Main application flow."""
+    global polling_active, sasport, SAS_PORT
+    
+    print_banner()
+
+    if len(sys.argv) != 2:
+        print("Usage: python test_aft_op.py <amount>")
+        sys.exit(1)
         
-        # Step 6: Stop polling and cleanup
-        print("\n--- Step 6: Cleanup ---")
-        polling_active = False
-        time.sleep(1)  # Wait for polling thread to stop
-        
+    try:
+        amount = Decimal(sys.argv[1])
+        if amount <= 0:
+            raise ValueError("Amount must be positive.")
+    except Exception as e:
+        print(f"[ERROR] Invalid amount: {e}")
+        sys.exit(1)
+
+    # --- Port Discovery ---
+    print("\n--- Step 1: Discovering SAS Port ---")
+    # For this test, we'll manually set it based on the original app's success
+    SAS_PORT = "/dev/ttyUSB0" 
+    print(f"[INFO] Using pre-configured SAS Port: {SAS_PORT}")
+    
+    if not open_sas_port():
+        sys.exit(1)
+
+    polling_thread = None
+    try:
+        # --- Start Polling ---
+        print("\n--- Step 2: Starting SAS Polling ---")
+        polling_active = True
+        polling_thread = threading.Thread(target=continuous_polling, daemon=True)
+        polling_thread.start()
+        time.sleep(1) # Let polling stabilize
+
+        # --- Send AFT Command ---
+        if not send_aft_credit_command(amount):
+            print("[ERROR] Failed to send AFT command.")
+            raise Exception("AFT Send Failure")
+            
+        # --- Wait for Response ---
+        print("\n--- Step 3: Waiting for AFT Response ---")
+        timeout = 10
+        start_time = time.time()
+        while not aft_response_received and time.time() - start_time < timeout:
+            time.sleep(0.1)
+
+        if not aft_response_received:
+            print("[ERROR] Timeout: No response received for AFT command.")
+        elif aft_transfer_status == "00":
+            print("[SUCCESS] AFT Transfer successful!")
+        else:
+            print(f"[FAILURE] AFT Transfer failed with status code: {aft_transfer_status}")
+            
+    except Exception as e:
+        print(f"\n[FATAL] An error occurred: {e}")
     finally:
-        # Close serial port
+        # --- Cleanup ---
+        print("\n--- Step 4: Cleaning up ---")
+        if polling_thread:
+            polling_active = False
+            polling_thread.join(timeout=2)
         if sasport and sasport.is_open:
             sasport.close()
-            print("✓ SAS port closed")
-    
-    print("\nAFT test completed.")
-    return 0
+            print("[INFO] SAS Port closed.")
+        print("Test finished.")
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
