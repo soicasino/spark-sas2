@@ -88,6 +88,17 @@ def get_next_transaction_id():
     transaction_id_counter = (transaction_id_counter + 1) % 10000
     return transaction_id_counter
 
+def print_banner():
+    """Print application banner"""
+    print("=" * 60)
+    print("AFT Add Credit Test Application - CORRECTED")
+    print("Based on original SAS communication logic")
+    print("=" * 60)
+    print(f"SAS Port: Will be auto-configured")
+    print(f"Asset No: 108 (0x{ASSET_NUMBER})")
+    print(f"Registration Key: {REGISTRATION_KEY}")
+    print("=" * 60)
+
 # --- Core SAS Communication Functions (Corrected) ---
 
 def open_sas_port():
@@ -147,7 +158,7 @@ def SendSASPORT(command_hex):
         else:
             # Linux: Use termios for reliable parity switching (THE FIX)
             iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport.fileno())
-            CMSPAR = 0o10000000000 # This flag is not in the standard termios module
+            CMSPAR = 0x40000000 # This flag is not in the standard termios module - EXACTLY like main app
 
             # Set MARK parity for the first byte
             cflag |= (termios.PARENB | CMSPAR | termios.PARODD)
@@ -226,7 +237,15 @@ def handle_received_sas_command(response_hex):
         try:
             # Cashable amount is 5 bytes BCD, starting at index 22
             cashable_bcd = response_hex[22:32]
-            balance_amount = Decimal(cashable_bcd) / Decimal(100)
+            # Convert BCD to integer (each hex digit represents a decimal digit)
+            balance_cents = 0
+            for i in range(0, len(cashable_bcd), 2):
+                if i + 1 < len(cashable_bcd):
+                    byte_val = cashable_bcd[i:i+2]
+                    high_digit = int(byte_val[0], 16)
+                    low_digit = int(byte_val[1], 16)
+                    balance_cents = balance_cents * 100 + high_digit * 10 + low_digit
+            balance_amount = Decimal(balance_cents) / Decimal(100)
             print(f"[BALANCE RX] Parsed cashable amount: ${balance_amount}")
         except Exception as e:
             print(f"[ERROR] Failed to parse balance: {e}")
@@ -298,7 +317,7 @@ def main():
     # --- Port Discovery ---
     print("\n--- Step 1: Discovering SAS Port ---")
     # For this test, we'll manually set it based on the original app's success
-    SAS_PORT = "/dev/ttyUSB0" 
+    SAS_PORT = "/dev/ttyUSB1"  # Based on previous tests, this was the working port
     print(f"[INFO] Using pre-configured SAS Port: {SAS_PORT}")
     
     if not open_sas_port():
