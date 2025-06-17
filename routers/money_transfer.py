@@ -125,9 +125,42 @@ async def add_credits(
                 if wait_result is True:
                     print(f"[ADD CREDITS] ✅ BLOCKING WAIT SUCCESS - Direct AFT transfer completed!")
                     
-                    # CRITICAL: Wait for machine balance to update after AFT completion
+                    # CRITICAL: Check for AFT lock after transfer and unlock if needed
+                    print(f"[ADD CREDITS] Checking for AFT lock after transfer...")
+                    await asyncio.sleep(2)  # Allow transfer to settle
+                    
+                    # Query machine status to check for AFT lock
+                    sas_comm.sas_money.komut_bakiye_sorgulama("add_credits_lock_check", False, "post_transfer_lock_check")
+                    await asyncio.sleep(2)  # Wait for status response
+                    
+                    # Check if machine is in AFT locked state
+                    lock_status = getattr(sas_comm, 'last_game_lock_status', '00')
+                    aft_status = getattr(sas_comm, 'last_aft_status', '00')
+                    
+                    print(f"[ADD CREDITS] Post-transfer status - Lock: {lock_status}, AFT: {aft_status}")
+                    
+                    if lock_status == 'FF' or aft_status in ['B0', 'C0', 'C1', 'C2']:
+                        print(f"[ADD CREDITS] Machine in AFT locked state - attempting unlock...")
+                        
+                        # Send AFT unlock/cancel commands
+                        try:
+                            unlock_result = sas_comm.sas_money.komut_cancel_aft_transfer()
+                            print(f"[ADD CREDITS] AFT unlock result: {unlock_result}")
+                            await asyncio.sleep(2)
+                            
+                            # Also try comprehensive unlock if needed
+                            if not unlock_result:
+                                print(f"[ADD CREDITS] Trying comprehensive AFT unlock...")
+                                comprehensive_result = sas_comm.sas_money.komut_comprehensive_aft_unlock()
+                                print(f"[ADD CREDITS] Comprehensive unlock result: {comprehensive_result}")
+                                await asyncio.sleep(2)
+                                
+                        except Exception as unlock_error:
+                            print(f"[ADD CREDITS] Warning: AFT unlock failed: {unlock_error}")
+                    
+                    # CRITICAL: Wait for machine balance to update after AFT completion and unlock
                     print(f"[ADD CREDITS] Waiting for machine balance to update after AFT completion...")
-                    await asyncio.sleep(5)  # Allow machine to process and update internal balance
+                    await asyncio.sleep(3)  # Allow machine to process and update internal balance
                     
                     # Query updated balance
                     print(f"[ADD CREDITS] Querying updated balance...")
