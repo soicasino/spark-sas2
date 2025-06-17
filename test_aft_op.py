@@ -128,6 +128,23 @@ def open_sas_port():
         sasport.rts = False
         if sasport.is_open:
             print(f"[INFO] SAS Port {SAS_PORT} opened successfully.")
+            
+            # CRITICAL: Send AFT registration init command like main app!
+            print("[INFO] Sending AFT Registration Init command (017301FFA765)...")
+            init_cmd = GetCRC("017301FF")  # AFT registration init
+            SendSASPORT(init_cmd)
+            time.sleep(0.5)  # Give machine time to respond
+            
+            # Try to read asset number response
+            response = ReadSASPORT()
+            if response:
+                print(f"[INFO] AFT Registration response: {response}")
+                if response.startswith("0173") and len(response) >= 16:
+                    asset_hex = response[8:16]
+                    print(f"[INFO] Asset number confirmed: {asset_hex}")
+            else:
+                print("[WARNING] No response to AFT registration init - continuing anyway")
+            
             return True
         else:
             print(f"[ERROR] Failed to open SAS Port {SAS_PORT}.")
