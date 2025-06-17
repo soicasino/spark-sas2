@@ -146,8 +146,19 @@ def SendSASPORT(command_hex):
     try:
         command_hex = command_hex.replace(" ", "")
         data = bytes.fromhex(command_hex)
-        sasport.write(data)
+        
+        # Debug: Show what we're actually sending
+        print(f"🔍 Sending {len(data)} bytes: {' '.join(f'{b:02X}' for b in data)}")
+        
+        bytes_written = sasport.write(data)
         sasport.flush()
+        
+        print(f"🔍 Wrote {bytes_written} bytes to serial port")
+        
+        # Check if all bytes were written
+        if bytes_written != len(data):
+            print(f"⚠️  Warning: Tried to send {len(data)} bytes, only {bytes_written} were written")
+            
         return True
     except Exception as e:
         print(f"❌ Send error: {e}")
@@ -160,17 +171,25 @@ def SendSASCommand(command_hex):
     command_hex = command_hex.replace(" ", "")
     
     # Update last sent times like original
-    if command_hex == "81":
+    if command_hex.endswith("81"):
         last_sent_poll_type = 81
-    if command_hex == "80":
+    if command_hex.endswith("80"):
         last_sent_poll_type = 80
 
-    # Only log important commands (not regular polls)
-    if not command_hex.startswith(("80", "81")):
-        print("TX: ", command_hex, datetime.datetime.now())
+    # Log all commands with more detail
+    if command_hex.endswith(("80", "81")):
+        # Polling commands - show less frequently
+        pass  # Will be shown in polling function
+    else:
+        print(f"TX: {command_hex} at {datetime.datetime.now()}")
+        print(f"    Command breakdown: Address={command_hex[0:2]}, Command={command_hex[2:4]}, Length={len(command_hex)//2} bytes")
     
-    # Just send normally (device type 8 - default)
-    SendSASPORT(command_hex)
+    # Send command
+    success = SendSASPORT(command_hex)
+    if not success:
+        print(f"❌ Failed to send command: {command_hex}")
+    
+    return success
 
 def ReadSASPORT():
     """Read response from SAS port - EXACTLY matching original"""
@@ -182,7 +201,10 @@ def ReadSASPORT():
     try:
         if sasport.in_waiting > 0:
             response = sasport.read(sasport.in_waiting)
-            return response.hex().upper()
+            hex_response = response.hex().upper()
+            # Debug: Show raw bytes received
+            print(f"🔍 Raw bytes received: {len(response)} bytes -> {hex_response}")
+            return hex_response
         return ""
     except Exception as e:
         print(f"❌ Read error: {e}")
@@ -201,6 +223,8 @@ def continuous_polling():
     
     poll_counter = 0
     last_poll_time = time.time()
+    response_count = 0
+    no_response_count = 0
     
     while polling_active:
         try:
@@ -212,15 +236,20 @@ def continuous_polling():
                 if poll_counter % 10 == 0:
                     # Every 10th poll, send interrogation
                     SendSASCommand(interrogation)
+                    poll_type = "INTERROGATION"
                 else:
                     # Otherwise, send general poll
                     SendSASCommand(general_poll)
+                    poll_type = "GENERAL_POLL"
                 
                 time.sleep(0.05)  # Wait for response
                 
                 # Check for response
                 response = ReadSASPORT()
                 if response:
+                    response_count += 1
+                    print(f"🔍 RX[{response_count}] ({poll_type}): {response} at {datetime.datetime.now()}")
+                    
                     # Handle AFT responses - EXACTLY like original
                     if len(response) >= 4 and response[0:4] == "0172":
                         print("📊 AFT Transfer Response Received!")
@@ -233,14 +262,24 @@ def continuous_polling():
                         aft_transfer_status = "00"  # Success like original
                         aft_response_received = True
                     elif response in ["01", "00"]:
-                        # Normal responses - don't spam output
-                        pass
+                        # Normal responses - show occasionally for debugging
+                        if response_count % 20 == 1:  # Every 20th response
+                            print(f"🔄 Normal response: {response} (showing 1 in 20)")
                     else:
                         # Other responses - log for debugging
                         print(f"🔍 Other response: {response}")
+                else:
+                    no_response_count += 1
+                    # Show no-response status every 50 polls
+                    if poll_counter % 50 == 0:
+                        print(f"⚠️  No response for {no_response_count} polls (total polls: {poll_counter})")
                 
                 poll_counter += 1
                 last_poll_time = current_time
+                
+                # Debug: Show polling stats every 100 polls
+                if poll_counter % 100 == 0:
+                    print(f"📊 Polling Stats: {poll_counter} polls sent, {response_count} responses, {no_response_count} no-responses")
             
             time.sleep(0.01)  # Small delay to prevent CPU spinning
             
@@ -248,7 +287,7 @@ def continuous_polling():
             print(f"❌ Polling error: {e}")
             time.sleep(0.1)
     
-    print("🔄 Polling stopped")
+    print(f"🔄 Polling stopped - Final stats: {poll_counter} polls, {response_count} responses")
 
 def Yanit_ParaYukle(response):
     """Parse AFT response - EXACTLY like original Yanit_ParaYukle"""
@@ -310,7 +349,7 @@ def Yanit_BakiyeSorgulama(response):
         print(f"===========================================")
         
         if len(response) < 40:  # Need at least 40 chars for basic balance data
-            print("�� Response too short for balance parsing")
+            print("Response too short for balance parsing")
             balance_response_received = True
             return
         
@@ -435,6 +474,54 @@ def send_balance_query():
     SendSASCommand(balance_command)
     return True
 
+def test_serial_connectivity():
+    """Test basic serial port connectivity"""
+    global sasport
+    
+    print("\n🔧 Testing Serial Port Connectivity...")
+    print(f"Port: {sasport.port}")
+    print(f"Baudrate: {sasport.baudrate}")
+    print(f"Bytesize: {sasport.bytesize}")
+    print(f"Parity: {sasport.parity}")
+    print(f"Stopbits: {sasport.stopbits}")
+    print(f"Timeout: {sasport.timeout}")
+    print(f"DTR: {sasport.dtr}")
+    print(f"RTS: {sasport.rts}")
+    print(f"DSR: {sasport.dsr}")
+    print(f"CTS: {sasport.cts}")
+    print(f"CD: {sasport.cd}")
+    print(f"RI: {sasport.ri}")
+    
+    # Test basic poll
+    print("\n🔧 Sending test poll...")
+    test_poll = GetCRC(SAS_ADDRESS + "80")
+    print(f"Test poll command: {test_poll}")
+    
+    success = SendSASPORT(test_poll)
+    if success:
+        print("✓ Test poll sent successfully")
+        
+        # Wait for response
+        time.sleep(0.1)
+        response = ReadSASPORT()
+        if response:
+            print(f"✓ Got response: {response}")
+            return True
+        else:
+            print("❌ No response to test poll")
+            
+            # Check if there's any data waiting
+            if sasport.in_waiting > 0:
+                print(f"⚠️  {sasport.in_waiting} bytes waiting in buffer")
+                raw_data = sasport.read(sasport.in_waiting)
+                print(f"Raw buffer data: {raw_data.hex().upper()}")
+            else:
+                print("📭 No data in receive buffer")
+            return False
+    else:
+        print("❌ Failed to send test poll")
+        return False
+
 def main():
     """Main function"""
     global polling_active, sasport, aft_response_received, aft_transfer_status
@@ -469,7 +556,18 @@ def main():
             rtscts=False,
             dsrdtr=False
         )
+        
+        # Set DTR/RTS like original
+        sasport.dtr = True
+        sasport.rts = False
+        
         print("✓ SAS port opened successfully")
+        
+        # Test connectivity first
+        connectivity_ok = test_serial_connectivity()
+        if not connectivity_ok:
+            print("⚠️  Serial connectivity test failed - continuing anyway...")
+        
     except Exception as e:
         print(f"❌ Failed to open SAS port: {e}")
         return 1
@@ -532,15 +630,31 @@ def main():
         # Final command
         full_command = GetCRC(command_header + command)
         
-        print(f"Final AFT command: {full_command}")
-        print(f"Command length: {len(full_command)} hex chars ({len(full_command)//2} bytes)")
+        print(f"\n🔧 AFT Command Analysis:")
+        print(f"   Header: {command_header}")
+        print(f"   Body: {command}")
+        print(f"   Full command: {full_command}")
+        print(f"   Command length: {len(full_command)} hex chars ({len(full_command)//2} bytes)")
+        
+        # Validate command structure
+        if len(full_command) < 10:
+            print("❌ Command too short!")
+            return 1
+            
+        expected_length = int(command_header[4:6], 16) + 5  # Header + CRC
+        actual_length = len(full_command) // 2
+        if actual_length != expected_length:
+            print(f"⚠️  Length mismatch: Expected {expected_length}, got {actual_length}")
         
         # Reset AFT response flags
         aft_response_received = False
         aft_transfer_status = None
         
-        print(f"TX -> AFT Credit Load: {full_command}")
-        SendSASCommand(full_command)
+        print(f"\n📤 Sending AFT Credit Load Command...")
+        success = SendSASCommand(full_command)
+        if not success:
+            print("❌ Failed to send AFT command")
+            return 1
         
         # Step 3: Wait for AFT completion
         print("\n--- Step 3: Wait for AFT Completion ---")
