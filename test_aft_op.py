@@ -32,7 +32,7 @@ SAS_BAUDRATE = 19200
 SAS_ADDRESS = "01"
 ASSET_NUMBER = "6C000000"  # Asset 108 (0x6C) in little-endian hex, 4 bytes
 REGISTRATION_KEY = "0000000000000000000000000000000000000000"  # 20 bytes of zeros
-DEVICE_TYPE_ID = 3  # From settings.ini - CRITICAL for proper communication!
+DEVICE_TYPE_ID = 8  # CRITICAL: Main app detected device type 8, not 3!
 
 # --- Global Variables ---
 sasport = None
@@ -101,7 +101,7 @@ def print_banner():
     print(f"SAS Port: Will be auto-configured")
     print(f"Asset No: 108 (0x{ASSET_NUMBER})")
     print(f"Registration Key: {REGISTRATION_KEY}")
-    print(f"Device Type ID: {DEVICE_TYPE_ID} (from settings.ini)")
+    print(f"Device Type ID: {DEVICE_TYPE_ID} (detected by main app)")
     print("=" * 60)
 
 # --- Core SAS Communication Functions (Corrected) ---
