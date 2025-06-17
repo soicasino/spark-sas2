@@ -2,7 +2,7 @@
 """
 AFT Add Credit Test Application
 Based on raspberryPython_orj.py.ref
-For testing AFT operations on Raspberry Pi
+For testing AFT operations on Raspberry Pi with continuous SAS polling
 
 Usage: python3 test_aft_op.py <amount>
 Example: python3 test_aft_op.py 100.50
@@ -16,6 +16,7 @@ import serial
 import sys
 import datetime
 import time
+import threading
 from decimal import Decimal
 from crccheck.crc import CrcKermit
 
@@ -31,12 +32,18 @@ CASHOUT_MODE_SOFT = False  # Use hard cashout mode
 sasport = None
 transaction_id = 1
 IsWaitingForParaYukle = False
+polling_active = False
+polling_thread = None
+last_response = None
+aft_pending = False
+aft_result = None
 
 def print_banner():
     """Print application banner"""
     print("=" * 60)
     print("AFT Add Credit Test Application")
     print("Based on raspberryPython_orj.py.ref")
+    print("With Continuous SAS Polling")
     print("=" * 60)
     print(f"SAS Port: {SAS_PORT}")
     print(f"Asset No: 108 (0x{ASSET_NUMBER})")
@@ -92,7 +99,8 @@ def open_sas_port():
         sasport.parity = serial.PARITY_NONE
         sasport.stopbits = serial.STOPBITS_ONE
         sasport.bytesize = serial.EIGHTBITS
-        sasport.timeout = 1
+        sasport.timeout = 0.1  # Short timeout for polling
+        sasport.inter_byte_timeout = 0.01
         
         print(f"Opening SAS port: {SAS_PORT} at {SAS_BAUDRATE} baud...")
         sasport.open()
@@ -118,70 +126,139 @@ def close_sas_port():
     except Exception as e:
         print(f"✗ Error closing SAS port: {e}")
 
-def send_command(command_name, command_hex):
-    """Send SAS command - from original"""
+def send_raw_command(command_hex):
+    """Send raw SAS command"""
     global sasport
     try:
         if not sasport or not sasport.isOpen():
-            print("✗ SAS port not open")
             return False
             
         # Convert hex string to bytes
         if len(command_hex) % 2 != 0:
-            print("✗ Invalid command length")
             return False
             
         command_bytes = bytes.fromhex(command_hex)
-        
-        print(f"TX -> {command_name}: {command_hex}")
         
         # Send command
         sasport.write(command_bytes)
         sasport.flush()
         
-        # Wait for response
-        time.sleep(0.1)
-        
-        # Read response
-        response = read_sas_response()
-        if response:
-            print(f"RX <- Response: {response}")
-            return True
-        else:
-            print("No response received")
-            return False
+        return True
             
     except Exception as e:
         print(f"✗ Error sending command: {e}")
         return False
 
 def read_sas_response():
-    """Read SAS response - simplified version from original"""
+    """Read SAS response with timeout"""
     global sasport
     try:
         if not sasport or not sasport.isOpen():
             return ""
             
-        out = ''
-        read_timeout = 3
-        while read_timeout > 0:
-            read_timeout -= 1
-            
-            while sasport.inWaiting() > 0:
-                data = sasport.read_all()
-                if data:
-                    out += data.hex()
-                time.sleep(0.005)
-            
-            if out:
-                break
-            time.sleep(0.005)
+        # Read with timeout
+        data = sasport.read_all()
+        if data:
+            return data.hex().upper()
         
-        return out.upper()
+        return ""
         
     except Exception as e:
-        print(f"✗ Error reading response: {e}")
         return ""
+
+def continuous_polling():
+    """Continuous SAS polling thread"""
+    global polling_active, last_response, aft_pending, aft_result
+    
+    print("🔄 Starting continuous SAS polling...")
+    
+    # Polling commands
+    general_poll = GetCRC(SAS_ADDRESS + "80")  # General poll
+    interrogation = GetCRC(SAS_ADDRESS + "2F")  # Interrogation
+    
+    poll_counter = 0
+    last_poll_time = time.time()
+    
+    while polling_active:
+        try:
+            current_time = time.time()
+            
+            # Send general poll every 200ms
+            if current_time - last_poll_time >= 0.2:
+                if send_raw_command(general_poll):
+                    # Check for response
+                    time.sleep(0.05)  # Wait for response
+                    response = read_sas_response()
+                    
+                    if response:
+                        print(f"📡 Poll Response: {response}")
+                        last_response = response
+                        
+                        # Check for AFT responses
+                        if aft_pending:
+                            if response.startswith("0172"):
+                                print("📊 AFT Transfer Response Received!")
+                                aft_result = parse_aft_response(response)
+                                aft_pending = False
+                            elif "FF69" in response:
+                                print("✓ AFT completion notification received!")
+                                aft_pending = False
+                    
+                    # Send interrogation every 10 polls
+                    poll_counter += 1
+                    if poll_counter >= 10:
+                        poll_counter = 0
+                        send_raw_command(interrogation)
+                        time.sleep(0.05)
+                        response = read_sas_response()
+                        if response:
+                            print(f"📋 Interrogation Response: {response}")
+                
+                last_poll_time = current_time
+            
+            time.sleep(0.05)  # Small delay between loops
+            
+        except Exception as e:
+            print(f"✗ Polling error: {e}")
+            time.sleep(0.1)
+    
+    print("🔄 Polling stopped")
+
+def start_polling():
+    """Start continuous polling"""
+    global polling_active, polling_thread
+    
+    if not polling_active:
+        polling_active = True
+        polling_thread = threading.Thread(target=continuous_polling, daemon=True)
+        polling_thread.start()
+        time.sleep(0.5)  # Give polling time to start
+
+def stop_polling():
+    """Stop continuous polling"""
+    global polling_active, polling_thread
+    
+    if polling_active:
+        polling_active = False
+        if polling_thread:
+            polling_thread.join(timeout=2)
+        print("🔄 Polling stopped")
+
+def send_command(command_name, command_hex):
+    """Send SAS command with polling active"""
+    try:
+        print(f"TX -> {command_name}: {command_hex}")
+        
+        if send_raw_command(command_hex):
+            print(f"✓ {command_name} sent successfully")
+            return True
+        else:
+            print(f"✗ Failed to send {command_name}")
+            return False
+            
+    except Exception as e:
+        print(f"✗ Error sending command: {e}")
+        return False
 
 def hex_to_decimal(hex_str):
     """Convert BCD hex string to decimal - from original"""
@@ -381,38 +458,23 @@ def build_aft_command(amount):
 
 def wait_for_aft_response():
     """Wait for AFT completion response"""
+    global aft_pending, aft_result
+    
     print("Waiting for AFT response...")
     
+    aft_pending = True
+    aft_result = None
     timeout = 30  # 30 seconds timeout
     start_time = time.time()
-    aft_result = None
     
-    while time.time() - start_time < timeout:
-        response = read_sas_response()
-        if response:
-            print(f"Received: {response}")
-            
-            # Check for AFT transfer response (command 0x72)
-            if response.startswith("0172"):
-                print("📊 AFT Transfer Response Received!")
-                aft_result = parse_aft_response(response)
-                if aft_result:
-                    if aft_result['success']:
-                        print("✓ AFT transfer completed successfully!")
-                        return True
-                    else:
-                        print(f"✗ AFT transfer failed: {aft_result['description']}")
-                        return False
-            
-            # Check for AFT completion notification (command 0x69)
-            elif "FF69" in response:
-                print("✓ AFT completion notification received!")
-                if aft_result and aft_result['success']:
-                    return True
-            
-            # Check for other responses
-            elif response.startswith("01"):
-                print(f"SAS response: {response}")
+    while time.time() - start_time < timeout and aft_pending:
+        if aft_result:
+            if aft_result['success']:
+                print("✓ AFT transfer completed successfully!")
+                return True
+            else:
+                print(f"✗ AFT transfer failed: {aft_result['description']}")
+                return False
         
         time.sleep(0.1)
     
@@ -454,13 +516,20 @@ def main():
         sys.exit(1)
     
     try:
+        # Start continuous polling
+        print("\n--- Step 1: Start Continuous Polling ---")
+        start_polling()
+        
+        # Wait a moment for polling to establish communication
+        time.sleep(2)
+        
         # Send initial interrogation
-        print("\n--- Step 1: Initial Interrogation ---")
+        print("\n--- Step 2: Initial Interrogation ---")
         send_interrogation()
-        time.sleep(0.5)
+        time.sleep(1)
         
         # Build and send AFT command
-        print("\n--- Step 2: Send AFT Credit Command ---")
+        print("\n--- Step 3: Send AFT Credit Command ---")
         aft_command = build_aft_command(amount)
         
         global IsWaitingForParaYukle
@@ -470,7 +539,7 @@ def main():
             print("✓ AFT command sent successfully")
             
             # Wait for completion
-            print("\n--- Step 3: Wait for AFT Completion ---")
+            print("\n--- Step 4: Wait for AFT Completion ---")
             if wait_for_aft_response():
                 print("✓ AFT operation completed successfully!")
             else:
@@ -479,9 +548,9 @@ def main():
             print("✗ Failed to send AFT command")
         
         # Send final interrogation
-        print("\n--- Step 4: Final Interrogation ---")
+        print("\n--- Step 5: Final Interrogation ---")
         send_interrogation()
-        time.sleep(0.5)
+        time.sleep(1)
         
         IsWaitingForParaYukle = False
         
@@ -496,6 +565,8 @@ def main():
     except Exception as e:
         print(f"✗ Unexpected error: {e}")
     finally:
+        # Stop polling
+        stop_polling()
         close_sas_port()
         print("\nAFT test completed.")
 
