@@ -18,6 +18,8 @@ import sys
 import datetime
 import time
 import threading
+import platform
+import termios  # For Linux parity control
 from decimal import Decimal
 from crccheck.crc import CrcKermit
 
@@ -46,12 +48,20 @@ IsWaitingForParaYukle = False
 last_sent_poll_type = 80
 polling_active = False
 polling_thread = None
+device_type_id = 8  # Default device type like main app
+is_communication_by_windows = -1  # Platform detection
 
 # AFT response tracking
 aft_transfer_status = None
 aft_response_received = False
 balance_response_received = False
 balance_amount = 0.0
+
+# Platform detection - EXACTLY like main app
+if platform.system().startswith("Window"):
+    is_communication_by_windows = 1
+else:
+    is_communication_by_windows = 0
 
 def print_banner():
     """Print application banner"""
@@ -230,21 +240,23 @@ def discover_sas_port():
     return None
 
 def open_sas_port():
-    """Open SAS serial port - EXACTLY like original"""
-    global sasport
+    """Open SAS serial port - EXACTLY like main app's open_port"""
+    global sasport, device_type_id
     try:
         sasport = serial.Serial()
         sasport.port = SAS_PORT
         sasport.baudrate = SAS_BAUDRATE
+        sasport.timeout = 0.1
+        
+        # CRITICAL: Match main app's serial settings
         sasport.parity = serial.PARITY_NONE
         sasport.stopbits = serial.STOPBITS_ONE
         sasport.bytesize = serial.EIGHTBITS
-        sasport.timeout = 0.1
         sasport.xonxoff = False
         sasport.rtscts = False
         sasport.dsrdtr = False
         
-        # DTR/RTS settings from original
+        # CRITICAL: DTR/RTS settings from main app
         sasport.dtr = True
         sasport.rts = False
         
@@ -253,9 +265,22 @@ def open_sas_port():
         
         if sasport.isOpen():
             print("✓ SAS port opened successfully")
-            # Initial poll like original
-            SendSASPORT("80")
-            time.sleep(0.05)
+            
+            # CRITICAL: Device type specific initialization like main app
+            if device_type_id in [1, 4]:  # Novomatic/Octavian
+                print("Device type is Novomatic/Octavian, setting parity to EVEN after initial polls.")
+                SendSASPORT("80")
+                time.sleep(0.05)
+                SendSASPORT("81")
+                sasport.close()
+                sasport.parity = serial.PARITY_EVEN
+                sasport.open()
+                print(f"SAS port {SAS_PORT} re-opened with EVEN parity.")
+            else:
+                # Initial poll for other devices like main app
+                SendSASPORT(SAS_ADDRESS + "80")
+                time.sleep(0.05)
+            
             return True
         else:
             print("✗ Failed to open SAS port")
@@ -263,6 +288,8 @@ def open_sas_port():
             
     except Exception as e:
         print(f"✗ Error opening SAS port: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def close_sas_port():
@@ -276,8 +303,8 @@ def close_sas_port():
         print(f"✗ Error closing SAS port: {e}")
 
 def SendSASPORT(command_hex):
-    """Send data to SAS port with proper SAS parity switching"""
-    global sasport
+    """Send data to SAS port with proper SAS parity switching - EXACTLY like main app"""
+    global sasport, device_type_id, is_communication_by_windows
     
     if not sasport or not sasport.isOpen():
         print("❌ Serial port not available")
@@ -289,54 +316,134 @@ def SendSASPORT(command_hex):
         if len(command_hex) < 2:
             print("❌ Command too short")
             return False
-            
-        # SAS Protocol: First byte with MARK parity, rest with SPACE parity
-        # This matches the main app's parity switching for device type 8
         
-        # Send first byte with MARK parity
-        sasport.parity = serial.PARITY_MARK
-        first_byte = bytes.fromhex(command_hex[0:2])
-        bytes_written = sasport.write(first_byte)
-        sasport.flush()
-        
-        print(f"🔍 Sent first byte with MARK parity: {command_hex[0:2]} ({bytes_written} bytes)")
-        
-        # Send rest with SPACE parity (if there are more bytes)
-        if len(command_hex) > 2:
-            time.sleep(0.005)  # Small delay like main app
-            sasport.parity = serial.PARITY_SPACE
-            rest_bytes = bytes.fromhex(command_hex[2:])
-            bytes_written += sasport.write(rest_bytes)
+        # CRITICAL: Device type specific sending logic - EXACTLY like main app
+        if device_type_id == 1 or device_type_id == 4:
+            # Novomatic/Octavian - just send normally
+            data_bytes = bytes.fromhex(command_hex)
+            bytes_written = sasport.write(data_bytes)
             sasport.flush()
-            
-            print(f"🔍 Sent rest with SPACE parity: {command_hex[2:]} ({len(rest_bytes)} bytes)")
+            print(f"🔍 Sent {bytes_written} bytes (Novomatic mode)")
+            return True
+        else:
+            # Determine sending method like main app
+            is_new_sending_msg = 0
+            if is_communication_by_windows == 1 or device_type_id == 11:
+                is_new_sending_msg = 1
+                
+            if device_type_id == 6:
+                is_new_sending_msg = 0
+
+            if is_new_sending_msg == 1:  # Windows or Interblock
+                sleeptime = 0.005
+                if device_type_id == 11:
+                    sleeptime = 0.003
+                
+                # MARK parity for first byte
+                if sasport.parity != serial.PARITY_MARK:
+                    sasport.parity = serial.PARITY_MARK
+                first_byte = bytes.fromhex(command_hex[0:2])
+                bytes_written = sasport.write(first_byte)
+                sasport.flush()
+                time.sleep(sleeptime)
+                
+                print(f"🔍 Sent first byte with MARK parity: {command_hex[0:2]} ({bytes_written} bytes)")
+                
+                # SPACE parity for rest
+                if len(command_hex) > 2:
+                    if sasport.parity != serial.PARITY_SPACE:
+                        sasport.parity = serial.PARITY_SPACE
+                    rest_bytes = bytes.fromhex(command_hex[2:])
+                    bytes_written += sasport.write(rest_bytes)
+                    sasport.flush()
+                    
+                    print(f"🔍 Sent rest with SPACE parity: {command_hex[2:]} ({len(rest_bytes)} bytes)")
+                    
+            else:
+                # Linux with termios - EXACTLY like main app
+                saswaittime = 0.001  # From main app comment: "2020-12-25 test ok gibi.."
+                
+                iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport)
+                
+                CMSPAR = 0x40000000  # EXACTLY like main app
+                
+                # MARK parity for first byte
+                cflag |= termios.PARENB | CMSPAR | termios.PARODD
+                termios.tcsetattr(sasport, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                
+                first_byte = bytes.fromhex(command_hex[0:2])
+                bytes_written = sasport.write(first_byte)
+                sasport.flush()
+                
+                print(f"🔍 Sent first byte with MARK parity (termios): {command_hex[0:2]} ({bytes_written} bytes)")
+                
+                if len(command_hex) > 2:
+                    time.sleep(saswaittime)
+                    
+                    # SPACE parity for rest
+                    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport)
+                    cflag |= termios.PARENB
+                    cflag &= ~termios.PARODD
+                    termios.tcsetattr(sasport, termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                    
+                    rest_bytes = bytes.fromhex(command_hex[2:])
+                    bytes_written += sasport.write(rest_bytes)
+                    sasport.flush()
+                    
+                    print(f"🔍 Sent rest with SPACE parity (termios): {command_hex[2:]} ({len(rest_bytes)} bytes)")
         
         print(f"🔍 Total bytes written: {bytes_written}")
-        
         return True
+        
     except Exception as e:
         print(f"❌ Send error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def SendSASCommand(command_hex):
-    """Send SAS command - EXACTLY matching original SendSASCommand"""
+    """Send SAS command - EXACTLY like main app's send_sas_command"""
     global last_sent_poll_type
     
     command_hex = command_hex.replace(" ", "")
     
-    # Update last sent times like original
-    if command_hex.endswith("81"):
+    # Update last sent times like main app
+    if command_hex == "81":
         last_sent_poll_type = 81
-    if command_hex.endswith("80"):
+    if command_hex == "80":
         last_sent_poll_type = 80
 
-    # Log all commands with more detail
-    if command_hex.endswith(("80", "81")):
-        # Polling commands - show less frequently
-        pass  # Will be shown in polling function
-    else:
-        print(f"TX: {command_hex} at {datetime.datetime.now()}")
-        print(f"    Command breakdown: Address={command_hex[0:2]}, Command={command_hex[2:4]}, Length={len(command_hex)//2} bytes")
+    # AFT-specific logging like main app
+    is_aft_command = False
+    command_type = ""
+    if len(command_hex) >= 4:
+        cmd_code = command_hex[2:4]
+        if cmd_code == "72":
+            is_aft_command = True
+            command_type = "AFT TRANSFER"
+        elif cmd_code == "73":
+            is_aft_command = True
+            command_type = "AFT REGISTRATION"
+        elif cmd_code == "74":
+            is_aft_command = True
+            command_type = "AFT BALANCE QUERY"
+    
+    if is_aft_command:
+        print(f"")
+        print(f"🔄 ========== {command_type} COMMAND ==========")
+        print(f"📤 RAW COMMAND SENT: {command_hex}")
+        print(f"📤 Command Length: {len(command_hex)} characters ({len(command_hex)//2} bytes)")
+        if len(command_hex) >= 6:
+            address = command_hex[0:2]
+            cmd = command_hex[2:4]
+            length = command_hex[4:6]
+            print(f"📤 Header: Address={address}, Command={cmd}, Length={length}")
+        print(f"==========================================")
+    
+    # Log like main app
+    if len(command_hex) >= 3:
+        if not is_aft_command:  # Don't double-log AFT commands
+            print("TX: ", device_type_id, command_hex, SAS_PORT, datetime.datetime.now())
     
     # Send command
     success = SendSASPORT(command_hex)
@@ -346,20 +453,32 @@ def SendSASCommand(command_hex):
     return success
 
 def ReadSASPORT():
-    """Read response from SAS port - EXACTLY matching original"""
+    """Read response from SAS port - EXACTLY like main app's get_data_from_sas_port"""
     global sasport
     
     if not sasport or not sasport.isOpen():
         return ""
         
     try:
-        if sasport.in_waiting > 0:
-            response = sasport.read(sasport.in_waiting)
-            hex_response = response.hex().upper()
-            # Debug: Show raw bytes received
-            print(f"🔍 Raw bytes received: {len(response)} bytes -> {hex_response}")
-            return hex_response
-        return ""
+        data_left = sasport.in_waiting
+        if data_left == 0:
+            return ""
+        
+        out = ''
+        read_count_timeout = 3  # From main app
+        
+        while read_count_timeout > 0:
+            read_count_timeout = read_count_timeout - 1
+            
+            while sasport.in_waiting > 0:
+                out += sasport.read_all().hex()
+                time.sleep(0.005)
+        
+        hex_response = out.upper()
+        if hex_response:
+            print(f"🔍 Raw bytes received: {len(hex_response)//2} bytes -> {hex_response}")
+        return hex_response
+        
     except Exception as e:
         print(f"❌ Read error: {e}")
         return ""
@@ -384,17 +503,17 @@ def continuous_polling():
         try:
             current_time = time.time()
             
-            # Send poll every 200ms (alternating between general poll and interrogation)
-            if current_time - last_poll_time >= 0.2:
-                # Alternate between general poll (80) and interrogation (81)
-                if poll_counter % 10 == 0:
-                    # Every 10th poll, send interrogation
-                    SendSASCommand(interrogation)
+            # Send poll every 40ms like main app
+            if current_time - last_poll_time >= 0.04:
+                # Alternate between 80 and 81 like main app
+                if last_sent_poll_type == 80:
+                    poll_command = "81"
                     poll_type = "INTERROGATION"
                 else:
-                    # Otherwise, send general poll
-                    SendSASCommand(general_poll)
+                    poll_command = "80"
                     poll_type = "GENERAL_POLL"
+                
+                SendSASCommand(SAS_ADDRESS + poll_command)
                 
                 time.sleep(0.05)  # Wait for response
                 
@@ -404,24 +523,8 @@ def continuous_polling():
                     response_count += 1
                     print(f"🔍 RX[{response_count}] ({poll_type}): {response} at {datetime.datetime.now()}")
                     
-                    # Handle AFT responses - EXACTLY like original
-                    if len(response) >= 4 and response[0:4] == "0172":
-                        print("📊 AFT Transfer Response Received!")
-                        Yanit_ParaYukle(response)
-                    elif len(response) >= 4 and response[0:4] == "0174":
-                        print("💰 Balance Response Received!")
-                        Yanit_BakiyeSorgulama(response)
-                    elif response == "69":
-                        print("✓ AFT completion notification received!")
-                        aft_transfer_status = "00"  # Success like original
-                        aft_response_received = True
-                    elif response in ["01", "00"]:
-                        # Normal responses - show occasionally for debugging
-                        if response_count % 20 == 1:  # Every 20th response
-                            print(f"🔄 Normal response: {response} (showing 1 in 20)")
-                    else:
-                        # Other responses - log for debugging
-                        print(f"🔍 Other response: {response}")
+                    # Process response like main app
+                    handle_received_sas_command(response)
                 else:
                     no_response_count += 1
                     # Show no-response status every 50 polls
@@ -569,6 +672,121 @@ def bcd_to_int(bcd_str):
         low = int(byte[1], 16)
         digits += f"{high}{low}"
     return int(digits.lstrip('0') or '0')
+
+def handle_received_sas_command(tdata):
+    """Handle received SAS command - simplified version of main app"""
+    try:
+        if not tdata:
+            return
+        tdata = tdata.replace(" ", "").upper()
+
+        # Split concatenated messages like main app
+        messages = split_sas_messages(tdata)
+        
+        for message in messages:
+            if not message:
+                continue
+            process_single_sas_message(message)
+            
+    except Exception as e:
+        print(f"Error in handle_received_sas_command: {e}")
+
+def split_sas_messages(tdata):
+    """Split concatenated SAS messages - simplified version of main app"""
+    messages = []
+    i = 0
+    
+    while i < len(tdata):
+        # Try to identify message start patterns
+        if i + 4 <= len(tdata):
+            prefix = tdata[i:i+4]
+            
+            # Handle different message types
+            if prefix == "01FF":
+                # Exception messages - typically 10 characters
+                if i + 10 <= len(tdata):
+                    messages.append(tdata[i:i+10])
+                    i += 10
+                else:
+                    messages.append(tdata[i:])
+                    break
+                    
+            elif prefix in ["0172", "0174", "0173", "0154"]:
+                # Length-prefixed messages
+                if i + 6 <= len(tdata):
+                    try:
+                        length = int(tdata[i+4:i+6], 16)
+                        total_length = 6 + (length * 2) + 4  # header + data + CRC
+                        if i + total_length <= len(tdata):
+                            messages.append(tdata[i:i+total_length])
+                            i += total_length
+                        else:
+                            messages.append(tdata[i:])
+                            break
+                    except ValueError:
+                        messages.append(tdata[i:])
+                        break
+                else:
+                    messages.append(tdata[i:])
+                    break
+            else:
+                # Single byte responses or unknown format
+                if len(tdata[i:]) <= 4:  # Short response
+                    messages.append(tdata[i:])
+                    break
+                else:
+                    # Try to find next message start
+                    found = False
+                    for j in range(i+2, len(tdata)-3, 2):
+                        if tdata[j:j+4] in ["01FF", "0172", "0174", "0173", "0154"]:
+                            messages.append(tdata[i:j])
+                            i = j
+                            found = True
+                            break
+                    if not found:
+                        messages.append(tdata[i:])
+                        break
+        else:
+            messages.append(tdata[i:])
+            break
+    
+    return messages
+
+def process_single_sas_message(tdata):
+    """Process a single SAS message - simplified version of main app"""
+    try:
+        if not tdata:
+            return
+            
+        # Handle different message types
+        if tdata.startswith("0172"):
+            # AFT response
+            print("📊 AFT Transfer Response Received!")
+            Yanit_ParaYukle(tdata)
+        elif tdata.startswith("0174"):
+            # Balance response
+            print("💰 Balance Response Received!")
+            Yanit_BakiyeSorgulama(tdata)
+        elif tdata.startswith("01FF"):
+            # Exception message
+            if len(tdata) >= 6:
+                exception_code = tdata[4:6]
+                if tdata == "01FF69DB5B":
+                    print("✓ AFT completion notification received!")
+                    global aft_transfer_status, aft_response_received
+                    aft_transfer_status = "00"  # Success
+                    aft_response_received = True
+                else:
+                    print(f"Exception: {exception_code}")
+        elif tdata in ["01", "00"]:
+            # Normal poll responses - don't spam
+            pass
+        else:
+            # Other responses
+            print(f"🔍 Other response: {tdata}")
+            
+    except Exception as e:
+        print(f"Error processing SAS message: {e}")
 
 def wait_for_aft_completion():
     """Wait for AFT completion - like original"""
