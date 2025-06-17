@@ -13,6 +13,7 @@ Registration Key: all zeros (000000000000000000000000000000000000000000)
 """
 
 import serial
+import serial.tools.list_ports
 import sys
 import datetime
 import time
@@ -20,8 +21,8 @@ import threading
 from decimal import Decimal
 from crccheck.crc import CrcKermit
 
-# Configuration - hardcoded as requested
-SAS_PORT = "/dev/ttyUSB1"
+# Configuration - will be set by port discovery
+SAS_PORT = None  # Will be discovered automatically
 SAS_BAUDRATE = 19200
 SAS_ADDRESS = "01"  # Address
 ASSET_NUMBER = "6C000000"  # Asset 108 in hex, padded to 4 bytes
@@ -58,7 +59,7 @@ def print_banner():
     print("AFT Add Credit Test Application")
     print("Based on raspberryPython_orj.py.ref - EXACT MATCH")
     print("=" * 60)
-    print(f"SAS Port: {SAS_PORT}")
+    print(f"SAS Port: Auto-discovery enabled")
     print(f"Asset No: 108 (0x{ASSET_NUMBER})")
     print(f"Registration Key: {REGISTRATION_KEY}")
     print("=" * 60)
@@ -97,6 +98,127 @@ def GetCRC(command):
     except Exception as e:
         print(f"CRC Error: {e}")
         return command + "0000"
+
+def discover_sas_port():
+    """Discover which serial port has a responding SAS device"""
+    print("\n🔍 ========== SAS PORT DISCOVERY ==========")
+    
+    # List all available serial ports
+    ports = serial.tools.list_ports.comports()
+    if not ports:
+        print("❌ No serial ports found!")
+        return None
+    
+    print(f"📋 Found {len(ports)} serial port(s):")
+    for port in ports:
+        print(f"   • {port.device}: {port.description}")
+        if hasattr(port, 'manufacturer') and port.manufacturer:
+            print(f"     Manufacturer: {port.manufacturer}")
+        if hasattr(port, 'product') and port.product:
+            print(f"     Product: {port.product}")
+    
+    # Test each port for SAS communication
+    print(f"\n🔧 Testing ports for SAS communication...")
+    
+    # SAS test commands
+    test_commands = [
+        ("General Poll", GetCRC(SAS_ADDRESS + "80")),
+        ("Interrogation", GetCRC(SAS_ADDRESS + "81")),
+        ("Asset Number Query", GetCRC(SAS_ADDRESS + "4F")),
+        ("Game ID Query", GetCRC(SAS_ADDRESS + "51"))
+    ]
+    
+    for port in ports:
+        port_name = port.device
+        print(f"\n🔌 Testing port: {port_name}")
+        
+        try:
+            # Open port with SAS settings
+            test_port = serial.Serial(
+                port=port_name,
+                baudrate=SAS_BAUDRATE,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                timeout=0.2,  # Longer timeout for discovery
+                xonxoff=False,
+                rtscts=False,
+                dsrdtr=False
+            )
+            
+            # Set DTR/RTS like main app
+            test_port.dtr = True
+            test_port.rts = False
+            
+            print(f"   ✓ Port opened successfully")
+            
+            # Test multiple commands
+            responses_received = 0
+            
+            for cmd_name, cmd_hex in test_commands:
+                try:
+                    # Clear any existing data
+                    if test_port.in_waiting > 0:
+                        test_port.read(test_port.in_waiting)
+                    
+                    # Send command with proper SAS parity switching
+                    cmd_hex_clean = cmd_hex.replace(" ", "")
+                    
+                    # First byte with MARK parity
+                    test_port.parity = serial.PARITY_MARK
+                    first_byte = bytes.fromhex(cmd_hex_clean[0:2])
+                    test_port.write(first_byte)
+                    test_port.flush()
+                    
+                    # Rest with SPACE parity
+                    if len(cmd_hex_clean) > 2:
+                        time.sleep(0.005)
+                        test_port.parity = serial.PARITY_SPACE
+                        rest_bytes = bytes.fromhex(cmd_hex_clean[2:])
+                        test_port.write(rest_bytes)
+                        test_port.flush()
+                    
+                    # Wait for response
+                    time.sleep(0.1)
+                    
+                    if test_port.in_waiting > 0:
+                        response = test_port.read(test_port.in_waiting)
+                        hex_response = response.hex().upper()
+                        print(f"   📥 {cmd_name}: {hex_response}")
+                        responses_received += 1
+                        
+                        # Check for asset number in response (specific to our machine)
+                        if "6C000000" in hex_response or "6C" in hex_response:
+                            print(f"   🎯 Found our asset number (108/0x6C) in response!")
+                    else:
+                        print(f"   📭 {cmd_name}: No response")
+                
+                except Exception as cmd_e:
+                    print(f"   ❌ {cmd_name}: Error - {cmd_e}")
+                
+                time.sleep(0.05)  # Small delay between commands
+            
+            test_port.close()
+            
+            # Evaluate results
+            if responses_received > 0:
+                print(f"   ✅ PORT FOUND: {port_name} responded to {responses_received}/{len(test_commands)} commands")
+                print(f"   🎯 This appears to be the SAS port!")
+                return port_name
+            else:
+                print(f"   ❌ No SAS responses from {port_name}")
+        
+        except Exception as e:
+            print(f"   ❌ Failed to test {port_name}: {e}")
+    
+    print(f"\n❌ No responding SAS port found!")
+    print(f"💡 Suggestions:")
+    print(f"   • Check physical connections")
+    print(f"   • Verify gaming machine is powered on")
+    print(f"   • Try different baud rates (9600, 19200, 38400)")
+    print(f"   • Check if another application is using the port")
+    
+    return None
 
 def open_sas_port():
     """Open SAS serial port - EXACTLY like original"""
@@ -548,7 +670,7 @@ def test_serial_connectivity():
 def main():
     """Main function"""
     global polling_active, sasport, aft_response_received, aft_transfer_status
-    global balance_response_received, balance_amount
+    global balance_response_received, balance_amount, SAS_PORT
     
     print_banner()
     
@@ -565,7 +687,20 @@ def main():
         print("❌ Invalid amount. Please enter a valid number.")
         return 1
     
+    # Step 0: Discover SAS Port
+    print("\n--- Step 0: Discover SAS Port ---")
+    discovered_port = discover_sas_port()
+    if not discovered_port:
+        print("❌ Could not find a responding SAS port!")
+        print("💡 Please check connections and try again.")
+        return 1
+    
+    # Set the discovered port
+    SAS_PORT = discovered_port
+    print(f"\n✅ Using SAS port: {SAS_PORT}")
+    
     # Open SAS port
+    print(f"\n--- Step 1: Open SAS Port ---")
     print(f"Opening SAS port: {SAS_PORT} at {SAS_BAUDRATE} baud...")
     try:
         sasport = serial.Serial(
@@ -596,8 +731,8 @@ def main():
         return 1
     
     try:
-        # Step 1: Start continuous polling
-        print("\n--- Step 1: Start SAS Polling ---")
+        # Step 2: Start continuous polling
+        print("\n--- Step 2: Start SAS Polling ---")
         polling_active = True
         poll_thread = threading.Thread(target=continuous_polling, daemon=True)
         poll_thread.start()
@@ -605,8 +740,8 @@ def main():
         # Wait a moment for polling to start
         time.sleep(2)
         
-        # Step 2: Send AFT Credit Command
-        print("\n--- Step 2: Send AFT Credit Command ---")
+        # Step 3: Send AFT Credit Command
+        print("\n--- Step 3: Send AFT Credit Command ---")
         print(f"Building AFT command for amount: {amount}")
         
         # Convert amount to cents
@@ -689,15 +824,15 @@ def main():
             print("❌ Failed to send AFT command")
             return 1
         
-        # Step 3: Wait for AFT completion
-        print("\n--- Step 3: Wait for AFT Completion ---")
+        # Step 4: Wait for AFT completion
+        print("\n--- Step 4: Wait for AFT Completion ---")
         aft_success = wait_for_aft_completion()
         
         if aft_success:
             print("✅ AFT operation completed successfully!")
             
-            # Step 4: Query balance to verify credit was applied
-            print("\n--- Step 4: Verify Balance ---")
+            # Step 5: Query balance to verify credit was applied
+            print("\n--- Step 5: Verify Balance ---")
             print("Waiting a moment for machine to process credit...")
             time.sleep(2)  # Give machine time to process
             
@@ -722,8 +857,8 @@ def main():
         else:
             print("❌ AFT operation failed or timed out")
         
-        # Step 5: Stop polling and cleanup
-        print("\n--- Step 5: Cleanup ---")
+        # Step 6: Stop polling and cleanup
+        print("\n--- Step 6: Cleanup ---")
         polling_active = False
         time.sleep(1)  # Wait for polling thread to stop
         
