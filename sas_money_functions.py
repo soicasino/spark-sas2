@@ -412,6 +412,29 @@ class SasMoney:
             print(f"[CANCEL BALANCE LOCK] Error canceling balance lock: {e}")
             return False
 
+    def komut_aft_interrogation(self, sender="AFT_Interrogation"):
+        """
+        EXACT COPY of Komut_Interragition from reference code
+        Sends AFT interrogation command - critical for C0 status handling
+        From raspberryPython_orj.py line 8047-8060
+        """
+        try:
+            print(f"[AFT INTERROGATION] Sending AFT interrogation command from: {sender}")
+            
+            # EXACT command from reference: Command="017202FF000F22"
+            command = "017202FF000F22"
+            print(f"[AFT INTERROGATION] Command: {command}")
+            
+            # Send the command
+            result = self.communicator.sas_send_command_with_queue(f"AFT_Interrogation_{sender}", command, 1)
+            print(f"[AFT INTERROGATION] Interrogation command result: {result}")
+            
+            return result is not None
+            
+        except Exception as e:
+            print(f"[AFT INTERROGATION] Error in AFT interrogation: {e}")
+            return False
+
     def komut_comprehensive_aft_unlock(self):
         """
         Comprehensive AFT unlock - sends specific commands to cancel pending AFT state
@@ -2622,8 +2645,14 @@ class SasMoney:
                 return False
                 
             elif status == "C0":
-                print(f"[ORIGINAL WAIT] Status C0 - Transfer acknowledged/pending - continuing to wait...")
-                # In original, this calls Komut_Interragition("C0") but then continues waiting
+                print(f"[ORIGINAL WAIT] Status C0 - Transfer acknowledged/pending - calling AFT interrogation...")
+                # CRITICAL: Call AFT interrogation like reference when status is C0
+                try:
+                    self.komut_aft_interrogation("C0_Response")
+                    time.sleep(0.5)  # Brief delay for interrogation to process
+                except Exception as interr_error:
+                    print(f"[ORIGINAL WAIT] AFT interrogation error: {interr_error}")
+                
                 # Reset status to continue monitoring for final result
                 self.global_para_yukleme_transfer_status = "PENDING"
                 last_command_time = current_time  # Reset command timeout

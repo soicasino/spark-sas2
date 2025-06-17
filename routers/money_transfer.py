@@ -88,7 +88,22 @@ async def add_credits(
             
             # CRITICAL: Wait for AFT registration to be fully processed by machine
             print(f"[ADD CREDITS] Waiting for AFT registration to be processed...")
-            await asyncio.sleep(3)  # Allow registration to fully complete
+            import time
+            time.sleep(2)  # Synchronous sleep like original reference code
+            
+            # Verify registration completion by checking AFT status
+            print(f"[ADD CREDITS] Verifying AFT registration completion...")
+            sas_comm.sas_money.komut_bakiye_sorgulama("aft_reg_verify", False, "registration_verification")
+            time.sleep(2)  # Wait for balance response synchronously
+            
+            # Check registration status
+            aft_status = getattr(sas_comm, 'last_aft_status', '00')
+            print(f"[ADD CREDITS] AFT Status after registration: {aft_status}")
+            
+            if aft_status in ['80', 'FF']:  # Not registered or error
+                raise Exception(f"AFT registration failed - AFT Status: {aft_status}")
+                
+            print(f"[ADD CREDITS] AFT registration verified successfully")
             
             # Use the DIRECT AFT approach that matches the original working code
             print(f"[ADD CREDITS] ===== ATTEMPTING DIRECT AFT TRANSFER (ORIGINAL WORKING APPROACH) =====")
@@ -127,11 +142,11 @@ async def add_credits(
                     
                     # CRITICAL: Check for AFT lock after transfer and unlock if needed
                     print(f"[ADD CREDITS] Checking for AFT lock after transfer...")
-                    await asyncio.sleep(2)  # Allow transfer to settle
+                    time.sleep(2)  # Allow transfer to settle - synchronous like reference
                     
                     # Query machine status to check for AFT lock
                     sas_comm.sas_money.komut_bakiye_sorgulama("add_credits_lock_check", False, "post_transfer_lock_check")
-                    await asyncio.sleep(2)  # Wait for status response
+                    time.sleep(2)  # Wait for status response - synchronous like reference
                     
                     # Check if machine is in AFT locked state
                     lock_status = getattr(sas_comm, 'last_game_lock_status', '00')
@@ -146,26 +161,26 @@ async def add_credits(
                         try:
                             unlock_result = sas_comm.sas_money.komut_cancel_aft_transfer()
                             print(f"[ADD CREDITS] AFT unlock result: {unlock_result}")
-                            await asyncio.sleep(2)
+                            time.sleep(2)  # Synchronous timing like reference
                             
                             # Also try comprehensive unlock if needed
                             if not unlock_result:
                                 print(f"[ADD CREDITS] Trying comprehensive AFT unlock...")
                                 comprehensive_result = sas_comm.sas_money.komut_comprehensive_aft_unlock()
                                 print(f"[ADD CREDITS] Comprehensive unlock result: {comprehensive_result}")
-                                await asyncio.sleep(2)
+                                time.sleep(2)  # Synchronous timing like reference
                                 
                         except Exception as unlock_error:
                             print(f"[ADD CREDITS] Warning: AFT unlock failed: {unlock_error}")
                     
                     # CRITICAL: Wait for machine balance to update after AFT completion and unlock
                     print(f"[ADD CREDITS] Waiting for machine balance to update after AFT completion...")
-                    await asyncio.sleep(3)  # Allow machine to process and update internal balance
+                    time.sleep(3)  # Allow machine to process and update internal balance - synchronous
                     
                     # Query updated balance
                     print(f"[ADD CREDITS] Querying updated balance...")
                     sas_comm.sas_money.komut_bakiye_sorgulama("add_credits_success", False, "post_transfer_balance")
-                    await asyncio.sleep(3)  # Give extra time for balance response
+                    time.sleep(3)  # Give extra time for balance response - synchronous
                     
                     updated_cashable = getattr(sas_comm.sas_money, 'yanit_bakiye_tutar', 0.0)
                     updated_restricted = getattr(sas_comm.sas_money, 'yanit_restricted_amount', 0.0)
