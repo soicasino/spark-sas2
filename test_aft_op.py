@@ -206,9 +206,16 @@ def continuous_polling():
         try:
             current_time = time.time()
             
-            # Send general poll every 200ms
+            # Send poll every 200ms (alternating between general poll and interrogation)
             if current_time - last_poll_time >= 0.2:
-                SendSASCommand(general_poll)
+                # Alternate between general poll (80) and interrogation (81)
+                if poll_counter % 10 == 0:
+                    # Every 10th poll, send interrogation
+                    SendSASCommand(interrogation)
+                else:
+                    # Otherwise, send general poll
+                    SendSASCommand(general_poll)
+                
                 time.sleep(0.05)  # Wait for response
                 
                 # Check for response
@@ -229,16 +236,11 @@ def continuous_polling():
                         # Normal responses - don't spam output
                         pass
                     else:
-                        # Other responses
-                        pass
-            
-            # Send interrogation every 10 polls
-            poll_counter += 1
-            if poll_counter >= 10:
-                SendSASCommand(interrogation)
-                poll_counter = 0
-            
-            last_poll_time = current_time
+                        # Other responses - log for debugging
+                        print(f"🔍 Other response: {response}")
+                
+                poll_counter += 1
+                last_poll_time = current_time
             
             time.sleep(0.01)  # Small delay to prevent CPU spinning
             
