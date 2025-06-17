@@ -24,7 +24,7 @@ from decimal import Decimal
 from crccheck.crc import CrcKermit
 
 # Configuration - will be set by port discovery
-SAS_PORT = None  # Will be discovered automatically
+SAS_PORT = "/dev/ttyUSB1"  # Switch to the other port
 SAS_BAUDRATE = 19200
 SAS_ADDRESS = "01"  # Address
 ASSET_NUMBER = "6C000000"  # Asset 108 in hex, padded to 4 bytes
@@ -914,17 +914,9 @@ def main():
         print("❌ Invalid amount. Please enter a valid number.")
         return 1
     
-    # Step 0: Discover SAS Port
-    print("\n--- Step 0: Discover SAS Port ---")
-    discovered_port = discover_sas_port()
-    if not discovered_port:
-        print("❌ Could not find a responding SAS port!")
-        print("💡 Please check connections and try again.")
-        return 1
-    
-    # Set the discovered port
-    SAS_PORT = discovered_port
-    print(f"\n✅ Using SAS port: {SAS_PORT}")
+        # Step 0: Using manually configured port
+    print(f"\n--- Step 0: Using Configured SAS Port ---")
+    print(f"✅ Using SAS port: {SAS_PORT}")
     
     # Open SAS port
     print(f"\n--- Step 1: Open SAS Port ---")
