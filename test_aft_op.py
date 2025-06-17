@@ -160,8 +160,9 @@ def SendSASCommand(command_hex):
     if command_hex == "80":
         last_sent_poll_type = 80
 
-    # Log like original
-    print("TX: ", command_hex, datetime.datetime.now())
+    # Log only important commands (not regular polls)
+    if command_hex not in ["80", "81"]:
+        print("TX: ", command_hex, datetime.datetime.now())
     
     # Just send normally (device type 8 - default)
     SendSASPORT(command_hex)
@@ -221,21 +222,22 @@ def sas_polling_loop():
             response = GetDataFromSasPort()
             
             if response:
-                print(f"RX: {response}")
-                
-                # Handle AFT responses like original
-                if IsWaitingForParaYukle and response.startswith("0172"):
+                # Handle AFT responses - EXACTLY like original
+                if response[0:4] == "0172":
+                    print(f"RX: {response}")
                     print("📊 AFT Transfer Response Received!")
                     Yanit_ParaYukle(response)
-                elif "01FF69" in response:
+                elif response.startswith("01FF69DB5B") or response == "FF69DB5B" or response == "69DB5B" or response == "69":
+                    print(f"RX: {response}")
                     print("✓ AFT completion notification received!")
                     aft_transfer_status = "00"  # Success like original
                     aft_response_received = True
-                elif response == "01":
-                    # Normal ACK - continue polling
+                elif response == "01" or response == "00":
+                    # Normal responses - continue polling silently
                     pass
                 else:
-                    # Other responses - process normally
+                    # Other responses - log them
+                    print(f"RX: {response}")
                     print(f"Other response: {response}")
             
             # Schedule next poll like original (40ms interval)
@@ -275,20 +277,32 @@ def Yanit_ParaYukle(response):
         print(f"📥 RAW RESPONSE: {response}")
         print(f"===============================================")
         
-        if len(response) < 10:
+        if len(response) < 14:
             print("Response too short")
             aft_transfer_status = "FF"
             aft_response_received = True
             return
             
-        # Parse like original - extract transfer status
-        transfer_status = response[8:10]  # Position 8-9 in response
+        # Parse like original - extract transfer status at position 12:14
+        transfer_status = response[12:14]  # Position 12-13 in response (CORRECTED)
         aft_transfer_status = transfer_status
-        aft_response_received = True
+        
+        # Check for successful AFT load statuses like original
+        if transfer_status == "00" or transfer_status == "10" or transfer_status == "11":
+            print(f"✅ AFT Transfer SUCCESSFUL! Status: {transfer_status}")
+            aft_response_received = True
+        elif transfer_status == "C0":
+            print(f"⏳ AFT Transfer PENDING! Status: {transfer_status}")
+            # Don't set response_received = True for C0, keep waiting
+        else:
+            print(f"❌ AFT Transfer FAILED! Status: {transfer_status}")
+            aft_response_received = True
         
         # Status descriptions from original
         status_descriptions = {
             "00": "Transfer successful",
+            "10": "Transfer successful (partial)",
+            "11": "Transfer successful (bonus/jackpot)",
             "81": "TransactionID is not unique",
             "83": "Not a valid transfer function", 
             "84": "Cannot transfer large amount to gaming machine",
@@ -392,8 +406,8 @@ def wait_for_aft_completion():
     
     while time.time() - start_time < timeout:
         if aft_response_received:
-            if aft_transfer_status == "00":
-                print("✓ AFT transfer completed successfully!")
+            if aft_transfer_status in ["00", "10", "11"]:
+                print(f"✓ AFT transfer completed successfully! Status: {aft_transfer_status}")
                 return True
             else:
                 print(f"✗ AFT transfer failed with status: {aft_transfer_status}")
