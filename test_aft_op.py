@@ -136,7 +136,7 @@ def close_sas_port():
         print(f"✗ Error closing SAS port: {e}")
 
 def SendSASPORT(command_hex):
-    """Send data to SAS port - EXACTLY matching original"""
+    """Send data to SAS port with proper SAS parity switching"""
     global sasport
     
     if not sasport or not sasport.isOpen():
@@ -145,20 +145,34 @@ def SendSASPORT(command_hex):
         
     try:
         command_hex = command_hex.replace(" ", "")
-        data = bytes.fromhex(command_hex)
         
-        # Debug: Show what we're actually sending
-        print(f"🔍 Sending {len(data)} bytes: {' '.join(f'{b:02X}' for b in data)}")
+        if len(command_hex) < 2:
+            print("❌ Command too short")
+            return False
+            
+        # SAS Protocol: First byte with MARK parity, rest with SPACE parity
+        # This matches the main app's parity switching for device type 8
         
-        bytes_written = sasport.write(data)
+        # Send first byte with MARK parity
+        sasport.parity = serial.PARITY_MARK
+        first_byte = bytes.fromhex(command_hex[0:2])
+        bytes_written = sasport.write(first_byte)
         sasport.flush()
         
-        print(f"🔍 Wrote {bytes_written} bytes to serial port")
+        print(f"🔍 Sent first byte with MARK parity: {command_hex[0:2]} ({bytes_written} bytes)")
         
-        # Check if all bytes were written
-        if bytes_written != len(data):
-            print(f"⚠️  Warning: Tried to send {len(data)} bytes, only {bytes_written} were written")
+        # Send rest with SPACE parity (if there are more bytes)
+        if len(command_hex) > 2:
+            time.sleep(0.005)  # Small delay like main app
+            sasport.parity = serial.PARITY_SPACE
+            rest_bytes = bytes.fromhex(command_hex[2:])
+            bytes_written += sasport.write(rest_bytes)
+            sasport.flush()
             
+            print(f"🔍 Sent rest with SPACE parity: {command_hex[2:]} ({len(rest_bytes)} bytes)")
+        
+        print(f"🔍 Total bytes written: {bytes_written}")
+        
         return True
     except Exception as e:
         print(f"❌ Send error: {e}")
