@@ -32,6 +32,7 @@ SAS_BAUDRATE = 19200
 SAS_ADDRESS = "01"
 ASSET_NUMBER = "6C000000"  # Asset 108 (0x6C) in little-endian hex, 4 bytes
 REGISTRATION_KEY = "0000000000000000000000000000000000000000"  # 20 bytes of zeros
+DEVICE_TYPE_ID = 3  # From settings.ini - CRITICAL for proper communication!
 
 # --- Global Variables ---
 sasport = None
@@ -100,6 +101,7 @@ def print_banner():
     print(f"SAS Port: Will be auto-configured")
     print(f"Asset No: 108 (0x{ASSET_NUMBER})")
     print(f"Registration Key: {REGISTRATION_KEY}")
+    print(f"Device Type ID: {DEVICE_TYPE_ID} (from settings.ini)")
     print("=" * 60)
 
 # --- Core SAS Communication Functions (Corrected) ---
@@ -137,7 +139,7 @@ def open_sas_port():
 def SendSASPORT(command_hex):
     """
     Sends a command to the SAS port using the correct parity switching method.
-    This is the CRITICAL FIX. It now uses termios for Linux, just like the original app.
+    Device type specific implementation matching the main app exactly.
     """
     if not sasport or not sasport.is_open:
         print("[ERROR] Cannot send command, port is not open.")
@@ -148,51 +150,101 @@ def SendSASPORT(command_hex):
         return False
 
     try:
-        if platform.system() == "Windows":
-            # Windows does not have termios, rely on pyserial's implementation
-            sasport.parity = serial.PARITY_MARK
-            sasport.write(bytes.fromhex(command_hex[0:2]))
+        # Device type specific sending logic - EXACTLY like main app
+        if DEVICE_TYPE_ID == 1 or DEVICE_TYPE_ID == 4:
+            # Novomatic/Octavian - just send normally with current parity
+            data_bytes = bytes.fromhex(command_hex)
+            bytes_written = sasport.write(data_bytes)
             sasport.flush()
-            if len(command_hex) > 2:
-                time.sleep(0.005)
-                sasport.parity = serial.PARITY_SPACE
-                sasport.write(bytes.fromhex(command_hex[2:]))
-                sasport.flush()
+            print(f"[DEBUG] Sent {bytes_written} bytes (Novomatic mode)")
+            return True
         else:
-            # Linux: Use termios for reliable parity switching (THE FIX)
-            iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport.fileno())
-            CMSPAR = 0x40000000 # This flag is not in the standard termios module - EXACTLY like main app
+            # Determine sending method like main app
+            is_new_sending_msg = 0
+            is_communication_by_windows = 1 if platform.system() == "Windows" else 0
+            
+            if is_communication_by_windows == 1 or DEVICE_TYPE_ID == 11:
+                is_new_sending_msg = 1
+                
+            if DEVICE_TYPE_ID == 6:
+                is_new_sending_msg = 0
 
-            # Set MARK parity for the first byte
-            cflag |= (termios.PARENB | CMSPAR | termios.PARODD)
-            termios.tcsetattr(sasport.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
-            sasport.write(bytes.fromhex(command_hex[0:2]))
-            sasport.flush() # Ensure the byte is sent
-
-            if len(command_hex) > 2:
-                time.sleep(0.001) # Crucial small delay from original app
-                # Set SPACE parity for the rest of the bytes
-                cflag &= ~termios.PARODD
+            if is_new_sending_msg == 1:  # Windows or Interblock
+                sleeptime = 0.005
+                if DEVICE_TYPE_ID == 11:
+                    sleeptime = 0.003
+                
+                # MARK parity for first byte
+                sasport.parity = serial.PARITY_MARK
+                sasport.write(bytes.fromhex(command_hex[0:2]))
+                sasport.flush()
+                time.sleep(sleeptime)
+                
+                # SPACE parity for rest
+                if len(command_hex) > 2:
+                    sasport.parity = serial.PARITY_SPACE
+                    sasport.write(bytes.fromhex(command_hex[2:]))
+                    sasport.flush()
+                    
+            else:
+                # Linux with termios - EXACTLY like main app
+                saswaittime = 0.001  # From main app comment: "2020-12-25 test ok gibi.."
+                
+                iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport.fileno())
+                
+                CMSPAR = 0x40000000  # EXACTLY like main app
+                
+                # MARK parity for first byte
+                cflag |= termios.PARENB | CMSPAR | termios.PARODD
                 termios.tcsetattr(sasport.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
-                sasport.write(bytes.fromhex(command_hex[2:]))
-                sasport.flush() # Ensure the rest is sent
+                
+                sasport.write(bytes.fromhex(command_hex[0:2]))
+                sasport.flush()
+                
+                if len(command_hex) > 2:
+                    time.sleep(saswaittime)
+                    
+                    # SPACE parity for rest
+                    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(sasport.fileno())
+                    cflag |= termios.PARENB
+                    cflag &= ~termios.PARODD
+                    termios.tcsetattr(sasport.fileno(), termios.TCSANOW, [iflag, oflag, cflag, lflag, ispeed, ospeed, cc])
+                    
+                    sasport.write(bytes.fromhex(command_hex[2:]))
+                    sasport.flush()
+                    
+        return True
+                    
     except Exception as e:
         print(f"[ERROR] Failed to send SAS command: {e}")
         return False
-    return True
 
 
 def ReadSASPORT():
-    """Reads any available data from the SAS port."""
+    """Reads data from SAS port - EXACTLY like main app's get_data_from_sas_port"""
     if not sasport or not sasport.is_open:
         return ""
+        
     try:
-        if sasport.in_waiting > 0:
-            response_bytes = sasport.read(sasport.in_waiting)
-            return response_bytes.hex().upper()
+        data_left = sasport.in_waiting
+        if data_left == 0:
+            return ""
+            
+        out = ''
+        read_count_timeout = 3  # From main app
+        
+        while read_count_timeout > 0:
+            read_count_timeout = read_count_timeout - 1
+            
+            while sasport.in_waiting > 0:
+                out += sasport.read_all().hex()
+            time.sleep(0.005)
+        
+        return out.upper()
+        
     except Exception as e:
         print(f"[ERROR] Failed to read from SAS port: {e}")
-    return ""
+        return ""
 
 # --- Command and Response Handling ---
 
