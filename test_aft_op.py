@@ -21,7 +21,7 @@ from decimal import Decimal
 from crccheck.crc import CrcKermit
 
 # Configuration - hardcoded as requested
-SAS_PORT = "/dev/ttyUSB0"
+SAS_PORT = "/dev/ttyUSB1"
 SAS_BAUDRATE = 19200
 SAS_ADDRESS = "01"  # Address
 ASSET_NUMBER = "6C000000"  # Asset 108 in hex, padded to 4 bytes
