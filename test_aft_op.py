@@ -168,6 +168,11 @@ def SendSASPORT(command_hex):
                 
             if DEVICE_TYPE_ID == 6:
                 is_new_sending_msg = 0
+                
+            # CRITICAL: Device type 8 detection shows it uses Windows-style even on Linux!
+            # Looking at main app, device type 8 must use the Windows approach
+            if DEVICE_TYPE_ID == 8:
+                is_new_sending_msg = 1
 
             if is_new_sending_msg == 1:  # Windows or Interblock
                 sleeptime = 0.005
