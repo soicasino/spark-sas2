@@ -480,74 +480,48 @@ class SasMoney:
             print(f"[AFT REGISTRATION]   Registration Key: {registration_key}")
             print(f"[AFT REGISTRATION]   POS ID: {pos_id}")
             
-            # Step 1: Initialize registration
+            # EXACT COPY of reference registration sequence
+            # From raspberryPython_orj.py lines 6839-6850
+            
+            # Step 1: Initialize registration - EXACT command from reference
             print("[AFT REGISTRATION] Step 1: Initialize registration")
-            init_command = "017301FFA765"  # AFT registration init
+            init_command = "017301FFA765"  # EXACT from reference line 6850
             result1 = self.communicator.sas_send_command_with_queue("AFTRegInit", init_command, 1)
             print(f"[AFT REGISTRATION] Init command result: {result1}")
             
             time.sleep(1)
             
-            # CRITICAL: Wait for init response before proceeding (timing fix)
-            print("[AFT REGISTRATION] Waiting for init response...")
-            time.sleep(2)  # Allow init command to process
+            # Step 2: Registration with code "00" - EXACT from reference line 6839  
+            print("[AFT REGISTRATION] Step 2: Registration with code 00")
             
-            # Step 2: Complete registration with asset number and POS ID
-            print("[AFT REGISTRATION] Step 2: Complete registration")
+            # Use asset number exactly as provided (should be "6C000000" format)
+            asset_bcd = asset_number.upper()
+            print(f"[AFT REGISTRATION] Asset number for registration: {asset_bcd}")
             
-            # Convert POS ID to BCD format (4 bytes)
-            pos_id_padded = pos_id.ljust(4, '\x00')[:4]  # Pad to 4 characters
-            pos_id_bcd = ''.join('{:02x}'.format(ord(c)) for c in pos_id_padded)
-            print(f"[AFT REGISTRATION] POS ID BCD: {pos_id_bcd}")
+            # EXACT COPY: Build command like reference "01731D00" + asset + regkey
+            # Reference uses: "01731D00" + asset + "000000000000000000000000000000000000000000000000" (48 zeros)
+            reference_regkey = "000000000000000000000000000000000000000000000000"  # 48 zeros like reference
+            command1_no_crc = f"01731D00{asset_bcd}{reference_regkey}"
+            command1 = self._get_crc_original(command1_no_crc)
             
-            # CRITICAL FIX: Asset number must be sent in the EXACT format as received from machine!
-            # Machine returns "6C000000" (little-endian) and expects it back in the same format
-            # NO CONVERSION NEEDED - use the asset number exactly as the machine provided it
-            if hasattr(self.communicator, 'asset_number_hex') and self.communicator.asset_number_hex:
-                asset_bcd = self.communicator.asset_number_hex.upper()  # Use original format from machine
-                print(f"[AFT REGISTRATION] Using original asset number from machine: {asset_bcd}")
-            else:
-                # If we only have the converted decimal format, we need to use the original hex from machine
-                # The machine returns "6C000000" which is what we should use for registration
-                if hasattr(self.communicator, 'original_asset_number_hex'):
-                    asset_bcd = self.communicator.original_asset_number_hex.upper()
-                    print(f"[AFT REGISTRATION] Using stored original asset number: {asset_bcd}")
-                else:
-                    # Last resort: assume asset_number is already in correct format
-                    asset_bcd = asset_number.upper()
-                    print(f"[AFT REGISTRATION] Using asset number as-is: {asset_bcd}")
+            print(f"[AFT REGISTRATION] Registration command 1 (code 00): {command1}")
+            result2 = self.communicator.sas_send_command_with_queue("AFTReg00", command1, 1)
+            print(f"[AFT REGISTRATION] Registration 00 result: {result2}")
             
-            print(f"[AFT REGISTRATION] Final asset number for registration: {asset_bcd}")
+            time.sleep(1)
             
-            # Registration key is already in correct format (20 bytes hex = 40 chars)
-            print(f"[AFT REGISTRATION] Registration Key: {registration_key}")
+            # Step 3: Registration with code "01" - EXACT from reference line 6844
+            print("[AFT REGISTRATION] Step 3: Registration with code 01") 
             
-            # Build complete registration command
-            sas_address = "01"
-            command_code = "73"
-            # CRITICAL FIX: Registration code should be "00" for normal registration, not "01"
-            # Format: RegCode + AssetNumber + RegKey + POSID (all BCD encoded)
-            registration_code = "00"  # 00 = Normal registration (not 01)
-            command_body = registration_code + asset_bcd + registration_key + pos_id_bcd
-            command_length = hex(len(command_body) // 2).replace("0x", "").upper().zfill(2)
+            command2_no_crc = f"01731D01{asset_bcd}{reference_regkey}"
+            command2 = self._get_crc_original(command2_no_crc)
             
-            complete_command_no_crc = sas_address + command_code + command_length + command_body
-            complete_command = self._get_crc_original(complete_command_no_crc)
+            print(f"[AFT REGISTRATION] Registration command 2 (code 01): {command2}")
+            result3 = self.communicator.sas_send_command_with_queue("AFTReg01", command2, 1)
+            print(f"[AFT REGISTRATION] Registration 01 result: {result3}")
             
-            print(f"[AFT REGISTRATION] Command structure breakdown:")
-            print(f"[AFT REGISTRATION]   SAS Address: {sas_address}")
-            print(f"[AFT REGISTRATION]   Command Code: {command_code}")
-            print(f"[AFT REGISTRATION]   Length: {command_length}")
-            print(f"[AFT REGISTRATION]   Registration Code: {registration_code}")
-            print(f"[AFT REGISTRATION]   Asset Number BCD: {asset_bcd}")
-            print(f"[AFT REGISTRATION]   Registration Key: {registration_key}")
-            print(f"[AFT REGISTRATION]   POS ID BCD: {pos_id_bcd}")
-            print(f"[AFT REGISTRATION] Complete registration command: {complete_command}")
-            result2 = self.communicator.sas_send_command_with_queue("AFTRegComplete", complete_command, 1)
-            print(f"[AFT REGISTRATION] Complete registration result: {result2}")
-            
-            # CRITICAL: Wait for registration to complete before returning (timing fix)
-            print("[AFT REGISTRATION] Waiting for registration to complete...")
+            # CRITICAL: Wait for registration to complete before returning
+            print("[AFT REGISTRATION] Waiting for registration sequence to complete...")
             time.sleep(3)  # Allow registration to process fully
             
             print("[AFT REGISTRATION] AFT registration completed")
@@ -737,7 +711,9 @@ class SasMoney:
                     assetnumber = getattr(self.communicator, 'asset_number', '6C000000')
             
             if registrationkey is None:
-                registrationkey = "0000000000000000000000000000000000000000"  # Default 40 chars
+                # EXACT COPY: Reference code uses 40 zeros (20 bytes) 
+                # Config.set('sas','registrationkey', '0000000000000000000000000000000000000000')
+                registrationkey = "0000000000000000000000000000000000000000"  # Exactly 40 zeros like reference
             
             print(f"[AFT COMMAND] Using config-style data sources:")
             print(f"[AFT COMMAND]   Transaction ID: {transactionid}")

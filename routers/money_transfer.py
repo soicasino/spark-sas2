@@ -75,9 +75,9 @@ async def add_credits(
         
         # Execute AFT credit transfer using SAS money functions
         try:
-            # Use all-zeros registration key (confirmed working with this machine)
-            registrationkey = "0000000000000000000000000000000000000000"
-            print(f"[ADD CREDITS] Using all-zeros registration key: {registrationkey}")
+            # Use all-zeros registration key - EXACT format from reference for AFT transfer (40 zeros = 20 bytes)
+            registrationkey = "0000000000000000000000000000000000000000"  # 40 zeros like reference AFT transfer
+            print(f"[ADD CREDITS] Using all-zeros registration key (40 zeros for AFT transfer): {registrationkey}")
             
             # Register AFT before transfer - CRITICAL for working AFT
             print(f"[ADD CREDITS] Registering AFT before money transfer...")
