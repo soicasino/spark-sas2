@@ -235,8 +235,8 @@ def SendSASPORT(command_hex):
                     sasport.write(bytes.fromhex(command_hex[2:]))
                     sasport.flush()
                     
-        # CRITICAL: Flush input like original SendSASPORT!
-        sasport.flushInput()
+        # Clear any previously queued bytes BEFORE sending so we don't lose the machine's response
+        sasport.reset_input_buffer()
         return True
                     
     except Exception as e:
