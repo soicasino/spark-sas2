@@ -27,7 +27,16 @@ SAS_ADDRESS = "01"  # Address
 ASSET_NUMBER = "6C000000"  # Asset 108 in hex, padded to 4 bytes
 REGISTRATION_KEY = "000000000000000000000000000000000000000000"  # All zeros, 20 bytes
 CASHOUT_MODE_SOFT = False  # Use hard cashout mode
-TRANSACTION_ID = "12345"  # Fixed transaction ID for testing
+
+# Transaction ID management - EXACTLY like main app
+import datetime
+current_transaction_id = int(datetime.datetime.now().timestamp()) % 10000
+
+def get_next_transaction_id():
+    """Get the next transaction ID, incrementing the internal counter - EXACTLY like main app"""
+    global current_transaction_id
+    current_transaction_id = (current_transaction_id + 1) % 10000
+    return current_transaction_id
 
 # Global variables - matching original code
 sasport = None
@@ -628,10 +637,13 @@ def main():
         command += REGISTRATION_KEY  # Registration key
         
         # Transaction ID - proper BCD format
-        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in TRANSACTION_ID)
+        transaction_id_str = str(get_next_transaction_id())  # Convert to string first
+        print(f"💳 Transaction ID: {transaction_id_str}")
+        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in transaction_id_str)
+        print(f"💳 Transaction ID hex: {transaction_id_hex}")
         transaction_id_length_bcd = AddLeftBCD(len(transaction_id_hex)//2, 1)  # Proper BCD format
         command += transaction_id_length_bcd  # Transaction ID length (proper BCD)
-        command += transaction_id_hex  # Transaction ID
+        command += transaction_id_hex  # Transaction ID (hex encoded ASCII)
         
         command += "00000000"  # Expiration date
         command += "0000"  # Pool ID
