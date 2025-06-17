@@ -7,7 +7,7 @@ For testing AFT operations on Raspberry Pi
 Usage: python3 test_aft_op.py <amount>
 Example: python3 test_aft_op.py 100.50
 
-SAS Port: /dev/ttyUSB1
+SAS Port: /dev/ttyUSB0
 Asset No: 108 (0x6C)
 Registration Key: all zeros (000000000000000000000000000000000000000000)
 """
@@ -636,13 +636,20 @@ def main():
         command += ASSET_NUMBER  # Asset number
         command += REGISTRATION_KEY  # Registration key
         
-        # Transaction ID - proper BCD format
-        transaction_id_str = str(get_next_transaction_id())  # Convert to string first
-        print(f"💳 Transaction ID: {transaction_id_str}")
-        transaction_id_hex = ''.join(f"{ord(c):02x}" for c in transaction_id_str)
+        # Transaction ID - EXACTLY like main app (line 740-742)
+        transaction_id_int = get_next_transaction_id()  # Get integer transaction ID
+        transaction_id_str = str(transaction_id_int)  # Convert to string
+        print(f"💳 Transaction ID: {transaction_id_int} -> '{transaction_id_str}'")
+        
+        # Convert each character to hex (ASCII encoding) - EXACTLY like main app
+        transaction_id_hex = "".join("{:02x}".format(ord(c)) for c in transaction_id_str)
         print(f"💳 Transaction ID hex: {transaction_id_hex}")
-        transaction_id_length_bcd = AddLeftBCD(len(transaction_id_hex)//2, 1)  # Proper BCD format
-        command += transaction_id_length_bcd  # Transaction ID length (proper BCD)
+        
+        # Transaction ID length in BCD format
+        transaction_id_length_bcd = AddLeftBCD(len(transaction_id_hex)//2, 1)
+        print(f"💳 Transaction ID length BCD: {transaction_id_length_bcd}")
+        
+        command += transaction_id_length_bcd  # Transaction ID length (BCD)
         command += transaction_id_hex  # Transaction ID (hex encoded ASCII)
         
         command += "00000000"  # Expiration date
