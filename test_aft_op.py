@@ -213,6 +213,8 @@ def SendSASPORT(command_hex):
                     sasport.write(bytes.fromhex(command_hex[2:]))
                     sasport.flush()
                     
+        # CRITICAL: Flush input like original SendSASPORT!
+        sasport.flushInput()
         return True
                     
     except Exception as e:
@@ -237,8 +239,8 @@ def ReadSASPORT():
             read_count_timeout = read_count_timeout - 1
             
             while sasport.in_waiting > 0:
-                out += sasport.read_all().hex()
-            time.sleep(0.005)
+                out += sasport.read_all().hex()  # CRITICAL: read_all() not read()!
+                time.sleep(0.005)
         
         return out.upper()
         
