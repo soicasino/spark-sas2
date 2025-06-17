@@ -7,7 +7,7 @@ For testing AFT operations on Raspberry Pi
 Usage: python3 test_aft_op.py <amount>
 Example: python3 test_aft_op.py 100.50
 
-SAS Port: /dev/ttyUSB0
+SAS Port: /dev/ttyUSB1
 Asset No: 108 (0x6C)
 Registration Key: all zeros (000000000000000000000000000000000000000000)
 """
@@ -21,7 +21,7 @@ from decimal import Decimal
 from crccheck.crc import CrcKermit
 
 # Configuration - hardcoded as requested
-SAS_PORT = "/dev/ttyUSB0"
+SAS_PORT = "/dev/ttyUSB1"
 SAS_BAUDRATE = 19200
 SAS_ADDRESS = "01"  # Address
 ASSET_NUMBER = "6C000000"  # Asset 108 in hex, padded to 4 bytes
