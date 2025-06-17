@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 AFT Add Credit Test Application
-Based on raspberryPython_orj.py.ref
-For testing AFT operations on Raspberry Pi with continuous SAS polling
+Based on the original SAS communication logic from raspberryPython_orj.py.ref
+For testing AFT operations on Raspberry Pi
 
 Usage: python3 test_aft_op.py <amount>
 Example: python3 test_aft_op.py 100.50
@@ -28,22 +28,23 @@ ASSET_NUMBER = "6C000000"  # Asset 108 in hex, padded to 4 bytes
 REGISTRATION_KEY = "000000000000000000000000000000000000000000"  # All zeros, 20 bytes
 CASHOUT_MODE_SOFT = False  # Use hard cashout mode
 
-# Global variables
+# Global variables - matching original code
 sasport = None
 transaction_id = 1
 IsWaitingForParaYukle = False
+last_sent_poll_type = 81  # Sas_LastSent equivalent
 polling_active = False
 polling_thread = None
-last_response = None
-aft_pending = False
-aft_result = None
+
+# AFT response tracking
+aft_transfer_status = "FF"  # Transfer status like original
+aft_response_received = False
 
 def print_banner():
     """Print application banner"""
     print("=" * 60)
     print("AFT Add Credit Test Application")
-    print("Based on raspberryPython_orj.py.ref")
-    print("With Continuous SAS Polling")
+    print("Based on raspberryPython_orj.py.ref - EXACT MATCH")
     print("=" * 60)
     print(f"SAS Port: {SAS_PORT}")
     print(f"Asset No: 108 (0x{ASSET_NUMBER})")
@@ -90,7 +91,7 @@ def GetCRC(komut):
     return retdata
 
 def open_sas_port():
-    """Open SAS serial port"""
+    """Open SAS serial port - EXACTLY like original"""
     global sasport
     try:
         sasport = serial.Serial()
@@ -99,14 +100,23 @@ def open_sas_port():
         sasport.parity = serial.PARITY_NONE
         sasport.stopbits = serial.STOPBITS_ONE
         sasport.bytesize = serial.EIGHTBITS
-        sasport.timeout = 0.1  # Short timeout for polling
-        sasport.inter_byte_timeout = 0.01
+        sasport.timeout = 0.1
+        sasport.xonxoff = False
+        sasport.rtscts = False
+        sasport.dsrdtr = False
+        
+        # DTR/RTS settings from original
+        sasport.dtr = True
+        sasport.rts = False
         
         print(f"Opening SAS port: {SAS_PORT} at {SAS_BAUDRATE} baud...")
         sasport.open()
         
         if sasport.isOpen():
             print("✓ SAS port opened successfully")
+            # Initial poll like original
+            SendSASPORT("80")
+            time.sleep(0.05)
             return True
         else:
             print("✗ Failed to open SAS port")
@@ -126,97 +136,110 @@ def close_sas_port():
     except Exception as e:
         print(f"✗ Error closing SAS port: {e}")
 
-def send_raw_command(command_hex):
-    """Send raw SAS command"""
+def SendSASPORT(command_hex):
+    """Send raw hex to SAS port - EXACTLY like original SendSASPORT"""
     global sasport
+    if not sasport or not sasport.isOpen():
+        return
+        
     try:
-        if not sasport or not sasport.isOpen():
-            return False
-            
-        # Convert hex string to bytes
-        if len(command_hex) % 2 != 0:
-            return False
-            
-        command_bytes = bytes.fromhex(command_hex)
-        
-        # Send command
-        sasport.write(command_bytes)
-        sasport.flush()
-        
-        return True
-            
+        data_bytes = bytes.fromhex(command_hex)
+        sasport.write(data_bytes)
     except Exception as e:
-        print(f"✗ Error sending command: {e}")
-        return False
+        print(f"Error in SendSASPORT: {e}")
 
-def read_sas_response():
-    """Read SAS response with timeout"""
+def SendSASCommand(command_hex):
+    """Send SAS command - EXACTLY matching original SendSASCommand"""
+    global last_sent_poll_type
+    
+    command_hex = command_hex.replace(" ", "")
+    
+    # Update last sent times like original
+    if command_hex == "81":
+        last_sent_poll_type = 81
+    if command_hex == "80":
+        last_sent_poll_type = 80
+
+    # Log like original
+    print("TX: ", command_hex, datetime.datetime.now())
+    
+    # Just send normally (device type 8 - default)
+    SendSASPORT(command_hex)
+
+def GetDataFromSasPort():
+    """Receive data - EXACTLY like original GetDataFromSasPort"""
     global sasport
+    if not sasport or not sasport.isOpen():
+        return ""
+        
     try:
-        if not sasport or not sasport.isOpen():
+        data_left = sasport.in_waiting
+        if data_left == 0:
             return ""
-            
-        # Read with timeout
-        data = sasport.read_all()
-        if data:
-            return data.hex().upper()
         
-        return ""
+        out = ''
+        ReadCountTimeOut = 4  # From original
+        
+        while ReadCountTimeOut > 0:
+            ReadCountTimeOut = ReadCountTimeOut - 1
+            
+            while sasport.in_waiting > 0:
+                out += sasport.read_all().hex()
+                time.sleep(0.005)
+        
+        return out.upper()
         
     except Exception as e:
+        print(f"Error in GetDataFromSasPort: {e}")
         return ""
 
-def continuous_polling():
-    """Continuous SAS polling thread"""
-    global polling_active, last_response, aft_pending, aft_result
+def SendGeneralPoll():
+    """Send general poll - alternating 80/81 like original"""
+    global last_sent_poll_type
     
-    print("🔄 Starting continuous SAS polling...")
+    # Alternate between 80 and 81 like original
+    if last_sent_poll_type == 80:
+        poll_command = "81"
+    else:
+        poll_command = "80"
+        
+    SendSASCommand(poll_command)
+
+def sas_polling_loop():
+    """SAS polling loop - EXACTLY like original main loop"""
+    global polling_active, aft_transfer_status, aft_response_received
     
-    # Polling commands
-    general_poll = GetCRC(SAS_ADDRESS + "80")  # General poll
-    interrogation = GetCRC(SAS_ADDRESS + "2F")  # Interrogation
-    
-    poll_counter = 0
-    last_poll_time = time.time()
+    print("🔄 Starting SAS polling loop...")
     
     while polling_active:
         try:
-            current_time = time.time()
+            # Send general poll
+            SendGeneralPoll()
             
-            # Send general poll every 200ms
-            if current_time - last_poll_time >= 0.2:
-                if send_raw_command(general_poll):
-                    # Check for response
-                    time.sleep(0.05)  # Wait for response
-                    response = read_sas_response()
-                    
-                    if response:
-                        print(f"📡 Poll Response: {response}")
-                        last_response = response
-                        
-                        # Check for AFT responses
-                        if aft_pending:
-                            if response.startswith("0172"):
-                                print("📊 AFT Transfer Response Received!")
-                                aft_result = parse_aft_response(response)
-                                aft_pending = False
-                            elif "FF69" in response:
-                                print("✓ AFT completion notification received!")
-                                aft_pending = False
-                    
-                    # Send interrogation every 10 polls
-                    poll_counter += 1
-                    if poll_counter >= 10:
-                        poll_counter = 0
-                        send_raw_command(interrogation)
-                        time.sleep(0.05)
-                        response = read_sas_response()
-                        if response:
-                            print(f"📋 Interrogation Response: {response}")
+            # Check for response like original
+            time.sleep(0.05)  # Give time for response
+            response = GetDataFromSasPort()
+            
+            if response:
+                print(f"RX: {response}")
                 
-                last_poll_time = current_time
+                # Handle AFT responses like original
+                if IsWaitingForParaYukle and response.startswith("0172"):
+                    print("📊 AFT Transfer Response Received!")
+                    Yanit_ParaYukle(response)
+                elif "01FF69" in response:
+                    print("✓ AFT completion notification received!")
+                    aft_transfer_status = "00"  # Success like original
+                    aft_response_received = True
+                elif response == "01":
+                    # Normal ACK - continue polling
+                    pass
+                else:
+                    # Other responses - process normally
+                    print(f"Other response: {response}")
             
-            time.sleep(0.05)  # Small delay between loops
+            # Schedule next poll like original (40ms interval)
+            time.sleep(0.04)
             
         except Exception as e:
             print(f"✗ Polling error: {e}")
@@ -230,7 +253,7 @@ def start_polling():
     
     if not polling_active:
         polling_active = True
-        polling_thread = threading.Thread(target=continuous_polling, daemon=True)
+        polling_thread = threading.Thread(target=sas_polling_loop, daemon=True)
         polling_thread.start()
         time.sleep(0.5)  # Give polling time to start
 
@@ -242,213 +265,115 @@ def stop_polling():
         polling_active = False
         if polling_thread:
             polling_thread.join(timeout=2)
-        print("🔄 Polling stopped")
 
-def send_command(command_name, command_hex):
-    """Send SAS command with polling active"""
+def Yanit_ParaYukle(response):
+    """Parse AFT response - EXACTLY like original Yanit_ParaYukle"""
+    global aft_transfer_status, aft_response_received
+    
     try:
-        print(f"TX -> {command_name}: {command_hex}")
+        print(f"📥 ========== AFT TRANSFER RESPONSE ==========")
+        print(f"📥 RAW RESPONSE: {response}")
+        print(f"===============================================")
         
-        if send_raw_command(command_hex):
-            print(f"✓ {command_name} sent successfully")
-            return True
-        else:
-            print(f"✗ Failed to send {command_name}")
-            return False
-            
-    except Exception as e:
-        print(f"✗ Error sending command: {e}")
-        return False
-
-def hex_to_decimal(hex_str):
-    """Convert BCD hex string to decimal - from original"""
-    try:
-        return int(hex_str) / 100.0
-    except:
-        return 0.0
-
-def get_transfer_status_description(status_code):
-    """Get description for transfer status codes - from original"""
-    status_descriptions = {
-        "00": "Transfer successful",
-        "81": "TransactionID is not unique",
-        "83": "Not a valid transfer function", 
-        "84": "Cannot transfer large amount to gaming machine",
-        "85": "Balance not compatible with denomination",
-        "87": "Door open, tilt, or disabled",
-        "89": "Registration key doesn't match",
-        "93": "Asset number zero or doesn't match",
-        "94": "Gaming machine not locked for transfer",
-        "95": "TransactionID is not unique (Megajack)",
-        "C0": "Not compatible with current transfer in progress",
-        "C1": "Unsupported transfer code",
-        "FF": "No transfer information available",
-        "40": "Transfer pending"
-    }
-    return status_descriptions.get(status_code, f"Unknown status: {status_code}")
-
-def parse_aft_response(response):
-    """Parse AFT response - based on Yanit_ParaYukle from original"""
-    try:
         if len(response) < 10:
-            return None
+            print("Response too short")
+            aft_transfer_status = "FF"
+            aft_response_received = True
+            return
             
-        print("\n--- AFT Response Analysis ---")
-        print(f"Raw response: {response}")
+        # Parse like original - extract transfer status
+        transfer_status = response[8:10]  # Position 8-9 in response
+        aft_transfer_status = transfer_status
+        aft_response_received = True
         
-        index = 0
-        
-        # Address
-        address = response[index:index+2]
-        index += 2
-        print(f"Address: {address}")
-        
-        # Command  
-        command = response[index:index+2]
-        index += 2
-        print(f"Command: {command}")
-        
-        # Length
-        length = response[index:index+2]
-        index += 2
-        print(f"Length: {length}")
-        
-        # Transaction Buffer
-        transaction_buffer = response[index:index+2]
-        index += 2
-        print(f"Transaction Buffer: {transaction_buffer}")
-        
-        # Transfer Status (most important)
-        transfer_status = response[index:index+2]
-        index += 2
-        print(f"Transfer Status: {transfer_status}")
-        print(f"Status Description: {get_transfer_status_description(transfer_status)}")
-        
-        # Receipt Status
-        receipt_status = response[index:index+2]
-        index += 2
-        print(f"Receipt Status: {receipt_status}")
-        
-        # Transfer Type
-        transfer_type = response[index:index+2]
-        index += 2
-        print(f"Transfer Type: {transfer_type}")
-        
-        # Amounts (5 bytes each in BCD)
-        if index + 30 <= len(response):
-            cashable_amount_hex = response[index:index+10]
-            index += 10
-            cashable_amount = hex_to_decimal(cashable_amount_hex)
-            print(f"Cashable Amount: {cashable_amount:.2f} (hex: {cashable_amount_hex})")
-            
-            restricted_amount_hex = response[index:index+10]
-            index += 10
-            restricted_amount = hex_to_decimal(restricted_amount_hex)
-            print(f"Restricted Amount: {restricted_amount:.2f} (hex: {restricted_amount_hex})")
-            
-            nonrestricted_amount_hex = response[index:index+10]
-            index += 10
-            nonrestricted_amount = hex_to_decimal(nonrestricted_amount_hex)
-            print(f"Non-restricted Amount: {nonrestricted_amount:.2f} (hex: {nonrestricted_amount_hex})")
-        
-        # Transfer Flag
-        if index + 2 <= len(response):
-            transfer_flag = response[index:index+2]
-            index += 2
-            print(f"Transfer Flag: {transfer_flag}")
-        
-        # Asset Number
-        if index + 8 <= len(response):
-            asset_number = response[index:index+8]
-            index += 8
-            print(f"Asset Number: {asset_number}")
-        
-        # Transaction ID
-        if index + 2 <= len(response):
-            try:
-                transaction_id_length = int(response[index:index+2], 16) * 2
-                index += 2
-                if index + transaction_id_length <= len(response):
-                    transaction_id_hex = response[index:index+transaction_id_length]
-                    index += transaction_id_length
-                    # Convert hex to string
-                    transaction_id = ''.join(chr(int(transaction_id_hex[i:i+2], 16)) for i in range(0, len(transaction_id_hex), 2))
-                    print(f"Transaction ID: {transaction_id}")
-            except:
-                print("Could not parse transaction ID")
-        
-        print("--- End AFT Response Analysis ---\n")
-        
-        return {
-            'status': transfer_status,
-            'success': transfer_status == "00",
-            'description': get_transfer_status_description(transfer_status)
+        # Status descriptions from original
+        status_descriptions = {
+            "00": "Transfer successful",
+            "81": "TransactionID is not unique",
+            "83": "Not a valid transfer function", 
+            "84": "Cannot transfer large amount to gaming machine",
+            "85": "Balance not compatible with denomination",
+            "87": "Door open, tilt, or disabled",
+            "89": "Registration key doesn't match",
+            "93": "Asset number zero or doesn't match",
+            "94": "Gaming machine not locked for transfer",
+            "95": "TransactionID is not unique (Megajack)",
+            "C0": "Not compatible with current transfer in progress",
+            "C1": "Unsupported transfer code",
+            "FF": "No transfer information available",
+            "40": "Transfer pending"
         }
+        
+        status_msg = status_descriptions.get(transfer_status, f"Unknown: {transfer_status}")
+        print(f"📥 Transfer Status: {transfer_status} - {status_msg}")
+        
+        print(f"===============================================")
         
     except Exception as e:
         print(f"✗ Error parsing AFT response: {e}")
-        return None
+        aft_transfer_status = "FF"
+        aft_response_received = True
 
-def build_aft_command(amount):
-    """Build AFT credit loading command - from original Komut_ParaYukle"""
+def Komut_ParaYukle(amount):
+    """Build AFT credit loading command - EXACTLY like original Komut_ParaYukle"""
     global transaction_id
     
     print(f"Building AFT command for amount: {amount}")
     
-    # Convert amount to cents (BCD format)
+    # Convert amount to cents (BCD format) - EXACTLY like original
     customerbalanceint = int(float(amount) * 100)
     
     print(f"Amount in cents: {customerbalanceint}")
     
-    # Command Header
+    # Command Header - EXACTLY like original
     CommandHeader = SAS_ADDRESS      # 1-Address  01
     CommandHeader += "72"            # 1-Command  72 (AFT transfer to gaming machine)
     # Length will be added later
     
-    # Command Body
+    # Command Body - EXACTLY like original
     Command = ""
     Command += "00"                  # 1-Transfer Code    00
     Command += "00"                  # 1-Transfer Index   00
     Command += "00"                  # 1-Transfer Type    00 (cashable amount)
     
-    # Amount fields (5 bytes each in BCD)
+    # Amount fields (5 bytes each in BCD) - EXACTLY like original
     Command += AddLeftBCD(customerbalanceint, 5)  # 5-Cashable amount (BCD)
     Command += AddLeftBCD(0, 5)                   # 5-Restricted amount (BCD)
     Command += AddLeftBCD(0, 5)                   # 5-Nonrestricted amount (BCD)
     
-    # Transfer flags
+    # Transfer flags - EXACTLY like original
     if CASHOUT_MODE_SOFT:
         Command += "03"              # 1-Transfer flag (soft cashout)
     else:
         Command += "07"              # 1-Transfer flag (hard cashout)
     
-    # Asset number and registration
+    # Asset number and registration - EXACTLY like original
     Command += ASSET_NUMBER          # 4-Asset number
     Command += REGISTRATION_KEY      # 20-Registration key
     
-    # Transaction ID
+    # Transaction ID - EXACTLY like original
     TRANSACTIONID = "".join("{:02x}".format(ord(c)) for c in str(transaction_id))
     Command += AddLeftBCD(int(len(TRANSACTIONID) / 2), 1)  # 1-TransactionId Length
     Command += TRANSACTIONID         # X-TransactionID
     
-    # Expiration date (set to zeros for no expiration)
+    # Expiration date - EXACTLY like original
     Command += "00000000"            # 4-ExpirationDate (BCD) MMDDYYYY
     
-    # Pool ID
+    # Pool ID - EXACTLY like original
     Command += "0000"                # 2-Pool ID
     
-    # Receipt data
+    # Receipt data - EXACTLY like original
     Command += "00"                  # 1-Receipt data length
     # No receipt data
     # No lock timeout
     
-    # Add length to header
+    # Add length to header - EXACTLY like original
     CommandHeader += hex(int(len(Command) / 2)).replace("0x", "").upper().zfill(2)
     
-    # Complete command
+    # Complete command - EXACTLY like original
     GenelKomut = CommandHeader + Command
     
-    # Add CRC
+    # Add CRC - EXACTLY like original
     GenelKomut = GetCRC(GenelKomut)
     
     print(f"Final AFT command: {GenelKomut}")
@@ -456,42 +381,33 @@ def build_aft_command(amount):
     
     return GenelKomut
 
-def wait_for_aft_response():
-    """Wait for AFT completion response"""
-    global aft_pending, aft_result
+def wait_for_aft_completion():
+    """Wait for AFT completion - like original"""
+    global aft_response_received, aft_transfer_status
     
-    print("Waiting for AFT response...")
+    print("Waiting for AFT completion...")
     
-    aft_pending = True
-    aft_result = None
     timeout = 30  # 30 seconds timeout
     start_time = time.time()
     
-    while time.time() - start_time < timeout and aft_pending:
-        if aft_result:
-            if aft_result['success']:
+    while time.time() - start_time < timeout:
+        if aft_response_received:
+            if aft_transfer_status == "00":
                 print("✓ AFT transfer completed successfully!")
                 return True
             else:
-                print(f"✗ AFT transfer failed: {aft_result['description']}")
+                print(f"✗ AFT transfer failed with status: {aft_transfer_status}")
                 return False
         
         time.sleep(0.1)
     
-    print("✗ Timeout waiting for AFT response")
+    print("✗ Timeout waiting for AFT completion")
     return False
-
-def send_interrogation():
-    """Send interrogation command (0x2F) - from original"""
-    print("Sending interrogation command...")
-    
-    command = SAS_ADDRESS + "2F"
-    command = GetCRC(command)
-    
-    return send_command("Interrogation", command)
 
 def main():
     """Main function"""
+    global IsWaitingForParaYukle, transaction_id, aft_response_received, aft_transfer_status
+    
     print_banner()
     
     # Check arguments
@@ -516,46 +432,36 @@ def main():
         sys.exit(1)
     
     try:
-        # Start continuous polling
-        print("\n--- Step 1: Start Continuous Polling ---")
+        # Start continuous polling like original
+        print("\n--- Step 1: Start SAS Polling ---")
         start_polling()
         
-        # Wait a moment for polling to establish communication
+        # Wait for communication to establish
         time.sleep(2)
         
-        # Send initial interrogation
-        print("\n--- Step 2: Initial Interrogation ---")
-        send_interrogation()
-        time.sleep(1)
+        # Build and send AFT command like original
+        print("\n--- Step 2: Send AFT Credit Command ---")
+        aft_command = Komut_ParaYukle(amount)
         
-        # Build and send AFT command
-        print("\n--- Step 3: Send AFT Credit Command ---")
-        aft_command = build_aft_command(amount)
-        
-        global IsWaitingForParaYukle
+        # Reset tracking variables
         IsWaitingForParaYukle = True
+        aft_response_received = False
+        aft_transfer_status = "FF"
         
-        if send_command("AFT Credit Load", aft_command):
-            print("✓ AFT command sent successfully")
-            
-            # Wait for completion
-            print("\n--- Step 4: Wait for AFT Completion ---")
-            if wait_for_aft_response():
-                print("✓ AFT operation completed successfully!")
-            else:
-                print("✗ AFT operation may have failed or timed out")
+        # Send AFT command like original
+        print(f"TX -> AFT Credit Load: {aft_command}")
+        SendSASCommand(aft_command)
+        
+        # Wait for completion like original
+        print("\n--- Step 3: Wait for AFT Completion ---")
+        if wait_for_aft_completion():
+            print("✓ AFT operation completed successfully!")
         else:
-            print("✗ Failed to send AFT command")
-        
-        # Send final interrogation
-        print("\n--- Step 5: Final Interrogation ---")
-        send_interrogation()
-        time.sleep(1)
+            print("✗ AFT operation failed or timed out")
         
         IsWaitingForParaYukle = False
         
-        # Increment transaction ID for next use
-        global transaction_id
+        # Increment transaction ID for next use like original
         transaction_id += 1
         if transaction_id > 1000:
             transaction_id = 1
