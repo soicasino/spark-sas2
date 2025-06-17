@@ -4,8 +4,11 @@ AFT Add Credit Test Application - CORRECTED
 Based on the original SAS communication logic from raspberryPython_orj.py.
 For testing AFT operations on Raspberry Pi
 
-Usage: python3 test_aft_op.py <amount>
-Example: python3 test_aft_op.py 100.50
+Usage: python3 test_aft_op.py <amount> [port]
+Examples: 
+    python3 test_aft_op.py 100.50
+    python3 test_aft_op.py 50 /dev/ttyUSB0
+    python3 test_aft_op.py 25 /dev/ttyUSB1
 """
 
 import serial
@@ -302,8 +305,12 @@ def main():
     
     print_banner()
 
-    if len(sys.argv) != 2:
-        print("Usage: python test_aft_op.py <amount>")
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print("Usage: python test_aft_op.py <amount> [port]")
+        print("Examples:")
+        print("  python test_aft_op.py 100.50")
+        print("  python test_aft_op.py 50 /dev/ttyUSB0")
+        print("  python test_aft_op.py 25 /dev/ttyUSB1")
         sys.exit(1)
         
     try:
@@ -314,11 +321,27 @@ def main():
         print(f"[ERROR] Invalid amount: {e}")
         sys.exit(1)
 
-    # --- Port Discovery ---
-    print("\n--- Step 1: Discovering SAS Port ---")
-    # For this test, we'll manually set it based on the original app's success
-    SAS_PORT = "/dev/ttyUSB1"  # Based on previous tests, this was the working port
-    print(f"[INFO] Using pre-configured SAS Port: {SAS_PORT}")
+    # --- Port Configuration ---
+    print("\n--- Step 1: Configuring SAS Port ---")
+    if len(sys.argv) == 3:
+        # Port specified as parameter
+        SAS_PORT = sys.argv[2]
+        print(f"[INFO] Using specified SAS Port: {SAS_PORT}")
+    else:
+        # Default port based on previous tests
+        SAS_PORT = "/dev/ttyUSB1"  # Based on previous tests, this was the working port
+        print(f"[INFO] Using default SAS Port: {SAS_PORT}")
+        print(f"[INFO] To specify a different port, use: python test_aft_op.py {amount} /dev/ttyUSB0")
+    
+    # Validate port exists (basic check)
+    import os
+    if not os.path.exists(SAS_PORT):
+        print(f"[WARNING] Port {SAS_PORT} does not exist!")
+        print("[INFO] Available ports:")
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            print(f"  - {port.device}: {port.description}")
+        print("[INFO] Continuing anyway - port might become available...")
     
     if not open_sas_port():
         sys.exit(1)
