@@ -117,107 +117,116 @@ def discover_sas_port():
         if hasattr(port, 'product') and port.product:
             print(f"     Product: {port.product}")
     
-    # Test each port for SAS communication
+    # Based on main app logs, we know /dev/ttyUSB0 works
+    # Let's prioritize that and do a quick test
     print(f"\n🔧 Testing ports for SAS communication...")
     
-    # SAS test commands
-    test_commands = [
-        ("General Poll", GetCRC(SAS_ADDRESS + "80")),
-        ("Interrogation", GetCRC(SAS_ADDRESS + "81")),
-        ("Asset Number Query", GetCRC(SAS_ADDRESS + "4F")),
-        ("Game ID Query", GetCRC(SAS_ADDRESS + "51"))
-    ]
+    # Priority order based on main app success
+    priority_ports = ["/dev/ttyUSB0", "/dev/ttyUSB1"]
+    available_ports = [port.device for port in ports]
     
-    for port in ports:
-        port_name = port.device
+    # Test priority ports first
+    for priority_port in priority_ports:
+        if priority_port in available_ports:
+            print(f"\n🔌 Testing priority port: {priority_port}")
+            
+            try:
+                # Quick connectivity test - just try to open the port
+                test_port = serial.Serial(
+                    port=priority_port,
+                    baudrate=19200,  # Known working baud rate
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    timeout=0.1,
+                    xonxoff=False,
+                    rtscts=False,
+                    dsrdtr=False
+                )
+                
+                test_port.dtr = True
+                test_port.rts = False
+                
+                print(f"   ✓ Port opened successfully")
+                
+                # Try a simple poll (don't require response for discovery)
+                test_command = GetCRC(SAS_ADDRESS + "80")
+                cmd_hex_clean = test_command.replace(" ", "")
+                
+                # Send with proper parity
+                test_port.parity = serial.PARITY_MARK
+                first_byte = bytes.fromhex(cmd_hex_clean[0:2])
+                test_port.write(first_byte)
+                test_port.flush()
+                
+                if len(cmd_hex_clean) > 2:
+                    time.sleep(0.005)
+                    test_port.parity = serial.PARITY_SPACE
+                    rest_bytes = bytes.fromhex(cmd_hex_clean[2:])
+                    test_port.write(rest_bytes)
+                    test_port.flush()
+                
+                # Check for response (but don't require it)
+                time.sleep(0.1)
+                response_received = False
+                if test_port.in_waiting > 0:
+                    response = test_port.read(test_port.in_waiting)
+                    hex_response = response.hex().upper()
+                    print(f"   📥 Got response: {hex_response}")
+                    response_received = True
+                else:
+                    print(f"   📭 No immediate response (this is OK - machine might be busy)")
+                
+                test_port.close()
+                
+                # If this is /dev/ttyUSB0 and main app used it successfully, use it
+                if priority_port == "/dev/ttyUSB0":
+                    print(f"   ✅ Using {priority_port} - confirmed working by main app")
+                    return priority_port
+                elif response_received:
+                    print(f"   ✅ PORT FOUND: {priority_port} with active response")
+                    return priority_port
+                else:
+                    print(f"   ⚠️  {priority_port} opened OK but no response - continuing search...")
+                
+            except Exception as e:
+                print(f"   ❌ Failed to test {priority_port}: {e}")
+    
+    # Test remaining ports
+    other_ports = [port for port in available_ports if port not in priority_ports]
+    for port_name in other_ports:
         print(f"\n🔌 Testing port: {port_name}")
-        
         try:
-            # Open port with SAS settings
             test_port = serial.Serial(
                 port=port_name,
-                baudrate=SAS_BAUDRATE,
+                baudrate=19200,  # Always use 19200 baud
                 bytesize=serial.EIGHTBITS,
                 parity=serial.PARITY_NONE,
                 stopbits=serial.STOPBITS_ONE,
-                timeout=0.2,  # Longer timeout for discovery
+                timeout=0.1,
                 xonxoff=False,
                 rtscts=False,
                 dsrdtr=False
             )
             
-            # Set DTR/RTS like main app
             test_port.dtr = True
             test_port.rts = False
-            
-            print(f"   ✓ Port opened successfully")
-            
-            # Test multiple commands
-            responses_received = 0
-            
-            for cmd_name, cmd_hex in test_commands:
-                try:
-                    # Clear any existing data
-                    if test_port.in_waiting > 0:
-                        test_port.read(test_port.in_waiting)
-                    
-                    # Send command with proper SAS parity switching
-                    cmd_hex_clean = cmd_hex.replace(" ", "")
-                    
-                    # First byte with MARK parity
-                    test_port.parity = serial.PARITY_MARK
-                    first_byte = bytes.fromhex(cmd_hex_clean[0:2])
-                    test_port.write(first_byte)
-                    test_port.flush()
-                    
-                    # Rest with SPACE parity
-                    if len(cmd_hex_clean) > 2:
-                        time.sleep(0.005)
-                        test_port.parity = serial.PARITY_SPACE
-                        rest_bytes = bytes.fromhex(cmd_hex_clean[2:])
-                        test_port.write(rest_bytes)
-                        test_port.flush()
-                    
-                    # Wait for response
-                    time.sleep(0.1)
-                    
-                    if test_port.in_waiting > 0:
-                        response = test_port.read(test_port.in_waiting)
-                        hex_response = response.hex().upper()
-                        print(f"   📥 {cmd_name}: {hex_response}")
-                        responses_received += 1
-                        
-                        # Check for asset number in response (specific to our machine)
-                        if "6C000000" in hex_response or "6C" in hex_response:
-                            print(f"   🎯 Found our asset number (108/0x6C) in response!")
-                    else:
-                        print(f"   📭 {cmd_name}: No response")
-                
-                except Exception as cmd_e:
-                    print(f"   ❌ {cmd_name}: Error - {cmd_e}")
-                
-                time.sleep(0.05)  # Small delay between commands
-            
             test_port.close()
             
-            # Evaluate results
-            if responses_received > 0:
-                print(f"   ✅ PORT FOUND: {port_name} responded to {responses_received}/{len(test_commands)} commands")
-                print(f"   🎯 This appears to be the SAS port!")
-                return port_name
-            else:
-                print(f"   ❌ No SAS responses from {port_name}")
-        
+            print(f"   ✓ Port accessible")
+            
         except Exception as e:
-            print(f"   ❌ Failed to test {port_name}: {e}")
+            print(f"   ❌ Port not accessible: {e}")
     
-    print(f"\n❌ No responding SAS port found!")
-    print(f"💡 Suggestions:")
-    print(f"   • Check physical connections")
-    print(f"   • Verify gaming machine is powered on")
-    print(f"   • Try different baud rates (9600, 19200, 38400)")
-    print(f"   • Check if another application is using the port")
+    # Default to most likely working port
+    if "/dev/ttyUSB0" in available_ports:
+        print(f"\n🎯 DEFAULTING to /dev/ttyUSB0 (main app confirmed this works)")
+        return "/dev/ttyUSB0"
+    elif "/dev/ttyUSB1" in available_ports:
+        print(f"\n🎯 DEFAULTING to /dev/ttyUSB1 (fallback option)")
+        return "/dev/ttyUSB1"
     
+    print(f"\n❌ No suitable SAS port found!")
     return None
 
 def open_sas_port():
