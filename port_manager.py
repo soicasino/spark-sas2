@@ -55,6 +55,20 @@ class PortManager:
         except Exception as e:
             print(f"Error finding serial ports: {e}")
         
+        # Check for Jetson Nano hardware serial ports (Tegra High Speed UART)
+        try:
+            import glob
+            jetson_ports = glob.glob('/dev/ttyTHS*')
+            for port in jetson_ports:
+                self.available_ports.append({
+                    'port_no': port,
+                    'is_used': False,
+                    'device_name': 'jetson-hardware'
+                })
+            print(f"Found Jetson hardware ports: {jetson_ports}")
+        except Exception as e:
+            print(f"Error finding Jetson hardware ports: {e}")
+        
         # Alternative method using pyserial if available
         if not self.available_ports:
             try:
