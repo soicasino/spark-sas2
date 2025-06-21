@@ -1,13 +1,19 @@
 import uuid
 import socket
-import netifaces
+import psutil
 from crccheck.crc import CrcKermit
 
 
 def get_mac_address(interface='eth0'):
     """Get the MAC address of a network interface (default: eth0)."""
     try:
-        return netifaces.ifaddresses(interface)[netifaces.AF_LINK][0]['addr']
+        # Use psutil instead of netifaces
+        net_if_addrs = psutil.net_if_addrs()
+        if interface in net_if_addrs:
+            for addr in net_if_addrs[interface]:
+                if addr.family.name == 'AF_PACKET':  # This is the MAC address family on Linux
+                    return addr.address
+        return None
     except Exception:
         return None
 
