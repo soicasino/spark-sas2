@@ -1,7 +1,6 @@
 #!/bin/bash
-
-# Raspberry Pi Installation Script for Spark SAS2 Application
-# This script sets up all dependencies and the virtual environment
+# Jetson Nano (Ubuntu 18) Installation Script for Spark SAS2 Application
+# Adapted from Raspberry Pi script for Jetson Nano with Python 3.11 compiled from source
 
 # Colors for output
 RED='\033[0;31m'
@@ -41,6 +40,38 @@ check_root() {
     fi
 }
 
+# Function to check Python 3.11 installation
+check_python() {
+    print_step "Checking Python 3.11 installation..."
+    
+    if command_exists python3.11; then
+        PYTHON_VERSION=$(python3.11 --version 2>&1)
+        print_status "Found: $PYTHON_VERSION"
+        
+        # Check if it's actually working
+        python3.11 -c "import sys; print('Python executable check passed')" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            print_error "Python 3.11 found but not working properly"
+            exit 1
+        fi
+        
+        # Check if venv module is available
+        python3.11 -c "import venv" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            print_error "Python 3.11 venv module not available"
+            print_warning "You may need to install python3.11-venv or rebuild Python with venv support"
+            exit 1
+        fi
+        
+        print_status "Python 3.11 is properly installed and functional"
+    else
+        print_error "Python 3.11 not found in PATH"
+        print_warning "Please ensure Python 3.11 is installed and available as 'python3.11'"
+        print_warning "You may need to create a symlink or add it to your PATH"
+        exit 1
+    fi
+}
+
 # Function to update system packages
 update_system() {
     print_step "Updating system packages..."
@@ -60,9 +91,16 @@ update_system() {
 install_system_deps() {
     print_step "Installing system dependencies..."
     
-    # Core system packages
+    # Core system packages for Jetson Nano
     SYSTEM_PACKAGES=(
-       
+        build-essential
+        pkg-config
+        cmake
+        git
+        wget
+        curl
+        nano
+        htop
     )
     
     # Serial communication dependencies
@@ -72,7 +110,7 @@ install_system_deps() {
         setserial
     )
     
-    # Cryptography and security dependencies
+    # Cryptography and security dependencies (Ubuntu 18 specific versions)
     CRYPTO_PACKAGES=(
         libffi-dev
         libssl-dev
@@ -84,15 +122,34 @@ install_system_deps() {
         librsvg2-dev
     )
     
+    # Python development packages that might be missing
+    PYTHON_DEV_PACKAGES=(
+        libpython3-dev
+        python3-dev
+        python3-setuptools
+        python3-pip
+    )
+    
+    # Jetson-specific packages
+    JETSON_PACKAGES=(
+        python3-numpy
+        libhdf5-dev
+        libhdf5-serial-dev
+        libatlas-base-dev
+        libblas-dev
+        liblapack-dev
+        gfortran
+    )
+    
     # Combine all packages
-    ALL_PACKAGES=("${SYSTEM_PACKAGES[@]}" "${SERIAL_PACKAGES[@]}" "${CRYPTO_PACKAGES[@]}")
+    ALL_PACKAGES=("${SYSTEM_PACKAGES[@]}" "${SERIAL_PACKAGES[@]}" "${CRYPTO_PACKAGES[@]}" "${PYTHON_DEV_PACKAGES[@]}" "${JETSON_PACKAGES[@]}")
     
     print_status "Installing: ${ALL_PACKAGES[*]}"
     sudo apt install -y "${ALL_PACKAGES[@]}"
     
     if [ $? -ne 0 ]; then
         print_error "Failed to install some system packages"
-        exit 1
+        print_warning "Continuing anyway, but some Python packages might fail to install"
     fi
     
     print_status "System dependencies installed successfully"
@@ -111,6 +168,15 @@ setup_serial_permissions() {
     else
         print_error "Failed to add user to dialout group"
     fi
+    
+    # Also add to tty group (sometimes needed on Jetson)
+    sudo usermod -a -G tty "$USER"
+    
+    if [ $? -eq 0 ]; then
+        print_status "Added user '$USER' to 'tty' group"
+    else
+        print_warning "Failed to add user to tty group (this might be okay)"
+    fi
 }
 
 # Function to create and setup virtual environment
@@ -128,11 +194,12 @@ setup_venv() {
     fi
     
     # Create new virtual environment
-    print_status "Creating virtual environment..."
+    print_status "Creating virtual environment with Python 3.11..."
     python3.11 -m venv .venv
     
     if [ $? -ne 0 ]; then
         print_error "Failed to create virtual environment"
+        print_warning "This could be due to missing venv module or Python build issues"
         exit 1
     fi
     
@@ -154,6 +221,14 @@ setup_venv() {
     if [ $? -ne 0 ]; then
         print_warning "Failed to upgrade some Python packages, continuing..."
     fi
+    
+    # Install some basic packages that often cause issues if not present
+    print_status "Installing basic build dependencies..."
+    pip install --upgrade cython numpy
+    
+    if [ $? -ne 0 ]; then
+        print_warning "Failed to install basic build dependencies, continuing..."
+    fi
 }
 
 # Function to install Python dependencies
@@ -166,15 +241,21 @@ install_python_deps() {
         exit 1
     fi
     
+    print_status "Contents of requirements.txt:"
+    cat requirements.txt
+    echo
+    
     # Install requirements
     print_status "Installing packages from requirements.txt..."
-    pip install -r requirements.txt
+    
+    # For Jetson Nano, we might need to increase timeout and use no-cache
+    pip install --no-cache-dir --timeout 300 -r requirements.txt
     
     if [ $? -ne 0 ]; then
         print_error "Failed to install Python dependencies"
-        print_warning "Trying to install packages individually..."
+        print_warning "Trying to install packages individually with extended options..."
         
-        # Try installing packages one by one
+        # Try installing packages one by one with more robust options
         while IFS= read -r line; do
             # Skip comments and empty lines
             if [[ "$line" =~ ^[[:space:]]*# ]] || [[ -z "$line" ]]; then
@@ -182,10 +263,12 @@ install_python_deps() {
             fi
             
             print_status "Installing: $line"
-            pip install "$line"
+            pip install --no-cache-dir --timeout 300 --retries 3 "$line"
             
             if [ $? -ne 0 ]; then
                 print_warning "Failed to install: $line"
+                print_warning "Trying with --no-deps flag..."
+                pip install --no-deps --no-cache-dir "$line"
             fi
         done < requirements.txt
     fi
@@ -207,6 +290,7 @@ verify_installation() {
     # Check if virtual environment is working
     if [ "$VIRTUAL_ENV" != "" ]; then
         print_status "Virtual environment is active"
+        print_status "Python version in venv: $(python --version)"
         
         # Check key packages
         python -c "import fastapi; print('FastAPI:', fastapi.__version__)" 2>/dev/null
@@ -242,6 +326,13 @@ verify_installation() {
         print_status "ACM serial ports found: $(ls /dev/ttyACM*)"
     else
         print_warning "No ACM serial ports found (this is normal if no devices are connected)"
+    fi
+    
+    # Check Jetson-specific serial ports
+    if ls /dev/ttyTHS* 1> /dev/null 2>&1; then
+        print_status "Jetson hardware serial ports found: $(ls /dev/ttyTHS*)"
+    else
+        print_warning "No Jetson hardware serial ports found"
     fi
 }
 
@@ -304,6 +395,7 @@ EOF
 display_instructions() {
     print_step "Installation Summary"
     
+    echo -e "${GREEN}✓ Python 3.11 verified${NC}"
     echo -e "${GREEN}✓ System packages installed${NC}"
     echo -e "${GREEN}✓ Python virtual environment created${NC}"
     echo -e "${GREEN}✓ Python dependencies installed${NC}"
@@ -319,20 +411,27 @@ display_instructions() {
     echo "4. To test the API: python run_api.py"
     echo "5. The API will be available at: http://localhost:8000"
     echo "6. API documentation: http://localhost:8000/docs"
+    echo "7. For Jetson Nano: Monitor temperature and power consumption during operation"
     echo
     print_status "Check the logs if you encounter any issues!"
+    echo
+    print_warning "Jetson Nano specific notes:"
+    echo "- Ensure adequate cooling during intensive operations"
+    echo "- Monitor power supply (5V 4A recommended for full performance)"
+    echo "- Consider using a fan or heatsink for sustained workloads"
 }
 
 # Main installation process
 main() {
     echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║              Spark SAS2 Raspberry Pi Installer               ║${NC}"
+    echo -e "${BLUE}║            Spark SAS2 Jetson Nano Installer                  ║${NC}"
+    echo -e "${BLUE}║              (Ubuntu 18 + Python 3.11)                      ║${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo
     
     check_root
     
-    print_status "Starting installation process..."
+    print_status "Starting installation process for Jetson Nano..."
     print_warning "This script will install system packages and set up the Python environment"
     echo
     
@@ -346,6 +445,7 @@ main() {
     fi
     
     # Run installation steps
+    check_python
     update_system
     install_system_deps
     setup_serial_permissions
@@ -362,4 +462,4 @@ main() {
 }
 
 # Run main function
-main "$@" 
+main "$@"
