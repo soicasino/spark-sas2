@@ -706,9 +706,17 @@ class SasMoney:
             
             # Use parameters if provided, otherwise get from communicator/config like original
             if assetnumber is None:
-                assetnumber = getattr(self.communicator, 'asset_number_hex', '6C000000')
-                if assetnumber is None:
-                    assetnumber = getattr(self.communicator, 'asset_number', '6C000000')
+                assetnumber = getattr(self.communicator, 'asset_number_hex', None)
+            if assetnumber is None:
+                assetnumber = getattr(self.communicator, 'asset_number', None)
+            if assetnumber is None:
+                print("[AFT COMMAND] ERROR: No asset number available! Reading from machine...")
+                # Try to read asset number from machine
+                self.communicator.read_asset_number_from_machine()
+                assetnumber = getattr(self.communicator, 'asset_number', '00000000')
+                if assetnumber == '00000000':
+                    print("[AFT COMMAND] CRITICAL ERROR: Could not read asset number from machine!")
+                    print("[AFT COMMAND] AFT operations will likely fail!")
             
             if registrationkey is None:
                 # EXACT COPY: Reference code uses 40 zeros (20 bytes) 

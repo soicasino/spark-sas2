@@ -847,11 +847,22 @@ class SASCommunicator:
 
     def read_and_print_asset_number(self):
         """Read asset number from SAS and print it to screen."""
+        print("[ASSET NO] Reading asset number from slot machine via SAS...")
+        
+        # Always try to read from machine first (don't use cached values)
         asset_number = self.read_asset_number_from_machine()
         if asset_number is not None:
-            print(f"[ASSET NO] Asset number: {asset_number}")
-        else:
-            print("[ASSET NO] Could not read asset number from SAS.")
+            print(f"[ASSET NO] Asset number successfully read from machine: {asset_number}")
+            return
+        
+        # If direct read fails, check if we got it from AFT registration response
+        if hasattr(self, 'asset_number') and self.asset_number and self.asset_number != "6C000000":
+            print(f"[ASSET NO] Asset number (from AFT registration): {self.asset_number}")
+            if hasattr(self, 'decimal_asset_number'):
+                print(f"[ASSET NO] Asset number (decimal): {self.decimal_asset_number}")
+            return
+            
+        print("[ASSET NO] Could not read asset number from SAS machine.")
     
     def read_asset_number_from_machine(self) -> Optional[int]:
         """Read asset number from SAS machine and return as integer."""
@@ -894,8 +905,7 @@ class SASCommunicator:
         """Get asset number for AFT operations in the correct format for the machine."""
         try:
             # CRITICAL FIX: Return the ORIGINAL machine format, not converted format
-            # The machine provides asset number in little-endian format (6C000000)
-            # and expects it back in the SAME format for AFT operations
+            # The machine provides asset number in little-endian format and expects it back the SAME way
             
             if hasattr(self, 'asset_number_hex') and self.asset_number_hex:
                 # Use the stored original hex format from the machine
@@ -907,19 +917,19 @@ class SASCommunicator:
                 return self.asset_number
             else:
                 # Try to read from machine if we don't have it stored
+                print(f"[ASSET NO] No cached asset number, attempting to read from machine...")
                 machine_asset = self.read_asset_number_from_machine()
                 if machine_asset is not None and hasattr(self, 'asset_number'):
                     print(f"[ASSET NO] Using freshly read asset number: {self.asset_number}")
                     return self.asset_number
                 else:
-                    # Fall back to little-endian format (machine expects this format)
-                    print(f"[ASSET NO] Using default asset number in little-endian format")
-                    return "6C000000"  # 108 in little-endian format (machine format)
+                    print(f"[ASSET NO] ERROR: Could not read asset number from machine!")
+                    print(f"[ASSET NO] AFT operations may fail without proper asset number")
+                    return "00000000"  # Return zero instead of hardcoded value
             
         except Exception as e:
             print(f"[ASSET NO] Error getting asset number: {e}")
-            # Ultimate fallback - use machine format, not big-endian
-            return "6C000000"  # 108 in little-endian format
+            return "00000000"  # Return zero instead of hardcoded value
 
     def find_ports_with_card_reader(self, port_list):
         """
